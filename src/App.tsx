@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import * as mammoth from 'mammoth';
 import { 
   Smartphone, 
   Lock, 
@@ -45,12 +46,36 @@ import {
   Palette,
   Type,
   Layout,
-  Pencil
+  Pencil,
+  FolderOpen,
+  Folder,
+  ChevronDown,
+  ChevronUp,
+  FileUp,
+  Filter,
+  SlidersHorizontal,
+  Upload
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- Types ---
-type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list';
+type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit';
+type WorldBookScope = 'global' | 'local';
+
+interface WorldBook {
+  id: string;
+  title: string;
+  content: string;
+  scope: WorldBookScope;
+  isActive: boolean;
+  boundPersonas: string[];
+  folderId?: string; // Add folder ID
+}
+
+interface WorldBookFolder {
+  id: string;
+  name: string;
+}
 type ChatTab = 'messages' | 'contacts' | 'moments' | 'me';
 
 interface Persona {
@@ -74,6 +99,80 @@ interface ApiConfig {
   apiKey: string;
   selectedModel: string;
   models: string[];
+  temperature: number;
+  maxTokens: number;
+  contextMessageCount: number;
+}
+
+// --- Helper: Build character system prompt ---
+function buildCharacterSystemPrompt(p: Persona): string {
+  const otherTraits: string[] = [];
+  if (p.height) otherTraits.push(`身高：${p.height}cm`);
+  if (p.weight) otherTraits.push(`体重：${p.weight}kg`);
+  if (p.age) otherTraits.push(`年龄：${p.age}岁`);
+  if (p.gender) otherTraits.push(`性别：${p.gender}`);
+  if (p.occupation) otherTraits.push(`职业：${p.occupation}`);
+  if (p.location) otherTraits.push(`所在地：${p.location}`);
+
+  return `你现在正扮演以下角色，必须严格遵循角色设定，以第一人称视角回复，语气、用词、思维方式都要完全符合角色特点，不能脱离角色，不能说出任何不符合角色身份的话。回复要像真人一样自然、生动、有情感，避免机械感或AI感。绝对不能以AI身份自居，不能说"作为AI"、"我是人工智能"之类的话。
+
+角色信息：
+- 姓名：${p.name || p.chatName}
+- 性格：${p.personality || '未设定'}
+- 背景故事：${p.bio || '未设定'}
+- 其他特征：${otherTraits.length > 0 ? otherTraits.join('；') : '无'}
+
+请以该角色的身份与用户进行对话，每一句话都要符合角色设定，让人感觉就是角色本人在说话。保持对话自然，像是在社交软件上聊天一样。`;
+}
+
+// --- Helper: Generate simulated reply based on persona ---
+function generateSimulatedReply(persona: Persona | null, userMessage: string): string {
+  if (!persona) {
+    // AI assistant fallback
+    const replies = [
+      '你好呀！我是AI助手，不过目前API还没配置好，等配置好了我就能更好地帮你啦~',
+      '嗯嗯，我收到你的消息了！不过现在API还没连上，我只能简单回复你哦。',
+      '哈哈，我暂时还不太聪明，因为API还没配置好。去设置里配置一下吧！',
+      '收到！不过我现在是离线模式，功能有限哦~',
+    ];
+    return replies[Math.floor(Math.random() * replies.length)];
+  }
+
+  const name = persona.chatName || persona.name || '我';
+  const personality = persona.personality || '';
+  
+  // Generate contextual replies based on persona traits
+  const greetings = [
+    `嗯？怎么了~`,
+    `在呢在呢，说吧~`,
+    `哈喽~`,
+    `嗯嗯，我在听~`,
+  ];
+  
+  const responses = [
+    `嗯...让我想想怎么说...`,
+    `哈哈，你说的挺有意思的~`,
+    `是嘛？然后呢？`,
+    `嗯嗯，我懂你的意思~`,
+    `这样啊...`,
+    `哦哦，原来如此~`,
+  ];
+
+  if (userMessage.length < 5) {
+    return greetings[Math.floor(Math.random() * greetings.length)];
+  }
+  
+  if (userMessage.includes('?') || userMessage.includes('？')) {
+    const questionReplies = [
+      `这个嘛...我觉得还好吧~`,
+      `嗯...怎么说呢，我也不太确定诶`,
+      `哈哈，你怎么突然问这个~`,
+      `让我想想...嗯，我觉得可以的！`,
+    ];
+    return questionReplies[Math.floor(Math.random() * questionReplies.length)];
+  }
+
+  return responses[Math.floor(Math.random() * responses.length)];
 }
 
 // --- Components ---
@@ -671,6 +770,532 @@ const PersonaScreen = ({ onBack, time, onSavePersona, initialPersona }: any) => 
   );
 };
 
+const WorldBookListScreen = ({ onBack, time, worldBooks, setWorldBooks, folders, setFolders, onEdit, onAdd }: any) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterScope, setFilterScope] = useState<'all' | 'global' | 'local'>('all');
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+
+  const toggleActive = (id: string) => {
+    setWorldBooks((prev: any[]) => {
+      const target = prev.find(wb => wb.id === id);
+      if (!target) return prev;
+      
+      const newActiveState = !target.isActive;
+      
+      return prev.map(wb => {
+        if (wb.id === id) {
+          return { ...wb, isActive: newActiveState };
+        }
+        // 当用户手动激活全局世界书时，其他全局世界书自动失效
+        if (newActiveState && target.scope === 'global' && wb.scope === 'global') {
+          return { ...wb, isActive: false };
+        }
+        return wb;
+      });
+    });
+  };
+
+  const deleteWorldBook = (id: string) => {
+    setWorldBooks((prev: any[]) => prev.filter(wb => wb.id !== id));
+  };
+
+  const handleCreateFolder = () => {
+    if (!newFolderName.trim()) return;
+    
+    if (editingFolderId) {
+      setFolders((prev: any[]) => prev.map(f => f.id === editingFolderId ? { ...f, name: newFolderName.trim() } : f));
+    } else {
+      setFolders((prev: any[]) => [...prev, { id: Math.random().toString(36).substr(2, 9), name: newFolderName.trim() }]);
+    }
+    
+    setNewFolderName('');
+    setIsCreatingFolder(false);
+    setEditingFolderId(null);
+  };
+
+  const handleDeleteFolder = (folderId: string) => {
+    // Optional: Ask for confirmation here in a real app
+    setFolders((prev: any[]) => prev.filter(f => f.id !== folderId));
+    // Move all books in this folder back to unassigned
+    setWorldBooks((prev: any[]) => prev.map(wb => wb.folderId === folderId ? { ...wb, folderId: undefined } : wb));
+  };
+
+  const toggleFolderExpand = (folderId: string) => {
+    setExpandedFolders(prev => ({ ...prev, [folderId]: !prev[folderId] }));
+  };
+
+  // 1. 过滤搜索和作用域
+  const filteredBooks = worldBooks.filter((wb: any) => {
+    const matchesSearch = wb.title.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesScope = filterScope === 'all' || wb.scope === filterScope;
+    return matchesSearch && matchesScope;
+  });
+
+  // 2. 将世界书分组
+  const groupedBooks = {
+    unassigned: filteredBooks.filter((wb: any) => !wb.folderId),
+    ...folders.reduce((acc: any, folder: any) => {
+      acc[folder.id] = filteredBooks.filter((wb: any) => wb.folderId === folder.id);
+      return acc;
+    }, {})
+  };
+
+  return (
+    <motion.div 
+      key="app-world"
+      initial={{ x: "100%" }}
+      animate={{ x: 0 }}
+      exit={{ x: "100%" }}
+      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+      className="absolute inset-0 bg-zinc-50 dark:bg-zinc-900 flex flex-col z-50 transition-colors"
+    >
+      <StatusBar time={time} className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-10 dark:text-zinc-200" />
+      
+      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 transition-colors">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 active:text-zinc-600 dark:active:text-zinc-300">
+            <ArrowLeft size={24} strokeWidth={1.5} />
+          </button>
+          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-200">世界书</h2>
+        </div>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              setEditingFolderId(null);
+              setNewFolderName('');
+              setIsCreatingFolder(true);
+            }}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 shadow-sm active:scale-95 transition-all"
+          >
+            <FolderPlus size={16} />
+          </button>
+          <button 
+            onClick={onAdd}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-800 dark:bg-zinc-700 text-white shadow-sm active:scale-95 transition-all"
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="px-6 py-3 bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 flex flex-col gap-3 z-10 transition-colors">
+        {/* Search Bar */}
+        <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-full px-4 py-2">
+          <Search size={16} className="text-zinc-400" />
+          <input 
+            type="text" 
+            placeholder="搜索世界书..."
+            className="flex-1 bg-transparent border-none outline-none text-xs text-zinc-700 dark:text-zinc-200 placeholder:text-zinc-400"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        
+        {/* Filters */}
+        <div className="flex gap-2 items-center">
+          <Filter size={14} className="text-zinc-400" />
+          <button 
+            onClick={() => setFilterScope('all')}
+            className={`px-3 py-1 rounded-full text-[10px] font-bold transition-colors ${filterScope === 'all' ? 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}
+          >
+            全部
+          </button>
+          <button 
+            onClick={() => setFilterScope('global')}
+            className={`px-3 py-1 rounded-full text-[10px] font-bold transition-colors ${filterScope === 'global' ? 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}
+          >
+            全局
+          </button>
+          <button 
+            onClick={() => setFilterScope('local')}
+            className={`px-3 py-1 rounded-full text-[10px] font-bold transition-colors ${filterScope === 'local' ? 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}
+          >
+            局部
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+        {/* Folder Creation Modal / Inline Input */}
+        <AnimatePresence>
+          {isCreatingFolder && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <GlassCard className="p-4 flex gap-2 items-center mb-4 dark:border-zinc-700 dark:bg-zinc-800/50" opacity="0.8" blur="10px">
+                <FolderOpen size={18} className="text-zinc-500" />
+                <input 
+                  autoFocus
+                  type="text" 
+                  placeholder="输入文件夹名称..."
+                  className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-200"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+                />
+                <button onClick={() => setIsCreatingFolder(false)} className="text-zinc-400 p-1"><Delete size={16} /></button>
+                <button onClick={handleCreateFolder} className="text-zinc-800 dark:text-zinc-200 p-1"><Check size={16} /></button>
+              </GlassCard>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {worldBooks.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-zinc-300 dark:text-zinc-600 py-20">
+            <BookOpen size={64} strokeWidth={1} />
+            <p className="mt-4 text-sm font-bold tracking-widest uppercase">暂无世界书</p>
+            <button 
+              onClick={onAdd}
+              className="mt-6 px-6 py-2 bg-zinc-800 dark:bg-zinc-700 text-white rounded-full text-xs font-bold active:scale-95 transition-all"
+            >
+              创建世界书
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {/* Render Folders */}
+            {folders.map((folder: any) => {
+              const booksInFolder = groupedBooks[folder.id] || [];
+              const isExpanded = expandedFolders[folder.id] !== false; // Default to expanded
+
+              return (
+                <div key={folder.id} className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between px-2">
+                    <div 
+                      className="flex items-center gap-2 cursor-pointer active:opacity-70 transition-opacity"
+                      onClick={() => toggleFolderExpand(folder.id)}
+                    >
+                      {isExpanded ? <ChevronDown size={16} className="text-zinc-500" /> : <ChevronRight size={16} className="text-zinc-500" />}
+                      <Folder size={16} className="text-zinc-500" />
+                      <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400">{folder.name} ({booksInFolder.length})</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setEditingFolderId(folder.id); setNewFolderName(folder.name); setIsCreatingFolder(true); }} className="text-zinc-400 hover:text-zinc-600"><Pencil size={12} /></button>
+                      <button onClick={() => handleDeleteFolder(folder.id)} className="text-red-300 hover:text-red-500"><Delete size={12} /></button>
+                    </div>
+                  </div>
+                  
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex flex-col gap-4 overflow-hidden"
+                      >
+                        {booksInFolder.length === 0 ? (
+                          <div className="text-[10px] text-zinc-400 text-center py-2">空文件夹</div>
+                        ) : (
+                          booksInFolder.map((wb: any) => (
+                            <WorldBookCard key={wb.id} wb={wb} toggleActive={toggleActive} onEdit={onEdit} deleteWorldBook={deleteWorldBook} />
+                          ))
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+
+            {/* Render Unassigned Books */}
+            {groupedBooks.unassigned.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {folders.length > 0 && (
+                  <div className="flex items-center gap-2 px-2 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                    <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">未分类 ({groupedBooks.unassigned.length})</span>
+                  </div>
+                )}
+                {groupedBooks.unassigned.map((wb: any) => (
+                  <WorldBookCard key={wb.id} wb={wb} toggleActive={toggleActive} onEdit={onEdit} deleteWorldBook={deleteWorldBook} />
+                ))}
+              </div>
+            )}
+            
+            {/* Empty Search Result */}
+            {filteredBooks.length === 0 && worldBooks.length > 0 && (
+              <div className="text-center text-zinc-400 text-sm py-10">
+                没有找到匹配的世界书
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+// Extracted Card Component for reuse
+const WorldBookCard = ({ wb, toggleActive, onEdit, deleteWorldBook }: any) => (
+  <GlassCard className={`p-4 flex flex-col gap-3 dark:bg-zinc-800/50 transition-colors border ${wb.isActive && wb.scope === 'global' ? 'border-zinc-800 dark:border-zinc-400 shadow-[0_0_15px_rgba(39,39,42,0.1)]' : 'border-zinc-200/50 dark:border-zinc-700/50'}`} opacity="0.8" blur="10px">
+    <div className="flex justify-between items-start">
+      <div className="flex-1 min-w-0 pr-4">
+        <div className="flex items-center gap-2">
+          <h3 className="font-bold text-zinc-800 dark:text-zinc-200 truncate text-[15px]">{wb.title}</h3>
+          {wb.isActive && wb.scope === 'global' && (
+            <span className="w-2 h-2 rounded-full bg-zinc-800 dark:bg-zinc-200 shadow-sm" title="当前激活的全局世界书"></span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${wb.scope === 'global' ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' : 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-800'}`}>
+            {wb.scope === 'global' ? '全局' : '局部'}
+          </span>
+          {wb.scope === 'local' && (
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">已绑定 {wb.boundPersonas.length} 角色</span>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-2">
+          <button 
+          onClick={() => toggleActive(wb.id)}
+          className={`w-10 h-5 rounded-full transition-colors relative ${wb.isActive ? 'bg-zinc-800 dark:bg-zinc-200' : 'bg-zinc-200 dark:bg-zinc-700'}`}
+        >
+          <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-zinc-900 rounded-full transition-all ${wb.isActive ? 'left-6' : 'left-1'}`} />
+        </button>
+      </div>
+    </div>
+    <div className="flex justify-end gap-2 mt-2 pt-3 border-t border-zinc-100 dark:border-zinc-700/50">
+      <button 
+        onClick={() => onEdit(wb)}
+        className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-full text-[10px] font-bold active:scale-95 transition-all flex items-center gap-1"
+      >
+        <Pencil size={12} />
+        编辑
+      </button>
+      <button 
+        onClick={() => deleteWorldBook(wb.id)}
+        className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800/80 text-zinc-400 hover:text-red-500 rounded-full text-[10px] font-bold active:scale-95 transition-all flex items-center gap-1"
+      >
+        <Delete size={12} />
+        删除
+      </button>
+    </div>
+  </GlassCard>
+);
+
+// Fallback FolderPlus icon component since lucide-react might not export it directly in older versions
+const FolderPlus = ({ size = 24, className = "" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+    <line x1="12" y1="10" x2="12" y2="16"/>
+    <line x1="9" y1="13" x2="15" y2="13"/>
+  </svg>
+);
+
+const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePersonas, folders }: any) => {
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [content, setContent] = useState(initialData?.content || '');
+  const [scope, setScope] = useState<'global' | 'local'>(initialData?.scope || 'global');
+  const [isActive, setIsActive] = useState(initialData?.isActive ?? true);
+  const [boundPersonas, setBoundPersonas] = useState<string[]>(initialData?.boundPersonas || []);
+  const [folderId, setFolderId] = useState<string>(initialData?.folderId || '');
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      alert('请输入标题');
+      return;
+    }
+    if (!content.trim()) {
+      alert('请输入内容');
+      return;
+    }
+    onSave({
+      id: initialData?.id || Math.random().toString(36).substr(2, 9),
+      title: title.trim(),
+      content: content.trim(),
+      scope,
+      isActive,
+      boundPersonas: scope === 'local' ? boundPersonas : [],
+      folderId: folderId || undefined
+    });
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      if (file.name.endsWith('.txt')) {
+        const text = await file.text();
+        setContent(prev => prev ? `${prev}\n\n${text}` : text);
+      } else if (file.name.endsWith('.docx')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        const text = result.value;
+        setContent(prev => prev ? `${prev}\n\n${text}` : text);
+      } else {
+        alert('仅支持导入 .txt 或 .docx 文件');
+      }
+    } catch (err) {
+      console.error('导入失败:', err);
+      alert('解析文件失败，请确保文件格式正确。');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const togglePersona = (id: string) => {
+    setBoundPersonas(prev => 
+      prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
+    );
+  };
+
+  return (
+    <motion.div 
+      key="app-world-edit"
+      initial={{ x: "100%" }}
+      animate={{ x: 0 }}
+      exit={{ x: "100%" }}
+      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+      className="absolute inset-0 bg-zinc-50 dark:bg-zinc-900 flex flex-col z-50 transition-colors"
+    >
+      <StatusBar time={time} className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-10 dark:text-zinc-200" />
+      
+      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 transition-colors">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 active:text-zinc-600 dark:active:text-zinc-300">
+            <ArrowLeft size={24} strokeWidth={1.5} />
+          </button>
+          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-200">{initialData ? '编辑世界书' : '创建世界书'}</h2>
+        </div>
+        <button 
+          onClick={handleSave}
+          className="flex items-center gap-1.5 px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
+        >
+          <Check size={14} />
+          保存
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+        <GlassCard className="p-4 flex flex-col gap-4 dark:border-zinc-700 dark:bg-zinc-800/50" opacity="0.8" blur="10px">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">标题 (必填)</label>
+            <input 
+              type="text" 
+              placeholder="例如：修仙世界观"
+              className="w-full bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-200 outline-none border border-transparent focus:border-zinc-300 transition-all placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">生效范围</label>
+            <div className="flex bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl">
+              <button
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 shadow-sm' : 'text-zinc-400 dark:text-zinc-500'}`}
+                onClick={() => setScope('global')}
+              >
+                全局生效
+              </button>
+              <button
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scope === 'local' ? 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 shadow-sm' : 'text-zinc-400 dark:text-zinc-500'}`}
+                onClick={() => setScope('local')}
+              >
+                局部生效
+              </button>
+            </div>
+            <p className="text-[9px] text-zinc-400 dark:text-zinc-500 px-1 mt-1">
+              {scope === 'global' ? '全局只能激活一个，对所有角色生效（除非角色绑定了局部世界书）。' : '仅对选择的特定角色生效。'}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-100 dark:border-zinc-700/50">
+            <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">所属文件夹</label>
+            <select 
+              className="w-full bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-200 outline-none border border-transparent appearance-none"
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+            >
+              <option value="">未分类</option>
+              {folders.map((f: any) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex justify-between items-center px-1 py-2 border-t border-zinc-100 dark:border-zinc-700/50">
+            <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">是否激活</span>
+            <button 
+              onClick={() => setIsActive(!isActive)}
+              className={`w-10 h-5 rounded-full transition-colors relative ${isActive ? 'bg-zinc-800 dark:bg-zinc-200' : 'bg-zinc-200 dark:bg-zinc-700'}`}
+            >
+              <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-zinc-900 rounded-full transition-all ${isActive ? 'left-6' : 'left-1'}`} />
+            </button>
+          </div>
+        </GlassCard>
+
+        {scope === 'local' && (
+          <GlassCard className="p-4 flex flex-col gap-3 dark:border-zinc-700 dark:bg-zinc-800/50" opacity="0.8" blur="10px">
+            <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">选择绑定角色</label>
+            {phonePersonas.length === 0 ? (
+              <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center py-4">暂无角色，请先在电话簿中添加。</p>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-48 overflow-y-auto no-scrollbar">
+                {phonePersonas.map((p: any) => (
+                  <div 
+                    key={p.id} 
+                    onClick={() => togglePersona(p.id)}
+                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-700/50 cursor-pointer transition-colors"
+                  >
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${boundPersonas.includes(p.id) ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'border-zinc-300 dark:border-zinc-600'}`}>
+                      {boundPersonas.includes(p.id) && <Check size={12} className="text-white dark:text-zinc-900" />}
+                    </div>
+                    <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex-shrink-0">
+                      {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover" /> : <User size={16} className="m-2 text-zinc-400" />}
+                    </div>
+                    <span className="text-sm text-zinc-700 dark:text-zinc-300 font-medium truncate">{p.chatName || p.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+        )}
+
+        <GlassCard className="p-4 flex flex-col gap-2 flex-1 min-h-[400px] dark:border-zinc-700 dark:bg-zinc-800/50" opacity="0.8" blur="10px">
+          <div className="flex justify-between items-center px-1 pb-2 border-b border-zinc-100 dark:border-zinc-700/50">
+            <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">世界观内容 (纯文本)</label>
+            <div className="flex gap-2">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept=".txt,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" 
+                onChange={handleImportFile} 
+              />
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+                className="flex items-center gap-1 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-full text-[10px] font-bold active:scale-95 transition-all disabled:opacity-50"
+              >
+                <FileUp size={12} />
+                {isImporting ? '导入中...' : '导入文件'}
+              </button>
+            </div>
+          </div>
+          <p className="text-[9px] text-zinc-400 dark:text-zinc-500 px-1">建议保持内容精简，过长会消耗大量 Token 且影响对话响应速度。支持导入 .txt 和 .docx 文件提取纯文本。</p>
+          <textarea 
+            placeholder="在此输入或粘贴世界书内容..."
+            className="w-full h-full flex-1 bg-transparent p-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none resize-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600 leading-relaxed"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
+        </GlassCard>
+      </div>
+    </motion.div>
+  );
+};
+
 const SettingsScreen = ({ 
   apiConfig, 
   setApiConfig, 
@@ -782,6 +1407,66 @@ const SettingsScreen = ({
           </GlassCard>
         </div>
 
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">Temperature (创造性)</span>
+          <GlassCard className="p-4" opacity="0.8" blur="10px">
+            <div className="flex items-center gap-3">
+              <Sparkles size={18} className="text-zinc-400" />
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="0.1"
+                className="flex-1 accent-zinc-600"
+                value={tempConfig.temperature ?? 0.7}
+                onChange={(e) => setTempConfig((prev: any) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+              />
+              <span className="text-sm font-bold text-zinc-600 w-10 text-right">{(tempConfig.temperature ?? 0.7).toFixed(1)}</span>
+            </div>
+            <p className="text-[9px] text-zinc-400 mt-2 px-1">值越高回复越有创造性，值越低回复越稳定。推荐 0.7</p>
+          </GlassCard>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">上下文消息条数</span>
+          <GlassCard className="p-4" opacity="0.8" blur="10px">
+            <div className="flex items-center gap-3">
+              <MessageSquare size={18} className="text-zinc-400" />
+              <input 
+                type="range" 
+                min="1" 
+                max="50" 
+                step="1"
+                className="flex-1 accent-zinc-600"
+                value={tempConfig.contextMessageCount ?? 10}
+                onChange={(e) => setTempConfig((prev: any) => ({ ...prev, contextMessageCount: parseInt(e.target.value) }))}
+              />
+              <span className="text-sm font-bold text-zinc-600 w-10 text-right">{tempConfig.contextMessageCount ?? 10}</span>
+            </div>
+            <p className="text-[9px] text-zinc-400 mt-2 px-1">每次调用API时读取的最近消息条数（系统消息不计入）。值越小越省Token，值越大上下文越完整。推荐 10</p>
+          </GlassCard>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">Max Tokens (最大回复长度)</span>
+          <GlassCard className="p-4" opacity="0.8" blur="10px">
+            <div className="flex items-center gap-3">
+              <Type size={18} className="text-zinc-400" />
+              <input 
+                type="number" 
+                min="100" 
+                max="8192" 
+                step="100"
+                placeholder="2048"
+                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300"
+                value={tempConfig.maxTokens ?? 2048}
+                onChange={(e) => setTempConfig((prev: any) => ({ ...prev, maxTokens: parseInt(e.target.value) || 2048 }))}
+              />
+            </div>
+            <p className="text-[9px] text-zinc-400 mt-2 px-1">控制AI单次回复的最大长度。推荐 2048</p>
+          </GlassCard>
+        </div>
+
         {apiSuccess && (
           <div className="px-1 py-2 text-[10px] font-bold text-emerald-500 uppercase tracking-widest">
             {apiSuccess}
@@ -790,7 +1475,7 @@ const SettingsScreen = ({
 
         <div className="mt-auto pt-10">
           <p className="text-[10px] text-center text-zinc-300 leading-relaxed">
-            配置完成后，点击右上角“保存”。您可以在“聊天”应用的“AI 助手”中与模型对话。
+            配置完成后，点击右上角"保存"。未配置API时将使用模拟回复。
           </p>
         </div>
       </div>
@@ -821,7 +1506,7 @@ export default function App() {
   // API Config State
   const [apiConfig, setApiConfig] = useState<ApiConfig>(() => {
     const saved = localStorage.getItem('aiphone_api_config');
-    return saved ? JSON.parse(saved) : { baseUrl: '', apiKey: '', selectedModel: '', models: [] };
+    return saved ? JSON.parse(saved) : { baseUrl: '', apiKey: '', selectedModel: '', models: [], temperature: 0.7, maxTokens: 2048, contextMessageCount: 10 };
   });
 
   // Chat State
@@ -842,6 +1527,16 @@ export default function App() {
     const saved = localStorage.getItem('aiphone_custom_icons');
     return saved ? JSON.parse(saved) : {};
   });
+  const [worldBooks, setWorldBooks] = useState<any[]>(() => {
+    const saved = localStorage.getItem('aiphone_world_books');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [worldBookFolders, setWorldBookFolders] = useState<WorldBookFolder[]>(() => {
+    const saved = localStorage.getItem('aiphone_world_book_folders');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [editingWorldBook, setEditingWorldBook] = useState<any | null>(null);
+
   const [contacts, setContacts] = useState<Persona[]>(() => {
     const saved = localStorage.getItem('aiphone_contacts');
     return saved ? JSON.parse(saved) : [];
@@ -856,6 +1551,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('aiphone_contacts', JSON.stringify(contacts));
   }, [contacts]);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_world_books', JSON.stringify(worldBooks));
+  }, [worldBooks]);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_world_book_folders', JSON.stringify(worldBookFolders));
+  }, [worldBookFolders]);
 
   useEffect(() => {
     localStorage.setItem('aiphone_phone_personas', JSON.stringify(phonePersonas));
@@ -960,22 +1663,35 @@ export default function App() {
     setApiError('');
     setApiSuccess('');
     try {
-      let baseUrl = configToUse.baseUrl.replace(/\/$/, '');
-      // Smart URL handling: if user didn't include /v1, and it's not a custom endpoint that might not need it
-      // we append /v1/models. If they did include /v1, we just append /models.
+      let baseUrl = configToUse.baseUrl.trim().replace(/\/+$/, '');
+      
+      // 自动补全 http/https
+      if (!/^https?:\/\//i.test(baseUrl)) {
+        baseUrl = 'https://' + baseUrl;
+      }
+      // 容错处理：如果用户不小心输入了 /chat/completions 结尾，将其去掉
+      if (baseUrl.endsWith('/chat/completions')) {
+        baseUrl = baseUrl.replace('/chat/completions', '');
+      }
+
+      // 智能拼接 URL
       const url = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`;
       
       const response = await fetch(url, {
+        method: 'GET',
         headers: { 
           'Authorization': `Bearer ${configToUse.apiKey}`,
+          'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
         mode: 'cors'
       });
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `请求失败 (${response.status})`);
+        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
       }
+      
       const data = await response.json();
       if (data.data && Array.isArray(data.data)) {
         const modelNames = data.data.map((m: any) => m.id);
@@ -986,124 +1702,230 @@ export default function App() {
           setApiError('未找到可用模型');
         }
       } else {
-        setApiError('返回数据格式不正确');
+        setApiError('返回数据格式不正确，可能不是标准的 OpenAI API 格式');
       }
     } catch (err: any) {
-      setApiError(`获取失败: ${err.message || '请检查网络或配置'}`);
+      console.error('Fetch models error:', err);
+      let errorMsg = err.message || '未知错误';
+      if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
+        errorMsg = '网络错误或跨域(CORS)限制。官方OpenAI接口不支持纯前端调用，请使用支持CORS的中转API。';
+      }
+      setApiError(`获取失败: ${errorMsg}`);
     } finally {
       setIsAiLoading(false);
     }
   };
 
+  const checkAndTriggerAutoSummary = async (chatId: string, currentHistory: any[]) => {
+    const settings = chatSettings[chatId] || {};
+    if (!settings.isAutoSummaryEnabled) return;
+    
+    const threshold = settings.autoSummaryThreshold || 30;
+    const lastIndex = settings.lastSummaryMessageIndex || 0;
+    
+    if (currentHistory.length - lastIndex >= threshold) {
+      const now = Date.now();
+      const lastTime = lastSummaryTimeRef.current[chatId] || 0;
+      if (now - lastTime < 30000) return;
+      
+      if (isSummarizingRef.current[chatId]) return;
+      
+      if (!apiConfig.baseUrl || !apiConfig.apiKey) return;
+
+      isSummarizingRef.current[chatId] = true;
+      setAutoSummaryStatus('正在总结记忆...');
+
+      try {
+        const historyText = currentHistory.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
+        const summaryPrompt = `请总结以下对话中用户与AI角色的互动，提取关键信息、角色关系、重要事件、用户偏好等。总结要简洁清晰，不超过200字。\n\n对话历史：\n${historyText}`;
+
+        let baseUrl = apiConfig.baseUrl.trim().replace(/\/+$/, '');
+        if (!/^https?:\/\//i.test(baseUrl)) baseUrl = 'https://' + baseUrl;
+        if (baseUrl.endsWith('/chat/completions')) baseUrl = baseUrl.replace('/chat/completions', '');
+        const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiConfig.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: apiConfig.selectedModel || 'gpt-3.5-turbo',
+            messages: [
+              { role: 'system', content: '你是一个对话总结助手，请根据用户提供的对话历史生成简洁的总结。' },
+              { role: 'user', content: summaryPrompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 500
+          })
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const summary = data.choices?.[0]?.message?.content;
+        
+        if (summary) {
+          setChatSummaries(prev => ({ ...prev, [chatId]: summary }));
+          setChatSettings(prev => ({
+            ...prev,
+            [chatId]: { ...prev[chatId], lastSummaryMessageIndex: currentHistory.length }
+          }));
+          lastSummaryTimeRef.current[chatId] = Date.now();
+        }
+      } catch (err) {
+        console.error('Auto summary error:', err);
+      } finally {
+        isSummarizingRef.current[chatId] = false;
+        setAutoSummaryStatus('');
+      }
+    }
+  };
+
   const sendAiMessage = async () => {
-    if (!chatInput.trim() || !apiConfig.selectedModel) return;
-    if (!apiConfig.apiKey) {
-      const errorMsg = { role: 'assistant' as const, content: '请先在“设置”中配置 API 密钥。' };
+    if (!chatInput.trim()) return;
+    
+    const userMsg = chatInput.trim();
+    const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
+    const newMessages = [...currentMessages, { role: 'user' as const, content: userMsg }];
+    
+    // Helper to append a reply message
+    const appendReply = (msg: {role: 'user' | 'assistant', content: string}) => {
       if (activeChatContact) {
         setChatHistories(prev => ({
           ...prev,
-          [activeChatContact.id]: [...(prev[activeChatContact.id] || []), errorMsg]
+          [activeChatContact.id]: [...(prev[activeChatContact.id] || []), msg]
         }));
       } else {
-        setChatMessages(prev => [...prev, errorMsg]);
+        setChatMessages(prev => [...prev, msg]);
       }
-      return;
-    }
-    
-    const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
-    const newMessages = [...currentMessages, { role: 'user' as const, content: chatInput }];
-    
+    };
+
+    // Save user message
     if (activeChatContact) {
       setChatHistories(prev => ({
         ...prev,
         [activeChatContact.id]: newMessages
       }));
+      checkAndTriggerAutoSummary(activeChatContact.id, newMessages);
     } else {
       setChatMessages(newMessages);
+      checkAndTriggerAutoSummary('ai_assistant', newMessages);
     }
-    
     setChatInput('');
+
+    // Check if API config is valid; if not, use simulated reply
+    const isApiValid = apiConfig.baseUrl && apiConfig.baseUrl.trim() !== '';
+    if (!isApiValid) {
+      setIsAiLoading(true);
+      // Simulate a short delay for realism
+      await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+      const simReply = generateSimulatedReply(activeChatContact, userMsg);
+      appendReply({ role: 'assistant', content: simReply });
+      setIsAiLoading(false);
+      return;
+    }
+
     setIsAiLoading(true);
 
-    const systemPrompt = activeChatContact ? `
-你现在正在扮演一个真实的人，你的名字是 ${activeChatContact.chatName}。
-你的基本信息如下：
-- 真实姓名：${activeChatContact.name}
-- 性别：${activeChatContact.gender}
-- 年龄：${activeChatContact.age}
-- 职业：${activeChatContact.occupation}
-- 所在地：${activeChatContact.location}
-- 身高/体重：${activeChatContact.height}/${activeChatContact.weight}
-- 性格特点：${activeChatContact.personality}
-- 个人简介：${activeChatContact.bio}
+    // Build system prompt using buildCharacterSystemPrompt for persona contacts
+    let baseSystemPrompt = activeChatContact 
+      ? buildCharacterSystemPrompt(activeChatContact) 
+      : "你是一个乐于助人的AI助手。";
 
-请严格遵守以下规则：
-1. 你的回复必须完全符合你的人设。
-2. 你的语气、用词习惯、反应方式都要体现你的性格。
-3. 不要承认自己是AI，也不要提及自己是人工智能。
-4. 保持对话自然，像是在社交软件上聊天一样。
-5. 如果对方问及你的信息，请根据上述设定回答。
-` : "你是一个乐于助人的AI助手。";
+    let worldBookContent = '';
+    if (activeChatContact) {
+      const localWb = worldBooks.find(wb => wb.isActive && wb.scope === 'local' && wb.boundPersonas.includes(activeChatContact.id));
+      if (localWb) {
+        worldBookContent = localWb.content;
+      } else {
+        const globalWb = worldBooks.find(wb => wb.isActive && wb.scope === 'global');
+        if (globalWb) {
+          worldBookContent = globalWb.content;
+        }
+      }
+    } else {
+      const globalWb = worldBooks.find(wb => wb.isActive && wb.scope === 'global');
+      if (globalWb) {
+        worldBookContent = globalWb.content;
+      }
+    }
+
+    const systemPrompt = worldBookContent 
+      ? `【世界观设定】\n${worldBookContent}\n\n请严格遵循以上世界观设定，同时扮演好角色...\n\n${baseSystemPrompt}`
+      : baseSystemPrompt;
+
+    // Inject long-term memory summary if available
+    const currentSummaryChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
+    const summaryText = chatSummaries[currentSummaryChatId];
+    const finalSystemPrompt = summaryText 
+      ? `${systemPrompt}\n\n【长期记忆摘要】${summaryText}`
+      : systemPrompt;
+
+    // Limit context to last N messages (configurable)
+    const contextMessages = newMessages.slice(-(apiConfig.contextMessageCount || 10));
+
+    // Build headers
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiConfig.apiKey) {
+      headers['Authorization'] = `Bearer ${apiConfig.apiKey}`;
+    }
 
     try {
-      const baseUrl = apiConfig.baseUrl.replace(/\/$/, '');
+      let baseUrl = apiConfig.baseUrl.trim().replace(/\/+$/, '');
+      
+      // 自动补全 http/https
+      if (!/^https?:\/\//i.test(baseUrl)) {
+        baseUrl = 'https://' + baseUrl;
+      }
+      // 容错处理：如果用户直接输入了完整路径，去掉后缀以匹配统一逻辑
+      if (baseUrl.endsWith('/chat/completions')) {
+        baseUrl = baseUrl.replace('/chat/completions', '');
+      }
+
       const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
       
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiConfig.apiKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
-          model: apiConfig.selectedModel,
+          model: apiConfig.selectedModel || 'gpt-3.5-turbo',
           messages: [
-            { role: 'system', content: systemPrompt },
-            ...newMessages
-          ]
+            { role: 'system', content: finalSystemPrompt },
+            ...contextMessages
+          ],
+          temperature: apiConfig.temperature ?? 0.7,
+          max_tokens: apiConfig.maxTokens ?? 2048
         })
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const errorMsg = { 
-          role: 'assistant' as const, 
-          content: `发送失败: ${errorData.error?.message || `请求失败 (${response.status})`}` 
-        };
-        if (activeChatContact) {
-          setChatHistories(prev => ({
-            ...prev,
-            [activeChatContact.id]: [...(prev[activeChatContact.id] || []), errorMsg]
-          }));
-        } else {
-          setChatMessages(prev => [...prev, errorMsg]);
-        }
-        return;
+        throw new Error(errorData.error?.message || `请求失败 (${response.status})`);
       }
 
       const data = await response.json();
-      if (data.choices?.[0]?.message) {
+      if (data.choices?.[0]?.message?.content) {
+        appendReply({ role: 'assistant', content: data.choices[0].message.content });
+        const finalMessages = [...newMessages, { role: 'assistant' as const, content: data.choices[0].message.content }];
         if (activeChatContact) {
-          setChatHistories(prev => ({
-            ...prev,
-            [activeChatContact.id]: [...(prev[activeChatContact.id] || []), data.choices[0].message]
-          }));
+          checkAndTriggerAutoSummary(activeChatContact.id, finalMessages);
         } else {
-          setChatMessages(prev => [...prev, data.choices[0].message]);
+          checkAndTriggerAutoSummary('ai_assistant', finalMessages);
         }
       } else {
         throw new Error('返回数据格式不正确，未找到回复内容。');
       }
     } catch (err: any) {
-      const errorMsg = { role: 'assistant' as const, content: `发送失败: ${err.message || '请检查 API 配置。'}` };
-      if (activeChatContact) {
-        setChatHistories(prev => ({
-          ...prev,
-          [activeChatContact.id]: [...(prev[activeChatContact.id] || []), errorMsg]
-        }));
-      } else {
-        setChatMessages(prev => [...prev, errorMsg]);
+      console.error('Send message error:', err);
+      let errorMsg = err.message || '请检查配置';
+      if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
+        errorMsg = '跨域拦截(CORS)或网络连接失败，请确认该API支持前端调用。';
       }
+      
+      // API call failed — fallback to simulated reply
+      const simReply = generateSimulatedReply(activeChatContact, userMsg);
+      appendReply({ role: 'assistant', content: `⚠️ API调用失败，已降级为模拟回复。\n\n${simReply}\n\n(错误: ${errorMsg})` });
     } finally {
       setIsAiLoading(false);
     }
@@ -1178,6 +2000,29 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('aiphone_chat_histories', JSON.stringify(chatHistories));
   }, [chatHistories]);
+
+  const [isChatSettingsOpen, setIsChatSettingsOpen] = useState(false);
+  const [chatSummaries, setChatSummaries] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('aiphone_chat_summaries');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const isSummarizingRef = React.useRef<Record<string, boolean>>({});
+  const lastSummaryTimeRef = React.useRef<Record<string, number>>({});
+  const [autoSummaryStatus, setAutoSummaryStatus] = useState<string>('');
+
+  const [chatSettings, setChatSettings] = useState<Record<string, { remark: string, background: string, isBlocked: boolean, isPinned: boolean, isAutoSummaryEnabled?: boolean, autoSummaryThreshold?: number, lastSummaryMessageIndex?: number }>>(() => {
+    const saved = localStorage.getItem('aiphone_chat_settings');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_chat_summaries', JSON.stringify(chatSummaries));
+  }, [chatSummaries]);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_chat_settings', JSON.stringify(chatSettings));
+  }, [chatSettings]);
 
   return (
     <div 
@@ -1439,7 +2284,7 @@ export default function App() {
                   <div className="app-icon-container flex justify-center"><AppIcon icon={Music} label="音乐" isEditingLayout={isEditingLayout} customIcon={customIcons['music']} /></div>
                   <div className="app-icon-container flex justify-center"><AppIcon icon={FileText} label="备忘录" isEditingLayout={isEditingLayout} customIcon={customIcons['notes']} /></div>
                   <div className="app-icon-container flex justify-center"><AppIcon icon={ImageIcon} label="相册" isEditingLayout={isEditingLayout} customIcon={customIcons['photos']} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={BookOpen} label="世界书" isEditingLayout={isEditingLayout} customIcon={customIcons['world']} /></div>
+                  <div className="app-icon-container flex justify-center"><AppIcon icon={BookOpen} label="世界书" onClick={() => setScreen('app-world')} isEditingLayout={isEditingLayout} customIcon={customIcons['world']} /></div>
                   <div className="app-icon-container flex justify-center"><AppIcon icon={Settings} label="设置" onClick={() => setScreen('app-settings')} isEditingLayout={isEditingLayout} customIcon={customIcons['settings']} /></div>
                   <div className="app-icon-container flex justify-center"><AppIcon icon={Palette} label="外观" onClick={() => setScreen('app-appearance')} isEditingLayout={isEditingLayout} customIcon={customIcons['appearance']} /></div>
                 </div>
@@ -1576,24 +2421,58 @@ export default function App() {
                           </div>
                         ) : (
                           <>
-                            <div onClick={() => {
-                              setActiveChatContact(null);
-                              setScreen('ai-chat');
-                            }}>
-                              <ChatListItem name="AI 助手" msg={chatMessages.length > 0 ? chatMessages[chatMessages.length-1].content : "你好！有什么我可以帮你的吗？"} time="10:24" unread={0} />
-                            </div>
-                            {contacts.map(contact => {
-                              const history = chatHistories[contact.id] || [];
-                              const lastMsg = history.length > 0 ? history[history.length - 1].content : "点击开始聊天";
-                              return (
-                                <div key={contact.id} onClick={() => {
-                                  setActiveChatContact(contact);
-                                  setScreen('ai-chat');
-                                }}>
-                                  <ChatListItem name={contact.chatName} msg={lastMsg} time="09:15" avatar={contact.avatar} />
-                                </div>
-                              );
-                            })}
+                            {/* Build sorted chat list: AI assistant + contacts, pinned first */}
+                            {(() => {
+                              const aiAssistantItem = {
+                                type: 'ai' as const,
+                                id: 'ai_assistant',
+                                isPinned: !!(chatSettings['ai_assistant']?.isPinned),
+                              };
+                              const contactItems = contacts.map(contact => ({
+                                type: 'contact' as const,
+                                id: contact.id,
+                                contact,
+                                isPinned: !!(chatSettings[contact.id]?.isPinned),
+                              }));
+                              const allItems = [aiAssistantItem, ...contactItems];
+                              // Sort: pinned items first, maintain original order within each group
+                              allItems.sort((a, b) => (a.isPinned === b.isPinned ? 0 : a.isPinned ? -1 : 1));
+
+                              return allItems.map(item => {
+                                if (item.type === 'ai') {
+                                  const aiSettings = chatSettings['ai_assistant'] || { remark: '', background: '', isBlocked: false, isPinned: false };
+                                  return (
+                                    <div key="ai_assistant" onClick={() => {
+                                      setActiveChatContact(null);
+                                      setIsChatSettingsOpen(false);
+                                      setScreen('ai-chat');
+                                    }} className={aiSettings.isPinned ? 'bg-zinc-50/80' : ''}>
+                                      <ChatListItem 
+                                        name={aiSettings.remark || "AI 助手"} 
+                                        msg={chatMessages.length > 0 ? chatMessages[chatMessages.length-1].content : "你好！有什么我可以帮你的吗？"} 
+                                        time="10:24" 
+                                        unread={0} 
+                                      />
+                                    </div>
+                                  );
+                                } else {
+                                  const contact = item.contact!;
+                                  const history = chatHistories[contact.id] || [];
+                                  const lastMsg = history.length > 0 ? history[history.length - 1].content : "点击开始聊天";
+                                  const contactSettings = chatSettings[contact.id] || { remark: '', background: '', isBlocked: false, isPinned: false };
+                                  const displayName = contactSettings.remark || contact.chatName;
+                                  return (
+                                    <div key={contact.id} onClick={() => {
+                                      setActiveChatContact(contact);
+                                      setIsChatSettingsOpen(false);
+                                      setScreen('ai-chat');
+                                    }} className={contactSettings.isPinned ? 'bg-zinc-50/80' : ''}>
+                                      <ChatListItem name={displayName} msg={lastMsg} time="09:15" avatar={contact.avatar} />
+                                    </div>
+                                  );
+                                }
+                              });
+                            })()}
                           </>
                         )}
                       </div>
@@ -1845,108 +2724,479 @@ export default function App() {
             />
           )}
 
-          {/* 8. AI Chat Screen */}
-          {screen === 'ai-chat' && (
-            <motion.div 
-              key="ai-chat"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-              className="absolute inset-0 bg-white flex flex-col z-50"
-            >
-              <StatusBar time={time} className="bg-white/80 backdrop-blur-md z-10" />
-              
-              <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
-                <div className="flex items-center gap-4">
-                    <button onClick={() => {
-                      setScreen('app-chat');
-                      setActiveChatContact(null);
-                    }} className="text-zinc-400 active:text-zinc-600">
-                      <ArrowLeft size={24} strokeWidth={1.5} />
-                    </button>
-                    <div className="flex items-center gap-3">
-                      {activeChatContact?.avatar && (
-                        <div className="w-8 h-8 rounded-full overflow-hidden border border-zinc-100">
-                          <img src={activeChatContact.avatar} className="w-full h-full object-cover" />
-                        </div>
-                      )}
-                      <div>
-                        <h2 className="text-[14px] font-bold text-zinc-700">{activeChatContact ? activeChatContact.chatName : 'AI 助手'}</h2>
-                        <p className="text-[9px] text-zinc-400 uppercase tracking-widest">{apiConfig.selectedModel || '未配置模型'}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <button onClick={() => {
-                    if (activeChatContact) {
-                      setChatHistories(prev => ({ ...prev, [activeChatContact.id]: [] }));
-                    } else {
-                      setChatMessages([]);
-                    }
-                  }} className="text-[10px] font-bold text-zinc-300 active:text-zinc-500">清空对话</button>
-                </div>
-  
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 bg-zinc-50/30">
-                  {((activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages)).length === 0 && (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center p-10 gap-4">
-                      <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-zinc-200">
-                        {activeChatContact?.avatar ? (
-                          <img src={activeChatContact.avatar} className="w-full h-full object-cover rounded-2xl" />
-                        ) : (
-                          <Sparkles size={32} strokeWidth={1} />
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-400 leading-relaxed">
-                        {apiConfig.selectedModel ? (activeChatContact ? `已连接到 ${activeChatContact.chatName}，开始聊天吧！` : `已连接到 ${apiConfig.selectedModel}，开始聊天吧！`) : '请先在“设置”中配置 API 信息以开始对话。'}
-                      </p>
-                    </div>
-                  )}
-                  {(activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages).map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] p-4 rounded-2xl text-sm leading-relaxed ${
-                      msg.role === 'user' 
-                        ? 'bg-white/80 backdrop-blur-md text-zinc-700 rounded-tr-none shadow-sm border border-white' 
-                        : 'bg-white text-zinc-500 rounded-tl-none shadow-sm'
-                    }`}>
-                      {msg.content}
-                    </div>
-                  </div>
-                ))}
-                {isAiLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm flex gap-1">
-                      <div className="w-1.5 h-1.5 bg-zinc-200 rounded-full animate-bounce" />
-                      <div className="w-1.5 h-1.5 bg-zinc-200 rounded-full animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-1.5 h-1.5 bg-zinc-200 rounded-full animate-bounce [animation-delay:0.4s]" />
-                    </div>
-                  </div>
-                )}
-              </div>
+          {/* 7.8 World Book List */}
+          {screen === 'app-world' && (
+            <WorldBookListScreen 
+              onBack={() => setScreen('home')}
+              time={time}
+              worldBooks={worldBooks}
+              setWorldBooks={setWorldBooks}
+              folders={worldBookFolders}
+              setFolders={setWorldBookFolders}
+              onEdit={(wb: any) => {
+                setEditingWorldBook(wb);
+                setScreen('app-world-edit');
+              }}
+              onAdd={() => {
+                setEditingWorldBook(null);
+                setScreen('app-world-edit');
+              }}
+            />
+          )}
 
-              <div className="p-6 bg-white/80 backdrop-blur-xl border-t border-zinc-100 pb-10">
+          {/* 7.9 World Book Edit */}
+          {screen === 'app-world-edit' && (
+            <WorldBookEditScreen 
+              onBack={() => {
+                setScreen('app-world');
+                setEditingWorldBook(null);
+              }}
+              time={time}
+              initialData={editingWorldBook}
+              phonePersonas={phonePersonas}
+              folders={worldBookFolders}
+              onSave={(wb: any) => {
+                setWorldBooks(prev => {
+                  let next = [...prev];
+                  const existingIndex = next.findIndex(item => item.id === wb.id);
+                  if (existingIndex >= 0) {
+                    next[existingIndex] = wb;
+                  } else {
+                    next.push(wb);
+                  }
+                  
+                  // If saving an active global world book, deactivate other globals
+                  if (wb.isActive && wb.scope === 'global') {
+                    next = next.map(item => 
+                      (item.id !== wb.id && item.scope === 'global') ? { ...item, isActive: false } : item
+                    );
+                  }
+                  return next;
+                });
+                setScreen('app-world');
+                setEditingWorldBook(null);
+              }}
+            />
+          )}
+
+        </AnimatePresence>
+
+        {/* 8. AI Chat Screen - 放在 AnimatePresence 外部避免白屏 */}
+        {screen === 'ai-chat' && (() => {
+          const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
+          const currentChatSettings = chatSettings[currentChatId] || { remark: '', background: '', isBlocked: false };
+          const displayChatName = currentChatSettings.remark || (activeChatContact ? activeChatContact.chatName : 'AI 助手');
+
+          return (
+          <div className="absolute inset-0 bg-white flex flex-col z-50">
+            <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
+              <button onClick={() => {
+                setScreen('app-chat');
+                setActiveChatContact(null);
+              }} className="text-zinc-400">
+                ← 返回
+              </button>
+              <h2 className="text-[16px] font-bold text-zinc-800">
+                {displayChatName}
+              </h2>
+              <button onClick={() => setIsChatSettingsOpen(true)} className="text-zinc-500 hover:text-[#07C160] active:text-[#07C160] transition-colors">
+                <SlidersHorizontal size={20} strokeWidth={1.5} />
+              </button>
+            </div>
+
+            <div 
+              className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 bg-zinc-50 relative"
+              style={{ background: currentChatSettings.background || undefined }}
+            >
+              <AnimatePresence>
+                {autoSummaryStatus && isSummarizingRef.current[currentChatId] && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 bg-zinc-800/80 backdrop-blur text-white rounded-full text-[10px] font-bold shadow-lg flex items-center gap-2"
+                  >
+                    <Sparkles size={12} className="animate-pulse text-yellow-300" />
+                    {autoSummaryStatus}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {(activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages).map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${
+                    msg.role === 'user' 
+                      ? 'bg-black text-white rounded-tr-none' 
+                      : 'bg-white text-zinc-700 rounded-tl-none shadow'
+                  }`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+              {isAiLoading && <div className="flex justify-start"><div className="bg-white p-4 rounded-2xl">正在输入...</div></div>}
+              {(activeChatContact ? (chatHistories[activeChatContact.id] || []).length : chatMessages.length) === 0 && (
+                <div className="text-center text-zinc-400 py-20">暂无消息，开始聊天吧</div>
+              )}
+            </div>
+
+            <div className="p-6 bg-white border-t border-zinc-100 pb-10">
+              {currentChatSettings.isBlocked ? (
+                <div className="flex items-center justify-center p-4 bg-zinc-50 rounded-2xl text-zinc-400 text-sm border border-zinc-100">
+                  您已被拉黑
+                </div>
+              ) : (
                 <div className="flex items-center gap-3">
-                  <GlassCard className="flex-1 p-4" opacity="0.9" blur="10px">
-                    <input 
-                      type="text" 
-                      placeholder="输入消息..."
-                      className="w-full bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && sendAiMessage()}
-                    />
-                  </GlassCard>
+                  <input 
+                    type="text" 
+                    placeholder="输入消息..."
+                    className="flex-1 bg-zinc-50 p-4 rounded-2xl text-sm outline-none"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && sendAiMessage()}
+                  />
                   <button 
                     onClick={sendAiMessage}
                     disabled={isAiLoading || !chatInput.trim()}
-                    className="w-12 h-12 bg-white shadow-sm border border-zinc-100 rounded-2xl flex items-center justify-center text-zinc-400 active:scale-90 transition-all disabled:opacity-20"
+                    className="w-12 h-12 bg-[#07C160] text-white rounded-2xl flex items-center justify-center disabled:opacity-50"
                   >
-                    <Send size={20} strokeWidth={1.5} />
+                    发送
                   </button>
                 </div>
+              )}
+            </div>
+
+            {isChatSettingsOpen && (() => {
+              const bgInputRef = React.createRef<HTMLInputElement>();
+              return (
+              <div className="absolute inset-0 z-50 bg-zinc-50 flex flex-col">
+                {/* Full-screen settings top bar */}
+                <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
+                  <button onClick={() => setIsChatSettingsOpen(false)} className="text-zinc-500 text-sm font-bold active:text-zinc-800 transition-colors">
+                    取消
+                  </button>
+                  <h3 className="text-[16px] font-bold text-zinc-800">聊天设置</h3>
+                  <button 
+                    onClick={() => setIsChatSettingsOpen(false)}
+                    className="flex items-center gap-1 px-4 py-1.5 bg-zinc-800 text-white rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
+                  >
+                    <Check size={14} />
+                    保存
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+                  {/* Remark */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">备注名</span>
+                    <div className="bg-white rounded-2xl border border-zinc-100 p-4">
+                      <input
+                        type="text"
+                        className="w-full bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
+                        placeholder="添加备注名"
+                        value={currentChatSettings.remark}
+                        onChange={e => {
+                          setChatSettings(prev => ({
+                            ...prev,
+                            [currentChatId]: { ...currentChatSettings, remark: e.target.value }
+                          }));
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Background */}
+                  <div className="flex flex-col gap-3">
+                    <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">聊天背景</span>
+                    
+                    {/* Background preview */}
+                    <div 
+                      className="w-full h-24 rounded-2xl border border-zinc-100 overflow-hidden flex items-center justify-center"
+                      style={{ 
+                        background: currentChatSettings.background || '#fafafa',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }}
+                    >
+                      {!currentChatSettings.background && <span className="text-xs text-zinc-400">当前背景预览</span>}
+                    </div>
+
+                    {/* Color presets */}
+                    <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+                      {[
+                        { id: 'default', color: '' },
+                        { id: 'bg1', color: '#F2F2F2' },
+                        { id: 'bg2', color: '#E5F2FA' },
+                        { id: 'bg3', color: '#F0F4E8' },
+                        { id: 'bg4', color: '#FFF3E0' },
+                        { id: 'bg5', color: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' },
+                        { id: 'bg6', color: 'linear-gradient(120deg, #e0c3fc 0%, #8ec5fc 100%)' },
+                      ].map(bg => (
+                        <button
+                          key={bg.id}
+                          className={`w-12 h-12 rounded-xl flex-shrink-0 border-2 transition-all ${currentChatSettings.background === bg.color ? 'border-[#07C160] scale-110 shadow-md' : 'border-zinc-200/50'}`}
+                          style={{ background: bg.color || '#fafafa' }}
+                          onClick={() => {
+                            setChatSettings(prev => ({
+                              ...prev,
+                              [currentChatId]: { ...currentChatSettings, background: bg.color }
+                            }));
+                          }}
+                        >
+                          {!bg.color && <span className="text-[10px] text-zinc-400 flex items-center justify-center h-full">默认</span>}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Upload image button */}
+                    <input 
+                      type="file" 
+                      ref={bgInputRef} 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            const dataUrl = reader.result as string;
+                            setChatSettings(prev => ({
+                              ...prev,
+                              [currentChatId]: { ...currentChatSettings, background: `url(${dataUrl}) center/cover no-repeat` }
+                            }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                    <button 
+                      onClick={() => bgInputRef.current?.click()}
+                      className="flex items-center justify-center gap-2 w-full bg-white p-4 rounded-2xl border border-zinc-100 text-zinc-600 text-sm font-bold active:bg-zinc-50 transition-colors"
+                    >
+                      <Upload size={16} strokeWidth={1.5} />
+                      从相册选择背景图片
+                    </button>
+                  </div>
+
+                  {/* Pin Toggle */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">聊天管理</span>
+                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-zinc-100">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-zinc-800">置顶聊天</span>
+                        <span className="text-[10px] text-zinc-500 mt-0.5">置顶后将显示在消息列表最上方</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setChatSettings(prev => ({
+                            ...prev,
+                            [currentChatId]: { ...currentChatSettings, isPinned: !currentChatSettings.isPinned }
+                          }));
+                        }}
+                        className={`w-11 h-6 rounded-full transition-colors relative ${currentChatSettings.isPinned ? 'bg-[#07C160]' : 'bg-zinc-200'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${currentChatSettings.isPinned ? 'left-6' : 'left-1'}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Long-term Memory Summary */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase">长期记忆摘要</span>
+                      {chatSummaries[currentChatId] && (
+                        <button 
+                          onClick={() => {
+                            if (window.confirm('确定要清除当前的记忆总结吗？')) {
+                              setChatSummaries(prev => {
+                                const next = { ...prev };
+                                delete next[currentChatId];
+                                return next;
+                              });
+                            }
+                          }}
+                          className="text-[10px] font-bold text-red-400 hover:text-red-500 transition-colors flex items-center gap-1"
+                        >
+                          <Delete size={12} />
+                          清除总结
+                        </button>
+                      )}
+                    </div>
+                    <div className="bg-white rounded-2xl border border-zinc-100 p-4">
+                      <textarea
+                        rows={4}
+                        className="w-full bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300 resize-none leading-relaxed"
+                        placeholder="在此输入聊天总结/长期记忆摘要，发送消息时会自动注入系统消息中..."
+                        value={chatSummaries[currentChatId] || ''}
+                        onChange={e => {
+                          setChatSummaries(prev => ({
+                            ...prev,
+                            [currentChatId]: e.target.value
+                          }));
+                        }}
+                      />
+                      {chatSummaries[currentChatId] && (
+                        <div className="flex justify-end mt-2 pt-2 border-t border-zinc-50">
+                          <button 
+                            onClick={() => {
+                              alert('修改已保存');
+                            }}
+                            className="px-3 py-1 bg-zinc-100 text-zinc-600 rounded-full text-[10px] font-bold hover:bg-zinc-200 transition-colors"
+                          >
+                            保存修改
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-zinc-100">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-zinc-800">开启自动总结</span>
+                        <span className="text-[10px] text-zinc-500 mt-0.5">累积新消息后自动生成</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setChatSettings(prev => ({
+                            ...prev,
+                            [currentChatId]: { 
+                              ...currentChatSettings, 
+                              isAutoSummaryEnabled: !currentChatSettings.isAutoSummaryEnabled,
+                              autoSummaryThreshold: currentChatSettings.autoSummaryThreshold || 30
+                            }
+                          }));
+                        }}
+                        className={`w-11 h-6 rounded-full transition-colors relative ${currentChatSettings.isAutoSummaryEnabled ? 'bg-[#07C160]' : 'bg-zinc-200'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${currentChatSettings.isAutoSummaryEnabled ? 'left-6' : 'left-1'}`} />
+                      </button>
+                    </div>
+
+                    {currentChatSettings.isAutoSummaryEnabled && (
+                      <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-zinc-100">
+                        <span className="text-sm font-bold text-zinc-800">自动总结阈值(条)</span>
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="number" 
+                            min="10" 
+                            max="200" 
+                            className="w-16 text-center bg-zinc-50 rounded-lg p-1 text-sm outline-none border border-transparent focus:border-zinc-300 transition-colors"
+                            value={currentChatSettings.autoSummaryThreshold || 30}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 30;
+                              setChatSettings(prev => ({
+                                ...prev,
+                                [currentChatId]: { ...currentChatSettings, autoSummaryThreshold: val }
+                              }));
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={async () => {
+                        const history = currentChatId === 'ai_assistant' ? chatMessages : (chatHistories[currentChatId] || []);
+                        if (history.length === 0) {
+                          alert('没有可总结的消息');
+                          return;
+                        }
+                        if (!apiConfig.baseUrl || !apiConfig.apiKey) {
+                          alert('总结失败，请先在设置中配置API');
+                          return;
+                        }
+                        
+                        const historyText = history.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
+                        const summaryPrompt = `请总结以下对话中用户与AI角色的互动，提取关键信息、角色关系、重要事件、用户偏好等。总结要简洁清晰，不超过200字。\n\n对话历史：\n${historyText}`;
+
+                        try {
+                          let baseUrl = apiConfig.baseUrl.trim().replace(/\/+$/, '');
+                          if (!/^https?:\/\//i.test(baseUrl)) baseUrl = 'https://' + baseUrl;
+                          if (baseUrl.endsWith('/chat/completions')) baseUrl = baseUrl.replace('/chat/completions', '');
+                          const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
+
+                          const resp = await fetch(url, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${apiConfig.apiKey}`,
+                            },
+                            body: JSON.stringify({
+                              model: apiConfig.selectedModel || 'gpt-3.5-turbo',
+                              messages: [
+                                { role: 'system', content: '你是一个对话总结助手，请根据用户提供的对话历史生成简洁的总结。' },
+                                { role: 'user', content: summaryPrompt }
+                              ],
+                              temperature: 0.3,
+                              max_tokens: 500
+                            })
+                          });
+                          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                          const data = await resp.json();
+                          const summary = data.choices?.[0]?.message?.content;
+                          if (summary) {
+                            setChatSummaries(prev => ({ ...prev, [currentChatId]: summary }));
+                            alert('总结已生成');
+                          } else {
+                            throw new Error('返回数据中无总结内容');
+                          }
+                        } catch (err: any) {
+                          console.error('Generate summary error:', err);
+                          alert('总结失败，请检查API配置');
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 w-full bg-zinc-800 text-white p-3 rounded-2xl text-sm font-bold active:scale-[0.98] transition-all shadow-sm"
+                    >
+                      <Sparkles size={16} />
+                      生成记忆总结
+                    </button>
+                    <p className="text-[9px] text-zinc-400 px-1">该摘要会作为系统消息的一部分发送给AI，帮助AI了解之前的对话内容。留空则不注入。点击上方按钮可调用AI自动生成总结（将覆盖现有内容）。</p>
+                  </div>
+
+                  {/* Block Toggle */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">隐私</span>
+                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-zinc-100">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-zinc-800">加入黑名单</span>
+                        <span className="text-[10px] text-zinc-500 mt-0.5">拉黑后将无法发送消息</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setChatSettings(prev => ({
+                            ...prev,
+                            [currentChatId]: { ...currentChatSettings, isBlocked: !currentChatSettings.isBlocked }
+                          }));
+                        }}
+                        className={`w-11 h-6 rounded-full transition-colors relative ${currentChatSettings.isBlocked ? 'bg-[#07C160]' : 'bg-zinc-200'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${currentChatSettings.isBlocked ? 'left-6' : 'left-1'}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Danger Zone */}
+                  <div className="flex flex-col gap-2 mt-4">
+                    <span className="text-[10px] font-bold text-red-400 tracking-widest uppercase px-1">危险操作</span>
+                    <button 
+                      onClick={() => {
+                        if (window.confirm(`确定要清空与 ${displayChatName} 的聊天记录吗？此操作不可撤销。`)) {
+                          if (currentChatId === 'ai_assistant') {
+                            setChatMessages([]);
+                          } else {
+                            setChatHistories(prev => ({ ...prev, [currentChatId]: [] }));
+                          }
+                          setIsChatSettingsOpen(false);
+                        }
+                      }}
+                      className="w-full bg-white text-red-500 font-bold p-4 rounded-2xl border border-red-100 active:bg-red-50 transition-colors"
+                    >
+                      清空聊天记录
+                    </button>
+                  </div>
+                </div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              );
+            })()}
+          </div>
+          );
+        })()}
       </div>
 
       <style>{`
