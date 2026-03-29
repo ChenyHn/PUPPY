@@ -54,7 +54,9 @@ import {
   FileUp,
   Filter,
   SlidersHorizontal,
-  Upload
+  Upload,
+  Bookmark,
+  Bot
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -197,6 +199,42 @@ function generateSimulatedReply(persona: Persona | null, userMessage: string): s
   }
 
   return responses[Math.floor(Math.random() * responses.length)];
+}
+
+function splitTextIntoMessages(text: string): string[] {
+  const regex = /([^。！？!?\n~]+[。！？!?\n~]*)/g;
+  const matches = text.match(regex);
+  if (!matches) return [text.trim()];
+
+  const result: string[] = [];
+  let currentMsg = '';
+
+  for (const match of matches) {
+    const trimmed = match.trim();
+    if (!trimmed) continue;
+    
+    currentMsg += (currentMsg ? ' ' : '') + trimmed;
+    
+    if (currentMsg.length > 15 || /[。！？!?\n~]$/.test(match.trimEnd())) {
+      result.push(currentMsg);
+      currentMsg = '';
+    }
+  }
+
+  if (currentMsg.trim()) {
+    result.push(currentMsg.trim());
+  }
+
+  const finalMessages: string[] = [];
+  for (const msg of result) {
+    if (finalMessages.length > 0 && msg.length < 4) {
+      finalMessages[finalMessages.length - 1] += ' ' + msg;
+    } else {
+      finalMessages.push(msg);
+    }
+  }
+
+  return finalMessages.length > 0 ? finalMessages : [text.trim()];
 }
 
 // --- Components ---
@@ -468,7 +506,7 @@ export default function App() {
 
       try {
         const historyText = currentHistory.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
-        const summaryPrompt = `请总结以下对话中用户与AI角色的互动，提取关键信息、角色关系、重要事件、用户偏好等。总结要简洁清晰，不超过200字。\n\n对话历史：\n${historyText}`;
+        const summaryPrompt = `根据以下对话，生成一段总结（200字以内），并提取3-5个关键词（每个关键词1-2个词）。输出格式：{"title": "...", "content": "...", "keywords": ["词1","词2"]}\n\n对话历史：\n${historyText}`;
 
         const summaryBaseUrl = normalizeBaseUrl(apiConfig.baseUrl);
         const url = `${summaryBaseUrl}/chat/completions`;
@@ -488,22 +526,41 @@ export default function App() {
           body: JSON.stringify({
             model: apiConfig.selectedModel || 'gpt-3.5-turbo',
             messages: [
-              { role: 'system', content: '你是一个对话总结助手，请根据用户提供的对话历史生成简洁的总结。' },
+              { role: 'system', content: '你是一个对话总结助手，必须只输出要求的JSON格式。' },
               { role: 'user', content: summaryPrompt }
             ],
             temperature: 0.3,
-            max_tokens: 500,
-            stream: false
+            max_tokens: 800,
+            stream: false,
+            response_format: { type: "json_object" }
           })
         });
         clearTimeout(timeoutId);
 
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
-        const summary = data.choices?.[0]?.message?.content;
+        const rawContent = data.choices?.[0]?.message?.content;
         
-        if (summary) {
-          setChatSummaries(prev => ({ ...prev, [chatId]: summary }));
+        if (rawContent) {
+          try {
+            const parsed = JSON.parse(rawContent);
+            if (parsed.title && parsed.content && Array.isArray(parsed.keywords)) {
+              const newMemory = {
+                id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+                title: parsed.title,
+                content: parsed.content,
+                keywords: parsed.keywords,
+                createdAt: Date.now(),
+                isPinned: false
+              };
+              setChatMemories(prev => ({
+                ...prev,
+                [chatId]: [...(prev[chatId] || []), newMemory]
+              }));
+            }
+          } catch (e) {
+            console.error('Failed to parse auto summary JSON:', e);
+          }
           setChatSettings(prev => ({
             ...prev,
             [chatId]: { ...prev[chatId], lastSummaryMessageIndex: currentHistory.length }
@@ -519,37 +576,108 @@ export default function App() {
     }
   };
 
-  const sendAiMessage = async () => {
+  const addUserMessage = () => {
     if (!chatInput.trim()) return;
     
     const userMsg = chatInput.trim();
     const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
     const newMessages = [...currentMessages, { role: 'user' as const, content: userMsg }];
-    
-    // Helper to append a reply message
-    const appendReply = (msg: {role: 'user' | 'assistant', content: string}) => {
-      if (activeChatContact) {
-        setChatHistories(prev => ({
-          ...prev,
-          [activeChatContact.id]: [...(prev[activeChatContact.id] || []), msg]
-        }));
-      } else {
-        setChatMessages(prev => [...prev, msg]);
-      }
-    };
 
-    // Save user message
     if (activeChatContact) {
       setChatHistories(prev => ({
         ...prev,
         [activeChatContact.id]: newMessages
       }));
-      checkAndTriggerAutoSummary(activeChatContact.id, newMessages);
     } else {
       setChatMessages(newMessages);
-      checkAndTriggerAutoSummary('ai_assistant', newMessages);
     }
     setChatInput('');
+  };
+
+  const generateAiReply = async (regenerateIndex?: number) => {
+    const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
+    
+    // Determine the messages to send to the API
+    let messagesToSend = currentMessages;
+    let isRegenerating = false;
+
+    if (regenerateIndex !== undefined && regenerateIndex >= 0 && regenerateIndex < currentMessages.length) {
+      // If regenerating, use messages up to (but not including) the message to regenerate
+      messagesToSend = currentMessages.slice(0, regenerateIndex);
+      isRegenerating = true;
+    }
+
+    if (messagesToSend.length === 0) return; // Nothing to reply to
+    
+    // Helper to sequentially append split reply messages
+    const appendMessagesSequentially = async (texts: string[], isError: boolean = false) => {
+      let insertBaseIndex = isRegenerating && regenerateIndex !== undefined ? regenerateIndex : -1;
+      
+      let currentLocalMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
+
+      // Immediately remove the regenerated message from UI to simulate clearing it
+      if (isRegenerating && insertBaseIndex !== -1) {
+          if (activeChatContact) {
+              setChatHistories(prev => {
+                  const hist = prev[activeChatContact.id] || [];
+                  const newHist = [...hist.slice(0, insertBaseIndex), ...hist.slice(insertBaseIndex + 1)];
+                  currentLocalMessages = newHist;
+                  return { ...prev, [activeChatContact.id]: newHist };
+              });
+          } else {
+              setChatMessages(prev => {
+                  const newHist = [...prev.slice(0, insertBaseIndex), ...prev.slice(insertBaseIndex + 1)];
+                  currentLocalMessages = newHist;
+                  return newHist;
+              });
+          }
+      }
+
+      let finalMessages: any[] = currentLocalMessages;
+
+      for (let j = 0; j < texts.length; j++) {
+        const text = texts[j];
+        if (j > 0) {
+            setIsAiLoading(true);
+            await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
+        }
+        
+        const newMsg: {role: 'user'|'assistant', content: string} = { role: 'assistant', content: text };
+        
+        if (activeChatContact) {
+            const currentContactId = activeChatContact.id;
+            setChatHistories(prev => {
+                const hist = prev[currentContactId] || [];
+                let newHist;
+                if (isRegenerating && insertBaseIndex !== -1) {
+                    const targetIndex = Math.min(insertBaseIndex + j, hist.length);
+                    newHist = [...hist.slice(0, targetIndex), newMsg, ...hist.slice(targetIndex)];
+                } else {
+                    newHist = [...hist, newMsg];
+                }
+                finalMessages = newHist;
+                return { ...prev, [currentContactId]: newHist };
+            });
+        } else {
+            setChatMessages(prev => {
+                let newHist;
+                if (isRegenerating && insertBaseIndex !== -1) {
+                    const targetIndex = Math.min(insertBaseIndex + j, prev.length);
+                    newHist = [...prev.slice(0, targetIndex), newMsg, ...prev.slice(targetIndex)];
+                } else {
+                    newHist = [...prev, newMsg];
+                }
+                finalMessages = newHist;
+                return newHist;
+            });
+        }
+      }
+      return finalMessages;
+    };
+
+    // Get the last user message to use for simulated reply if needed
+    const lastUserMessageObj = [...messagesToSend].reverse().find(m => m.role === 'user');
+    const userMsgForSim = lastUserMessageObj ? lastUserMessageObj.content : '';
 
     // Check if API config is valid; if not, use simulated reply
     const isApiValid = apiConfig.baseUrl && apiConfig.baseUrl.trim() !== '';
@@ -557,8 +685,8 @@ export default function App() {
       setIsAiLoading(true);
       // Simulate a short delay for realism
       await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
-      const simReply = generateSimulatedReply(activeChatContact, userMsg);
-      appendReply({ role: 'assistant', content: simReply });
+      const simReply = generateSimulatedReply(activeChatContact, userMsgForSim);
+      await appendMessagesSequentially(splitTextIntoMessages(simReply));
       setIsAiLoading(false);
       return;
     }
@@ -594,13 +722,49 @@ export default function App() {
 
     // Inject long-term memory summary if available
     const currentSummaryChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
-    const summaryText = chatSummaries[currentSummaryChatId];
-    const finalSystemPrompt = summaryText 
-      ? `${systemPrompt}\n\n【长期记忆摘要】${summaryText}`
+    const currentMemories = chatMemories[currentSummaryChatId] || [];
+    
+    // Extract keywords from the last user message for memory retrieval
+    const stopWords = ['的', '了', '和', '是', '就', '都', '而', '及', '与', '着', '或', '一个', '没有', '我们', '你们', '他们', '她', '他', '它'];
+    const words = userMsgForSim.match(/[\w\u4e00-\u9fa5]+/g) || [];
+    const userKeywords = new Set(words.filter(w => !stopWords.includes(w) && w.length > 1));
+
+    // Calculate matches
+    const memoryScores = currentMemories.map(m => {
+      let score = 0;
+      if (m.isPinned) score += 1000; // prioritize pinned
+      const memoryKeywords = m.keywords || [];
+      const intersection = memoryKeywords.filter((k: string) => Array.from(userKeywords).some((uk: string) => k.includes(uk) || uk.includes(k)));
+      score += intersection.length;
+      return { memory: m, score };
+    });
+
+    // Sort by score desc, then by createdAt desc
+    memoryScores.sort((a, b) => b.score - a.score || b.memory.createdAt - a.memory.createdAt);
+    
+    // Select top memories: pinned (max 1) + top 2 matched
+    let selectedMemories = [];
+    const pinnedMemories = memoryScores.filter(ms => ms.memory.isPinned).map(ms => ms.memory);
+    if (pinnedMemories.length > 0) {
+      selectedMemories.push(pinnedMemories[0]);
+    }
+    const unpinnedMatches = memoryScores.filter(ms => !ms.memory.isPinned && ms.score > 0).map(ms => ms.memory);
+    selectedMemories = [...selectedMemories, ...unpinnedMatches.slice(0, 2)];
+
+    // If no matches and no pinned, get the most recent one
+    if (selectedMemories.length === 0 && currentMemories.length > 0) {
+      const sortedByDate = [...currentMemories].sort((a, b) => b.createdAt - a.createdAt);
+      selectedMemories.push(sortedByDate[0]);
+    }
+
+    const memoryContext = selectedMemories.map(m => `【记忆 - ${m.title}】${m.content}`).join('\n');
+    
+    const finalSystemPrompt = memoryContext 
+      ? `${systemPrompt}\n\n${memoryContext}`
       : systemPrompt;
 
     // Limit context to last N messages (configurable)
-    const contextMessages = newMessages.slice(-(apiConfig.contextMessageCount || 10));
+    const contextMessages = messagesToSend.slice(-(apiConfig.contextMessageCount || 10));
 
     // Build headers
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -642,8 +806,11 @@ export default function App() {
 
       const data = await response.json();
       if (data.choices?.[0]?.message?.content) {
-        appendReply({ role: 'assistant', content: data.choices[0].message.content });
-        const finalMessages = [...newMessages, { role: 'assistant' as const, content: data.choices[0].message.content }];
+        const fullContent = data.choices[0].message.content;
+        const messagesToAppend = splitTextIntoMessages(fullContent);
+        
+        const finalMessages = await appendMessagesSequentially(messagesToAppend);
+
         if (activeChatContact) {
           checkAndTriggerAutoSummary(activeChatContact.id, finalMessages);
         } else {
@@ -666,8 +833,9 @@ export default function App() {
       setTimeout(() => setChatErrorToast(''), 3000);
       
       // API call failed — fallback to simulated reply
-      const simReply = generateSimulatedReply(activeChatContact, userMsg);
-      appendReply({ role: 'assistant', content: `⚠️ API调用失败，已降级为模拟回复。\n\n${simReply}\n\n(错误: ${errorMsg})` });
+      const simReply = generateSimulatedReply(activeChatContact, userMsgForSim);
+      const fallbackMsg = `⚠️ API调用失败，已降级为模拟回复。\n\n${simReply}\n\n(错误: ${errorMsg})`;
+      await appendMessagesSequentially(splitTextIntoMessages(fallbackMsg), true);
     } finally {
       setIsAiLoading(false);
     }
@@ -744,14 +912,39 @@ export default function App() {
   }, [chatHistories]);
 
   const [isChatSettingsOpen, setIsChatSettingsOpen] = useState(false);
-  const [chatSummaries, setChatSummaries] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('aiphone_chat_summaries');
-    return saved ? JSON.parse(saved) : {};
+  const [chatMemories, setChatMemories] = useState<Record<string, any[]>>(() => {
+    const saved = localStorage.getItem('aiphone_chat_memories');
+    if (saved) return JSON.parse(saved);
+    
+    // Migration from old summaries
+    const oldSummariesStr = localStorage.getItem('aiphone_chat_summaries');
+    if (oldSummariesStr) {
+      try {
+        const oldSummaries = JSON.parse(oldSummariesStr);
+        const migrated: Record<string, any[]> = {};
+        for (const [chatId, text] of Object.entries(oldSummaries)) {
+          if (typeof text === 'string' && text.trim()) {
+            migrated[chatId] = [{
+              id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+              title: '旧记忆',
+              content: text,
+              keywords: [],
+              createdAt: Date.now(),
+              isPinned: false
+            }];
+          }
+        }
+        localStorage.removeItem('aiphone_chat_summaries');
+        return migrated;
+      } catch (e) {}
+    }
+    return {};
   });
 
   const isSummarizingRef = React.useRef<Record<string, boolean>>({});
   const lastSummaryTimeRef = React.useRef<Record<string, number>>({});
   const [autoSummaryStatus, setAutoSummaryStatus] = useState<string>('');
+  const [editingMemory, setEditingMemory] = useState<{id?: string, title: string, content: string} | null>(null);
 
   const [chatSettings, setChatSettings] = useState<Record<string, { remark: string, background: string, isBlocked: boolean, isPinned: boolean, isAutoSummaryEnabled?: boolean, autoSummaryThreshold?: number, lastSummaryMessageIndex?: number }>>(() => {
     const saved = localStorage.getItem('aiphone_chat_settings');
@@ -759,8 +952,8 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('aiphone_chat_summaries', JSON.stringify(chatSummaries));
-  }, [chatSummaries]);
+    localStorage.setItem('aiphone_chat_memories', JSON.stringify(chatMemories));
+  }, [chatMemories]);
 
   useEffect(() => {
     localStorage.setItem('aiphone_chat_settings', JSON.stringify(chatSettings));
@@ -1574,41 +1767,63 @@ export default function App() {
                 )}
               </AnimatePresence>
               {(activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages).map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}>
+                  <div className={`max-w-[80%] p-4 rounded-2xl text-sm relative ${
                     msg.role === 'user' 
                       ? 'bg-black text-white rounded-tr-none' 
                       : 'bg-white text-zinc-700 rounded-tl-none shadow'
                   }`}>
                     {msg.content}
+                    {msg.role === 'assistant' && !isAiLoading && (
+                      <button 
+                        onClick={() => generateAiReply(i)}
+                        className="absolute -right-8 bottom-0 p-1.5 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-all"
+                        title="重新生成"
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
-              {isAiLoading && <div className="flex justify-start"><div className="bg-white p-4 rounded-2xl">正在输入...</div></div>}
+              {isAiLoading && <div className="flex justify-start"><div className="bg-white p-4 rounded-2xl flex items-center gap-2"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 正在生成回复...</div></div>}
               {(activeChatContact ? (chatHistories[activeChatContact.id] || []).length : chatMessages.length) === 0 && (
                 <div className="text-center text-zinc-400 py-20">暂无消息，开始聊天吧</div>
               )}
             </div>
 
-            <div className="p-6 bg-white border-t border-zinc-100 pb-10">
+            <div className="p-4 bg-white border-t border-zinc-100 pb-8 flex flex-col gap-3">
               {currentChatSettings.isBlocked ? (
                 <div className="flex items-center justify-center p-4 bg-zinc-50 rounded-2xl text-zinc-400 text-sm border border-zinc-100">
                   您已被拉黑
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <input 
                     type="text" 
                     placeholder="输入消息..."
-                    className="flex-1 bg-zinc-50 p-4 rounded-2xl text-sm outline-none border border-zinc-200 focus:border-zinc-400 transition-colors"
+                    className="flex-1 bg-zinc-50 p-4 rounded-2xl text-sm outline-none border border-zinc-200 focus:border-zinc-400 transition-colors h-12"
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && sendAiMessage()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        addUserMessage();
+                      }
+                    }}
                   />
+                  <button
+                    onClick={() => generateAiReply()}
+                    disabled={isAiLoading || ((activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages).length === 0)}
+                    className="w-12 h-12 bg-zinc-100 text-zinc-600 rounded-2xl flex items-center justify-center disabled:opacity-50 hover:bg-zinc-200 active:bg-zinc-300 active:scale-95 transition-all flex-shrink-0"
+                    title="生成AI回复"
+                  >
+                    <Bot size={20} />
+                  </button>
                   <button 
-                    onClick={sendAiMessage}
-                    disabled={isAiLoading || !chatInput.trim()}
-                    className="w-12 h-12 bg-[#333333] text-white rounded-2xl flex items-center justify-center disabled:opacity-50 active:bg-[#555555] hover:bg-[#444444] active:scale-95 transition-all dark:bg-zinc-300 dark:text-zinc-900 dark:hover:bg-zinc-400 dark:active:bg-zinc-500"
+                    onClick={addUserMessage}
+                    disabled={!chatInput.trim()}
+                    className="w-12 h-12 bg-[#1E1E1E] text-white rounded-2xl flex items-center justify-center disabled:opacity-50 active:bg-[#333333] hover:bg-[#2c2c2c] active:scale-95 transition-all dark:bg-zinc-300 dark:text-zinc-900 dark:hover:bg-zinc-400 dark:active:bg-zinc-500 flex-shrink-0 shadow-sm"
                   >
                     <Send size={18} />
                   </button>
@@ -1620,6 +1835,131 @@ export default function App() {
               const bgInputRef = React.createRef<HTMLInputElement>();
               return (
               <div className="absolute inset-0 z-50 bg-zinc-50 flex flex-col">
+                {/* Memory Edit Modal */}
+                {editingMemory !== null && (
+                  <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
+                    <div className="bg-white rounded-[24px] w-full max-w-[340px] flex flex-col overflow-hidden shadow-2xl">
+                      <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100">
+                        <span className="text-[14px] font-bold text-zinc-800">
+                          {editingMemory.id ? '编辑记忆' : '添加记忆'}
+                        </span>
+                        <button 
+                          onClick={() => setEditingMemory(null)}
+                          className="text-zinc-400 hover:text-zinc-600 p-1"
+                        >
+                          <Delete size={18} />
+                        </button>
+                      </div>
+                      <div className="p-5 flex flex-col gap-4">
+                        <input 
+                          type="text" 
+                          placeholder="记忆标题 (例如: 用户的爱好)"
+                          className="w-full bg-zinc-50 rounded-xl p-3 text-sm outline-none border border-transparent focus:border-zinc-300 transition-colors"
+                          value={editingMemory.title}
+                          onChange={e => setEditingMemory(prev => prev ? { ...prev, title: e.target.value } : null)}
+                        />
+                        <textarea 
+                          rows={6}
+                          placeholder="记忆内容..."
+                          className="w-full bg-zinc-50 rounded-xl p-3 text-sm outline-none border border-transparent focus:border-zinc-300 transition-colors resize-none leading-relaxed"
+                          value={editingMemory.content}
+                          onChange={e => setEditingMemory(prev => prev ? { ...prev, content: e.target.value } : null)}
+                        />
+                        <div className="flex gap-3 mt-2">
+                          <button 
+                            onClick={() => setEditingMemory(null)}
+                            className="flex-1 py-3 bg-zinc-100 text-zinc-600 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
+                          >
+                            取消
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              if (!editingMemory.title.trim() || !editingMemory.content.trim()) {
+                                alert('标题和内容不能为空');
+                                return;
+                              }
+                              
+                              let keywords: string[] = [];
+                              
+                              if (apiConfig.baseUrl && apiConfig.apiKey) {
+                                try {
+                                  setAutoSummaryStatus('正在提取关键词...');
+                                  const keywordPrompt = `根据以下内容提取3-5个关键词，输出格式为JSON：{"keywords": ["词1", "词2"]} \n\n内容：${editingMemory.content}`;
+                                  
+                                  const controller = new AbortController();
+                                  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+                                  const resp = await fetch(`${normalizeBaseUrl(apiConfig.baseUrl)}/chat/completions`, {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${apiConfig.apiKey}`,
+                                    },
+                                    signal: controller.signal,
+                                    body: JSON.stringify({
+                                      model: apiConfig.selectedModel || 'gpt-3.5-turbo',
+                                      messages: [
+                                        { role: 'system', content: '你是一个提取关键词的助手，必须只输出要求的JSON格式。' },
+                                        { role: 'user', content: keywordPrompt }
+                                      ],
+                                      temperature: 0.3,
+                                      response_format: { type: "json_object" }
+                                    })
+                                  });
+                                  clearTimeout(timeoutId);
+                                  
+                                  if (resp.ok) {
+                                    const data = await resp.json();
+                                    const raw = data.choices?.[0]?.message?.content;
+                                    if (raw) {
+                                      const parsed = JSON.parse(raw);
+                                      if (Array.isArray(parsed.keywords)) {
+                                        keywords = parsed.keywords;
+                                      }
+                                    }
+                                  }
+                                } catch (e) {
+                                  console.error('Failed to generate keywords:', e);
+                                  // Fallback to simple extraction
+                                  const words = editingMemory.content.match(/[\w\u4e00-\u9fa5]+/g) || [];
+                                  keywords = Array.from(new Set(words.filter(w => w.length > 1))).slice(0, 5) as string[];
+                                } finally {
+                                  setAutoSummaryStatus('');
+                                }
+                              } else {
+                                // Fallback to simple extraction if API not available
+                                const words = editingMemory.content.match(/[\w\u4e00-\u9fa5]+/g) || [];
+                                keywords = Array.from(new Set(words.filter(w => w.length > 1))).slice(0, 5) as string[];
+                              }
+
+                              const newMem = {
+                                id: editingMemory.id || (Date.now().toString() + Math.random().toString(36).substring(2, 9)),
+                                title: editingMemory.title.trim(),
+                                content: editingMemory.content.trim(),
+                                keywords,
+                                createdAt: editingMemory.id ? (chatMemories[currentChatId]?.find(m => m.id === editingMemory.id)?.createdAt || Date.now()) : Date.now(),
+                                isPinned: editingMemory.id ? !!(chatMemories[currentChatId]?.find(m => m.id === editingMemory.id)?.isPinned) : false
+                              };
+
+                              setChatMemories(prev => {
+                                const list = prev[currentChatId] || [];
+                                if (editingMemory.id) {
+                                  return { ...prev, [currentChatId]: list.map(m => m.id === editingMemory.id ? newMem : m) };
+                                } else {
+                                  return { ...prev, [currentChatId]: [newMem, ...list] };
+                                }
+                              });
+                              setEditingMemory(null);
+                            }}
+                            className="flex-1 py-3 bg-zinc-800 text-white rounded-xl text-sm font-bold shadow-md hover:bg-zinc-700 active:scale-95 transition-all flex justify-center items-center gap-2"
+                          >
+                            <Check size={16} /> 保存
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {/* Full-screen settings top bar */}
                 <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
                   <button onClick={() => setIsChatSettingsOpen(false)} className="text-zinc-500 text-sm font-bold active:text-zinc-800 transition-colors">
@@ -1752,53 +2092,71 @@ export default function App() {
 
                   {/* Long-term Memory Summary */}
                   <div className="flex flex-col gap-2">
-                    <div className="flex justify-between items-center px-1">
-                      <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase">长期记忆摘要</span>
-                      {chatSummaries[currentChatId] && (
-                        <button 
-                          onClick={() => {
-                            if (window.confirm('确定要清除当前的记忆总结吗？')) {
-                              setChatSummaries(prev => {
-                                const next = { ...prev };
-                                delete next[currentChatId];
-                                return next;
-                              });
-                            }
-                          }}
-                          className="text-[10px] font-bold text-red-400 hover:text-red-500 transition-colors flex items-center gap-1"
-                        >
-                          <Delete size={12} />
-                          清除总结
-                        </button>
-                      )}
-                    </div>
-                    <div className="bg-white rounded-2xl border border-zinc-100 p-4">
-                      <textarea
-                        rows={4}
-                        className="w-full bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300 resize-none leading-relaxed"
-                        placeholder="在此输入聊天总结/长期记忆摘要，发送消息时会自动注入系统消息中..."
-                        value={chatSummaries[currentChatId] || ''}
-                        onChange={e => {
-                          setChatSummaries(prev => ({
-                            ...prev,
-                            [currentChatId]: e.target.value
-                          }));
+                    <div className="flex justify-between items-center px-1 mb-2">
+                      <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase">记忆库</span>
+                      <button 
+                        onClick={() => {
+                          setEditingMemory({ title: '', content: '' });
                         }}
-                      />
-                      {chatSummaries[currentChatId] && (
-                        <div className="flex justify-end mt-2 pt-2 border-t border-zinc-50">
-                          <button 
-                            onClick={() => {
-                              alert('修改已保存');
-                            }}
-                            className="px-3 py-1 bg-zinc-100 text-zinc-600 rounded-full text-[10px] font-bold hover:bg-zinc-200 transition-colors"
-                          >
-                            保存修改
-                          </button>
-                        </div>
+                        className="text-[10px] font-bold text-[#07C160] hover:text-[#06ad56] transition-colors flex items-center gap-1"
+                      >
+                        <Plus size={12} />
+                        手动添加
+                      </button>
+                    </div>
+
+                    {/* Memory List */}
+                    <div className="flex flex-col gap-2">
+                      {!(chatMemories[currentChatId] && chatMemories[currentChatId].length > 0) ? (
+                        <div className="text-center text-xs text-zinc-400 py-4 bg-white rounded-2xl border border-zinc-100">暂无记忆</div>
+                      ) : (
+                        chatMemories[currentChatId].map((mem: any) => (
+                          <div key={mem.id} className="bg-white rounded-2xl border border-zinc-100 p-4 relative flex flex-col gap-1">
+                            <div className="flex justify-between items-start gap-4">
+                              <h4 className="text-sm font-bold text-zinc-800 flex-1 break-words">{mem.title}</h4>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <button
+                                  onClick={() => {
+                                    setChatMemories(prev => ({
+                                      ...prev,
+                                      [currentChatId]: prev[currentChatId].map((m: any) => m.id === mem.id ? { ...m, isPinned: !m.isPinned } : m)
+                                    }));
+                                  }}
+                                  className={mem.isPinned ? "text-[#07C160]" : "text-zinc-300 hover:text-zinc-400"}
+                                >
+                                  <Bookmark size={14} fill={mem.isPinned ? "currentColor" : "none"} />
+                                </button>
+                                <button 
+                                  onClick={() => setEditingMemory({ ...mem })}
+                                  className="text-zinc-300 hover:text-zinc-400"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    if (window.confirm('确定删除此记忆？')) {
+                                      setChatMemories(prev => ({
+                                        ...prev,
+                                        [currentChatId]: prev[currentChatId].filter((m: any) => m.id !== mem.id)
+                                      }));
+                                    }
+                                  }}
+                                  className="text-zinc-300 hover:text-red-400"
+                                >
+                                  <Delete size={14} />
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-zinc-500 line-clamp-2 mt-1">{mem.content}</p>
+                            <span className="text-[9px] text-zinc-300 mt-2">
+                              {new Date(mem.createdAt).toLocaleDateString()} {new Date(mem.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                          </div>
+                        ))
                       )}
                     </div>
-                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-zinc-100">
+
+                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-zinc-100 mt-2">
                       <div className="flex flex-col">
                         <span className="text-sm font-bold text-zinc-800">开启自动总结</span>
                         <span className="text-[10px] text-zinc-500 mt-0.5">累积新消息后自动生成</span>
@@ -1855,9 +2213,10 @@ export default function App() {
                         }
                         
                         const historyText = history.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
-                        const summaryPrompt = `请总结以下对话中用户与AI角色的互动，提取关键信息、角色关系、重要事件、用户偏好等。总结要简洁清晰，不超过200字。\n\n对话历史：\n${historyText}`;
+                        const summaryPrompt = `根据以下对话，生成一段总结（200字以内），并提取3-5个关键词（每个关键词1-2个词）。输出格式：{"title": "...", "content": "...", "keywords": ["词1","词2"]}\n\n对话历史：\n${historyText}`;
 
                         try {
+                          setAutoSummaryStatus('正在手动生成记忆...');
                           const manualBaseUrl = normalizeBaseUrl(apiConfig.baseUrl);
                           const url = `${manualBaseUrl}/chat/completions`;
 
@@ -1876,36 +2235,58 @@ export default function App() {
                             body: JSON.stringify({
                               model: apiConfig.selectedModel || 'gpt-3.5-turbo',
                               messages: [
-                                { role: 'system', content: '你是一个对话总结助手，请根据用户提供的对话历史生成简洁的总结。' },
+                                { role: 'system', content: '你是一个对话总结助手，必须只输出要求的JSON格式。' },
                                 { role: 'user', content: summaryPrompt }
                               ],
                               temperature: 0.3,
-                              max_tokens: 500,
-                              stream: false
+                              max_tokens: 800,
+                              stream: false,
+                              response_format: { type: "json_object" }
                             })
                           });
                           clearTimeout(timeoutId);
                           
                           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                           const data = await resp.json();
-                          const summary = data.choices?.[0]?.message?.content;
-                          if (summary) {
-                            setChatSummaries(prev => ({ ...prev, [currentChatId]: summary }));
-                            alert('总结已生成');
+                          const rawContent = data.choices?.[0]?.message?.content;
+                          
+                          if (rawContent) {
+                            try {
+                              const parsed = JSON.parse(rawContent);
+                              if (parsed.title && parsed.content && Array.isArray(parsed.keywords)) {
+                                const newMemory = {
+                                  id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+                                  title: parsed.title,
+                                  content: parsed.content,
+                                  keywords: parsed.keywords,
+                                  createdAt: Date.now(),
+                                  isPinned: false
+                                };
+                                setChatMemories(prev => ({
+                                  ...prev,
+                                  [currentChatId]: [...(prev[currentChatId] || []), newMemory]
+                                }));
+                                alert('记忆已生成并追加');
+                              }
+                            } catch (e) {
+                              throw new Error('解析JSON失败');
+                            }
                           } else {
-                            throw new Error('返回数据中无总结内容');
+                            throw new Error('返回数据为空');
                           }
                         } catch (err: any) {
                           console.error('Generate summary error:', err);
                           alert('总结失败，请检查API配置');
+                        } finally {
+                          setAutoSummaryStatus('');
                         }
                       }}
-                      className="flex items-center justify-center gap-2 w-full bg-zinc-800 text-white p-3 rounded-2xl text-sm font-bold active:scale-[0.98] transition-all shadow-sm"
+                      className="flex items-center justify-center gap-2 w-full bg-zinc-800 text-white p-3 rounded-2xl text-sm font-bold active:scale-[0.98] transition-all shadow-sm mt-2"
                     >
                       <Sparkles size={16} />
-                      生成记忆总结
+                      生成新的记忆
                     </button>
-                    <p className="text-[9px] text-zinc-400 px-1">该摘要会作为系统消息的一部分发送给AI，帮助AI了解之前的对话内容。留空则不注入。点击上方按钮可调用AI自动生成总结（将覆盖现有内容）。</p>
+                    <p className="text-[9px] text-zinc-400 px-1 mt-1">AI会自动为您提取聊天中的重要信息并保存为长期记忆。系统会自动根据您的最新消息检索最相关的记忆进行上下文补充。</p>
                   </div>
 
                   {/* Block Toggle */}

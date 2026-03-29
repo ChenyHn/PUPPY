@@ -52,3 +52,12 @@ export interface Contact {
   persona: string;
   color: string;
 }
+
+export interface MemoryEntry {
+  id: string;
+  title: string;
+  content: string;
+  keywords: string[];
+  createdAt: number;
+  isPinned: boolean;
+}
