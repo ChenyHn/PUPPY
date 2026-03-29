@@ -4,6 +4,24 @@ import { ArrowLeft, Check, Globe2, ShieldCheck, RefreshCw, Sparkles, MessageSqua
 import { StatusBar, GlassCard } from './Shared';
 import { ApiConfig } from '../types';
 
+/**
+ * Normalize a user-entered Base URL:
+ * - Trim whitespace and trailing slashes
+ * - Auto-prepend https:// if no protocol
+ * - Strip trailing /chat/completions if user pasted a full endpoint
+ */
+function normalizeBaseUrl(raw: string): string {
+  let url = raw.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+  }
+  // If user pasted the full chat completions endpoint, strip it
+  if (url.endsWith('/chat/completions')) {
+    url = url.replace(/\/chat\/completions$/, '');
+  }
+  return url;
+}
+
 export const SettingsScreen = ({ 
   apiConfig, 
   setApiConfig, 
@@ -13,40 +31,32 @@ export const SettingsScreen = ({
   const [tempConfig, setTempConfig] = useState(apiConfig);
   const [showKey, setShowKey] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  const showToast = (message: string) => {
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToastMessage(message);
+    setToastType(type);
     setTimeout(() => setToastMessage(''), 3000);
   };
 
   const handleSave = () => {
     setApiConfig(tempConfig);
-    showToast('配置已保存');
+    showToast('配置已保存', 'success');
   };
 
   const handleFetchModels = async () => {
     if (!tempConfig.baseUrl || !tempConfig.apiKey) {
-      showToast('错误: 请先输入 API 地址和密钥');
+      showToast('请先输入 API 地址和密钥', 'error');
       return;
     }
     setIsAiLoading(true);
     try {
-      let baseUrl = tempConfig.baseUrl.trim().replace(/\/+$/, '');
-      if (!/^https?:\/\//i.test(baseUrl)) {
-        baseUrl = 'https://' + baseUrl;
-      }
-      if (baseUrl.endsWith('/chat/completions')) {
-        baseUrl = baseUrl.replace('/chat/completions', '');
-      }
-      if (!baseUrl.endsWith('/v1')) {
-        baseUrl = `${baseUrl}/v1`;
-      }
-
+      const baseUrl = normalizeBaseUrl(tempConfig.baseUrl);
       const url = `${baseUrl}/models`;
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
       const response = await fetch(url, {
         method: 'GET',
@@ -63,32 +73,37 @@ export const SettingsScreen = ({
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+        const msg = errorData.error?.message || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(msg);
       }
       
       const data = await response.json();
       if (data.data && Array.isArray(data.data)) {
         const modelNames = data.data.map((m: any) => m.id);
         if (modelNames.length > 0) {
-          const newSelectedModel = tempConfig.selectedModel || modelNames[0];
-          setTempConfig((prev: any) => ({ ...prev, models: modelNames, selectedModel: newSelectedModel }));
+          const newSelectedModel = modelNames.includes(tempConfig.selectedModel) 
+            ? tempConfig.selectedModel 
+            : modelNames[0];
+          // Immediately update both tempConfig and apiConfig for instant UI refresh
+          const updated = { ...tempConfig, models: modelNames, selectedModel: newSelectedModel };
+          setTempConfig(updated);
           setApiConfig((prev: any) => ({ ...prev, models: modelNames, selectedModel: newSelectedModel }));
-          showToast('模型列表获取成功');
+          showToast(`成功获取 ${modelNames.length} 个模型`, 'success');
         } else {
-          showToast('错误: 未找到可用模型');
+          showToast('未找到可用模型', 'error');
         }
       } else {
-        showToast('错误: 返回数据格式不正确');
+        showToast('返回数据格式不正确，预期 { data: [...] }', 'error');
       }
     } catch (err: any) {
       console.error('Fetch models error:', err);
       let errorMsg = err.message || '未知错误';
       if (err.name === 'AbortError') {
-         errorMsg = '请求超时(30s)，请检查网络或代理';
-      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
-        errorMsg = '网络错误/跨域(CORS)限制，请使用支持CORS的中转API';
+        errorMsg = '请求超时(10s)，请检查网络连接或 API 地址是否正确';
+      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror') || errorMsg.toLowerCase().includes('network')) {
+        errorMsg = '网络连接失败或跨域(CORS)限制。请使用支持 CORS 的中转 API 服务。';
       }
-      showToast(`错误: 获取失败 - ${errorMsg}`);
+      showToast(errorMsg, 'error');
     } finally {
       setIsAiLoading(false);
     }
@@ -96,26 +111,16 @@ export const SettingsScreen = ({
 
   const handleTestConnection = async () => {
     if (!tempConfig.baseUrl || !tempConfig.apiKey) {
-      showToast('错误: 请先输入 API 地址和密钥');
+      showToast('请先输入 API 地址和密钥', 'error');
       return;
     }
     setIsAiLoading(true);
     try {
-      let baseUrl = tempConfig.baseUrl.trim().replace(/\/+$/, '');
-      if (!/^https?:\/\//i.test(baseUrl)) {
-        baseUrl = 'https://' + baseUrl;
-      }
-      if (baseUrl.endsWith('/chat/completions')) {
-        baseUrl = baseUrl.replace('/chat/completions', '');
-      }
-      if (!baseUrl.endsWith('/v1')) {
-        baseUrl = `${baseUrl}/v1`;
-      }
-      
+      const baseUrl = normalizeBaseUrl(tempConfig.baseUrl);
       const url = `${baseUrl}/chat/completions`;
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -129,19 +134,21 @@ export const SettingsScreen = ({
         body: JSON.stringify({
           model: tempConfig.selectedModel || tempConfig.models?.[0] || 'gpt-3.5-turbo',
           messages: [{ role: 'user', content: 'Hello' }],
-          max_tokens: 10
+          max_tokens: 10,
+          stream: false
         })
       });
       clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+        const msg = errorData.error?.message || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(msg);
       }
 
       const data = await response.json();
       if (data.choices?.[0]?.message?.content) {
-        showToast('连接测试成功！');
+        showToast('连接测试成功！', 'success');
       } else {
         throw new Error('返回数据格式不正确');
       }
@@ -149,11 +156,11 @@ export const SettingsScreen = ({
       console.error('Test connection error:', err);
       let errorMsg = err.message || '未知错误';
       if (err.name === 'AbortError') {
-         errorMsg = '请求超时(30s)，请检查网络或代理';
-      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
-        errorMsg = '网络错误/跨域(CORS)限制';
+        errorMsg = '请求超时(15s)，请检查网络或 API 地址';
+      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror') || errorMsg.toLowerCase().includes('network')) {
+        errorMsg = '网络连接失败或跨域(CORS)限制。请使用支持 CORS 的中转 API。';
       }
-      showToast(`错误: 测试失败 - ${errorMsg}`);
+      showToast(errorMsg, 'error');
     } finally {
       setIsAiLoading(false);
     }
@@ -186,6 +193,7 @@ export const SettingsScreen = ({
         </button>
       </div>
 
+      {/* Toast container at top of settings page */}
       <div className="absolute top-[100px] left-0 right-0 z-50 px-6 pointer-events-none">
         <AnimatePresence>
           {toastMessage && (
@@ -193,9 +201,11 @@ export const SettingsScreen = ({
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="w-full py-3 px-4 rounded-xl shadow-lg text-sm font-bold text-white text-center pointer-events-auto break-words bg-[#1E1E1E]"
+              className={`w-full py-3 px-4 rounded-xl shadow-lg text-sm font-bold text-white text-center pointer-events-auto break-words ${
+                toastType === 'error' ? 'bg-red-500' : 'bg-[#1E1E1E]'
+              }`}
             >
-              {toastMessage}
+              {toastType === 'error' ? '⚠️ ' : '✅ '}{toastMessage}
             </motion.div>
           )}
         </AnimatePresence>
@@ -206,15 +216,18 @@ export const SettingsScreen = ({
           <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">API 基础地址 (Base URL)</span>
           <GlassCard className="p-4" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <Globe2 size={18} className="text-zinc-400" />
+              <Globe2 size={18} className="text-zinc-400 flex-shrink-0" />
               <input 
-                type="text" 
-                placeholder="https://api.openai.com/v1"
-                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300"
+                type="url" 
+                placeholder="https://your-proxy.com/v1"
+                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300 min-h-[44px]"
                 value={tempConfig.baseUrl}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, baseUrl: e.target.value }))}
               />
             </div>
+            <p className="text-[9px] text-zinc-400 mt-2 px-1">
+              填写中转站提供的地址，如 https://api.example.com/v1。请求将发送到 Base URL/chat/completions
+            </p>
           </GlassCard>
         </div>
 
@@ -222,15 +235,18 @@ export const SettingsScreen = ({
           <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">API 密钥 (API Key)</span>
           <GlassCard className="p-4" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <ShieldCheck size={18} className="text-zinc-400" />
+              <ShieldCheck size={18} className="text-zinc-400 flex-shrink-0" />
               <input 
                 type={showKey ? "text" : "password"} 
                 placeholder="sk-..."
-                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300"
+                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300 min-h-[44px]"
                 value={tempConfig.apiKey}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, apiKey: e.target.value }))}
               />
-              <button onClick={() => setShowKey(!showKey)} className="text-zinc-300 active:text-zinc-500">
+              <button 
+                onClick={() => setShowKey(!showKey)} 
+                className="text-zinc-300 active:text-zinc-500 min-w-[44px] min-h-[44px] flex items-center justify-center"
+              >
                 <ShieldCheck size={18} />
               </button>
             </div>
@@ -243,15 +259,15 @@ export const SettingsScreen = ({
             <button 
               onClick={handleFetchModels}
               disabled={isAiLoading}
-              className="text-[10px] font-bold text-zinc-500 hover:text-zinc-800 flex items-center gap-1 active:scale-95 transition-all min-h-[44px]"
+              className="text-[10px] font-bold text-zinc-500 hover:text-zinc-800 flex items-center gap-1 active:scale-95 transition-all min-h-[44px] min-w-[44px] justify-center disabled:opacity-50"
             >
               <RefreshCw size={12} className={isAiLoading ? "animate-spin" : ""} />
-              获取模型列表
+              {isAiLoading ? '获取中...' : '获取模型列表'}
             </button>
           </div>
           <GlassCard className="p-4" opacity="0.8" blur="10px">
             <select 
-              className="w-full h-8 bg-transparent border-none outline-none text-sm text-zinc-700 appearance-none cursor-pointer"
+              className="w-full h-[44px] bg-transparent border-none outline-none text-sm text-zinc-700 appearance-none cursor-pointer"
               value={tempConfig.selectedModel || ''}
               onChange={(e) => setTempConfig((prev: any) => ({ ...prev, selectedModel: e.target.value }))}
             >
@@ -268,13 +284,13 @@ export const SettingsScreen = ({
           <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">Temperature (创造性)</span>
           <GlassCard className="p-4" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <Sparkles size={18} className="text-zinc-400" />
+              <Sparkles size={18} className="text-zinc-400 flex-shrink-0" />
               <input 
                 type="range" 
                 min="0" 
                 max="2" 
                 step="0.1"
-                className="flex-1 accent-zinc-600"
+                className="flex-1 accent-zinc-600 min-h-[44px]"
                 value={tempConfig.temperature ?? 0.7}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
               />
@@ -288,13 +304,13 @@ export const SettingsScreen = ({
           <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">上下文消息条数</span>
           <GlassCard className="p-4" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <MessageSquare size={18} className="text-zinc-400" />
+              <MessageSquare size={18} className="text-zinc-400 flex-shrink-0" />
               <input 
                 type="range" 
                 min="1" 
                 max="50" 
                 step="1"
-                className="flex-1 accent-zinc-600"
+                className="flex-1 accent-zinc-600 min-h-[44px]"
                 value={tempConfig.contextMessageCount ?? 10}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, contextMessageCount: parseInt(e.target.value) }))}
               />
@@ -308,7 +324,7 @@ export const SettingsScreen = ({
           <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">Max Tokens (最大回复长度)</span>
           <GlassCard className="p-4" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <Type size={18} className="text-zinc-400" />
+              <Type size={18} className="text-zinc-400 flex-shrink-0" />
               <input 
                 type="number" 
                 inputMode="numeric"
@@ -316,7 +332,7 @@ export const SettingsScreen = ({
                 max="8192" 
                 step="100"
                 placeholder="2048"
-                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300"
+                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300 min-h-[44px]"
                 value={tempConfig.maxTokens ?? 2048}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, maxTokens: parseInt(e.target.value) || 2048 }))}
               />

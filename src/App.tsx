@@ -59,6 +59,23 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { SettingsScreen } from './components/SettingsScreen';
+
+/**
+ * Normalize a user-entered Base URL:
+ * - Trim whitespace and trailing slashes
+ * - Auto-prepend https:// if no protocol
+ * - Strip trailing /chat/completions if user pasted a full endpoint
+ */
+function normalizeBaseUrl(raw: string): string {
+  let url = raw.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+  }
+  if (url.endsWith('/chat/completions')) {
+    url = url.replace(/\/chat\/completions$/, '');
+  }
+  return url;
+}
 import { AppearanceScreen } from './components/AppearanceScreen';
 import { PersonaScreen } from './components/PersonaScreen';
 import { PhoneListScreen } from './components/PhoneListScreen';
@@ -453,10 +470,8 @@ export default function App() {
         const historyText = currentHistory.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
         const summaryPrompt = `请总结以下对话中用户与AI角色的互动，提取关键信息、角色关系、重要事件、用户偏好等。总结要简洁清晰，不超过200字。\n\n对话历史：\n${historyText}`;
 
-        let baseUrl = apiConfig.baseUrl.trim().replace(/\/+$/, '');
-        if (!/^https?:\/\//i.test(baseUrl)) baseUrl = 'https://' + baseUrl;
-        if (baseUrl.endsWith('/chat/completions')) baseUrl = baseUrl.replace('/chat/completions', '');
-        const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
+        const summaryBaseUrl = normalizeBaseUrl(apiConfig.baseUrl);
+        const url = `${summaryBaseUrl}/chat/completions`;
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -477,7 +492,8 @@ export default function App() {
               { role: 'user', content: summaryPrompt }
             ],
             temperature: 0.3,
-            max_tokens: 500
+            max_tokens: 500,
+            stream: false
           })
         });
         clearTimeout(timeoutId);
@@ -593,22 +609,7 @@ export default function App() {
     }
 
     try {
-      let baseUrl = apiConfig.baseUrl.trim().replace(/\/+$/, '');
-      
-      // 自动补全 http/https
-      if (!/^https?:\/\//i.test(baseUrl)) {
-        baseUrl = 'https://' + baseUrl;
-      }
-      // 容错处理：如果用户直接输入了完整路径，去掉后缀以匹配统一逻辑
-      if (baseUrl.endsWith('/chat/completions')) {
-        baseUrl = baseUrl.replace('/chat/completions', '');
-      }
-      
-      // 确保 baseUrl 以 /v1 结尾且不重复拼接
-      if (!baseUrl.endsWith('/v1')) {
-         baseUrl = `${baseUrl}/v1`;
-      }
-
+      const baseUrl = normalizeBaseUrl(apiConfig.baseUrl);
       const url = `${baseUrl}/chat/completions`;
       
       const controller = new AbortController();
@@ -627,14 +628,16 @@ export default function App() {
             ...contextMessages
           ],
           temperature: apiConfig.temperature ?? 0.7,
-          max_tokens: apiConfig.maxTokens ?? 2048
+          max_tokens: apiConfig.maxTokens ?? 2048,
+          stream: false
         })
       });
       clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `请求失败 (${response.status})`);
+        const backendMsg = errorData.error?.message || errorData.message || '';
+        throw new Error(backendMsg || `请求失败 (HTTP ${response.status})`);
       }
 
       const data = await response.json();
@@ -647,20 +650,20 @@ export default function App() {
           checkAndTriggerAutoSummary('ai_assistant', finalMessages);
         }
       } else {
-        throw new Error('返回数据格式不正确，未找到回复内容。');
+        throw new Error('返回数据格式不正确，未找到 choices[0].message.content');
       }
     } catch (err: any) {
       console.error('Send message error:', err);
-      let errorMsg = err.message || '请检查配置';
+      let errorMsg = err.message || '未知错误，请检查配置';
       if (err.name === 'AbortError') {
-         errorMsg = '请求超时(30s)，请检查网络或配置';
-      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
-        errorMsg = '网络连接失败或跨域限制(CORS)，请使用支持CORS的中转API。';
+        errorMsg = '请求超时(30s)，请检查网络连接或 API 地址';
+      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror') || errorMsg.toLowerCase().includes('network')) {
+        errorMsg = '网络连接失败或跨域(CORS)限制，请使用支持 CORS 的中转 API';
       }
       
-      // Show error toast in chat UI
+      // Show error toast in chat UI (3s auto-dismiss)
       setChatErrorToast(errorMsg);
-      setTimeout(() => setChatErrorToast(''), 5000);
+      setTimeout(() => setChatErrorToast(''), 3000);
       
       // API call failed — fallback to simulated reply
       const simReply = generateSimulatedReply(activeChatContact, userMsg);
@@ -1855,10 +1858,8 @@ export default function App() {
                         const summaryPrompt = `请总结以下对话中用户与AI角色的互动，提取关键信息、角色关系、重要事件、用户偏好等。总结要简洁清晰，不超过200字。\n\n对话历史：\n${historyText}`;
 
                         try {
-                          let baseUrl = apiConfig.baseUrl.trim().replace(/\/+$/, '');
-                          if (!/^https?:\/\//i.test(baseUrl)) baseUrl = 'https://' + baseUrl;
-                          if (baseUrl.endsWith('/chat/completions')) baseUrl = baseUrl.replace('/chat/completions', '');
-                          const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
+                          const manualBaseUrl = normalizeBaseUrl(apiConfig.baseUrl);
+                          const url = `${manualBaseUrl}/chat/completions`;
 
                           const controller = new AbortController();
                           const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -1879,7 +1880,8 @@ export default function App() {
                                 { role: 'user', content: summaryPrompt }
                               ],
                               temperature: 0.3,
-                              max_tokens: 500
+                              max_tokens: 500,
+                              stream: false
                             })
                           });
                           clearTimeout(timeoutId);
