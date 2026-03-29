@@ -1300,21 +1300,150 @@ const SettingsScreen = ({
   apiConfig, 
   setApiConfig, 
   onBack, 
-  fetchModels, 
-  isAiLoading, 
-  apiError, 
-  setApiError,
-  apiSuccess,
-  setApiSuccess,
   time
 }: any) => {
   const [tempConfig, setTempConfig] = useState(apiConfig);
   const [showKey, setShowKey] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setTimeout(() => setToastMessage(''), 3000);
+  };
 
   const handleSave = () => {
     setApiConfig(tempConfig);
-    setApiSuccess('配置已保存');
-    setTimeout(() => setApiSuccess(''), 3000);
+    showToast('配置已保存', 'success');
+  };
+
+  const handleFetchModels = async () => {
+    if (!tempConfig.baseUrl || !tempConfig.apiKey) {
+      showToast('请先输入 API 地址和密钥', 'error');
+      return;
+    }
+    setIsAiLoading(true);
+    try {
+      let baseUrl = tempConfig.baseUrl.trim().replace(/\/+$/, '');
+      if (!/^https?:\/\//i.test(baseUrl)) {
+        baseUrl = 'https://' + baseUrl;
+      }
+      if (baseUrl.endsWith('/chat/completions')) {
+        baseUrl = baseUrl.replace('/chat/completions', '');
+      }
+
+      const url = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 
+          'Authorization': `Bearer ${tempConfig.apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      if (data.data && Array.isArray(data.data)) {
+        const modelNames = data.data.map((m: any) => m.id);
+        if (modelNames.length > 0) {
+          const newSelectedModel = tempConfig.selectedModel || modelNames[0];
+          setTempConfig((prev: any) => ({ ...prev, models: modelNames, selectedModel: newSelectedModel }));
+          setApiConfig((prev: any) => ({ ...prev, models: modelNames, selectedModel: newSelectedModel }));
+          showToast('模型列表获取成功', 'success');
+        } else {
+          showToast('未找到可用模型', 'error');
+        }
+      } else {
+        showToast('返回数据格式不正确', 'error');
+      }
+    } catch (err: any) {
+      console.error('Fetch models error:', err);
+      let errorMsg = err.message || '未知错误';
+      if (err.name === 'AbortError') {
+         errorMsg = '请求超时(30s)，请检查网络或代理';
+      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
+        errorMsg = '网络错误/跨域(CORS)限制，请使用支持CORS的中转API';
+      }
+      showToast(`获取失败: ${errorMsg}`, 'error');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!tempConfig.baseUrl || !tempConfig.apiKey) {
+      showToast('请先输入 API 地址和密钥', 'error');
+      return;
+    }
+    setIsAiLoading(true);
+    try {
+      let baseUrl = tempConfig.baseUrl.trim().replace(/\/+$/, '');
+      if (!/^https?:\/\//i.test(baseUrl)) {
+        baseUrl = 'https://' + baseUrl;
+      }
+      if (baseUrl.endsWith('/chat/completions')) {
+        baseUrl = baseUrl.replace('/chat/completions', '');
+      }
+      const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${tempConfig.apiKey}`,
+        },
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: tempConfig.selectedModel || tempConfig.models?.[0] || 'gpt-3.5-turbo',
+          messages: [{ role: 'user', content: 'Hello' }],
+          max_tokens: 10
+        })
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      if (data.choices?.[0]?.message?.content) {
+        showToast('连接测试成功！', 'success');
+      } else {
+        throw new Error('返回数据格式不正确');
+      }
+    } catch (err: any) {
+      console.error('Test connection error:', err);
+      let errorMsg = err.message || '未知错误';
+      if (err.name === 'AbortError') {
+         errorMsg = '请求超时(30s)，请检查网络或代理';
+      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
+        errorMsg = '网络错误/跨域(CORS)限制';
+      }
+      showToast(`测试失败: ${errorMsg}`, 'error');
+    } finally {
+      setIsAiLoading(false);
+    }
   };
 
   return (
@@ -1330,21 +1459,36 @@ const SettingsScreen = ({
       
       <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="text-zinc-400 active:text-zinc-600">
+          <button onClick={onBack} className="text-zinc-400 active:text-zinc-600 min-w-[44px] min-h-[44px] flex items-center justify-center -ml-2">
             <ArrowLeft size={24} strokeWidth={1.5} />
           </button>
           <h2 className="text-xl font-bold text-zinc-700">设置</h2>
         </div>
         <button 
           onClick={handleSave}
-          className="flex items-center gap-1.5 px-4 py-1.5 bg-zinc-800 text-white rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
+          className="flex items-center gap-1.5 px-4 h-[44px] bg-zinc-800 text-white rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
         >
           <Check size={14} />
           保存
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+      <div className="absolute top-[100px] left-0 right-0 z-50 px-6 pointer-events-none">
+        <AnimatePresence>
+          {toastMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className={`w-full py-3 px-4 rounded-xl shadow-lg text-sm font-bold text-white text-center pointer-events-auto break-words ${toastType === 'success' ? 'bg-[#07C160]' : 'bg-red-500'}`}
+            >
+              {toastMessage}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 relative">
         <div className="flex flex-col gap-2">
           <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">API 基础地址 (Base URL)</span>
           <GlassCard className="p-4" opacity="0.8" blur="10px">
@@ -1384,9 +1528,9 @@ const SettingsScreen = ({
           <div className="flex justify-between items-center px-1">
             <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase">模型选择</span>
             <button 
-              onClick={() => fetchModels(tempConfig)}
+              onClick={handleFetchModels}
               disabled={isAiLoading}
-              className="text-[10px] font-bold text-zinc-500 hover:text-zinc-800 flex items-center gap-1 active:scale-95 transition-all"
+              className="text-[10px] font-bold text-zinc-500 hover:text-zinc-800 flex items-center gap-1 active:scale-95 transition-all min-h-[44px]"
             >
               <RefreshCw size={12} className={isAiLoading ? "animate-spin" : ""} />
               获取模型列表
@@ -1394,11 +1538,11 @@ const SettingsScreen = ({
           </div>
           <GlassCard className="p-4" opacity="0.8" blur="10px">
             <select 
-              className="w-full bg-transparent border-none outline-none text-sm text-zinc-700 appearance-none cursor-pointer"
-              value={tempConfig.selectedModel}
+              className="w-full h-8 bg-transparent border-none outline-none text-sm text-zinc-700 appearance-none cursor-pointer"
+              value={tempConfig.selectedModel || ''}
               onChange={(e) => setTempConfig((prev: any) => ({ ...prev, selectedModel: e.target.value }))}
             >
-              {tempConfig.models.length > 0 ? (
+              {tempConfig.models && tempConfig.models.length > 0 ? (
                 tempConfig.models.map((m: any) => <option key={m} value={m}>{m}</option>)
               ) : (
                 <option value="">请先获取模型列表</option>
@@ -1454,6 +1598,7 @@ const SettingsScreen = ({
               <Type size={18} className="text-zinc-400" />
               <input 
                 type="number" 
+                inputMode="numeric"
                 min="100" 
                 max="8192" 
                 step="100"
@@ -1467,13 +1612,18 @@ const SettingsScreen = ({
           </GlassCard>
         </div>
 
-        {apiSuccess && (
-          <div className="px-1 py-2 text-[10px] font-bold text-emerald-500 uppercase tracking-widest">
-            {apiSuccess}
-          </div>
-        )}
+        <div className="flex justify-center mt-4">
+          <button 
+            onClick={handleTestConnection}
+            disabled={isAiLoading}
+            className="flex items-center justify-center gap-2 w-full max-w-[200px] h-[44px] bg-zinc-100 text-zinc-700 rounded-full text-sm font-bold active:bg-zinc-200 transition-colors disabled:opacity-50"
+          >
+            {isAiLoading ? <RefreshCw size={16} className="animate-spin" /> : <Wifi size={16} />}
+            测试连接
+          </button>
+        </div>
 
-        <div className="mt-auto pt-10">
+        <div className="mt-auto pt-6">
           <p className="text-[10px] text-center text-zinc-300 leading-relaxed">
             配置完成后，点击右上角"保存"。未配置API时将使用模拟回复。
           </p>
@@ -1513,8 +1663,6 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [apiError, setApiError] = useState('');
-  const [apiSuccess, setApiSuccess] = useState('');
   const [isAddingFriend, setIsAddingFriend] = useState(false);
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
 
@@ -1654,68 +1802,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  const fetchModels = async (configToUse = apiConfig) => {
-    if (!configToUse.baseUrl || !configToUse.apiKey) {
-      setApiError('请先输入 API 地址和密钥');
-      return;
-    }
-    setIsAiLoading(true);
-    setApiError('');
-    setApiSuccess('');
-    try {
-      let baseUrl = configToUse.baseUrl.trim().replace(/\/+$/, '');
-      
-      // 自动补全 http/https
-      if (!/^https?:\/\//i.test(baseUrl)) {
-        baseUrl = 'https://' + baseUrl;
-      }
-      // 容错处理：如果用户不小心输入了 /chat/completions 结尾，将其去掉
-      if (baseUrl.endsWith('/chat/completions')) {
-        baseUrl = baseUrl.replace('/chat/completions', '');
-      }
-
-      // 智能拼接 URL
-      const url = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`;
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 
-          'Authorization': `Bearer ${configToUse.apiKey}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        mode: 'cors'
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      if (data.data && Array.isArray(data.data)) {
-        const modelNames = data.data.map((m: any) => m.id);
-        if (modelNames.length > 0) {
-          setApiConfig(prev => ({ ...prev, models: modelNames, selectedModel: prev.selectedModel || modelNames[0] }));
-          setApiSuccess('模型列表获取成功');
-        } else {
-          setApiError('未找到可用模型');
-        }
-      } else {
-        setApiError('返回数据格式不正确，可能不是标准的 OpenAI API 格式');
-      }
-    } catch (err: any) {
-      console.error('Fetch models error:', err);
-      let errorMsg = err.message || '未知错误';
-      if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
-        errorMsg = '网络错误或跨域(CORS)限制。官方OpenAI接口不支持纯前端调用，请使用支持CORS的中转API。';
-      }
-      setApiError(`获取失败: ${errorMsg}`);
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
   const checkAndTriggerAutoSummary = async (chatId: string, currentHistory: any[]) => {
     const settings = chatSettings[chatId] || {};
     if (!settings.isAutoSummaryEnabled) return;
@@ -1744,12 +1830,18 @@ export default function App() {
         if (baseUrl.endsWith('/chat/completions')) baseUrl = baseUrl.replace('/chat/completions', '');
         const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
         const resp = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiConfig.apiKey}`,
           },
+          mode: 'cors',
+          credentials: 'omit',
+          signal: controller.signal,
           body: JSON.stringify({
             model: apiConfig.selectedModel || 'gpt-3.5-turbo',
             messages: [
@@ -1760,6 +1852,7 @@ export default function App() {
             max_tokens: 500
           })
         });
+        clearTimeout(timeoutId);
 
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
@@ -1885,9 +1978,15 @@ export default function App() {
 
       const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
       const response = await fetch(url, {
         method: 'POST',
         headers,
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal,
         body: JSON.stringify({
           model: apiConfig.selectedModel || 'gpt-3.5-turbo',
           messages: [
@@ -1898,6 +1997,7 @@ export default function App() {
           max_tokens: apiConfig.maxTokens ?? 2048
         })
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1919,7 +2019,9 @@ export default function App() {
     } catch (err: any) {
       console.error('Send message error:', err);
       let errorMsg = err.message || '请检查配置';
-      if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
+      if (err.name === 'AbortError') {
+         errorMsg = '请求超时(30s)，请检查网络或配置';
+      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror')) {
         errorMsg = '跨域拦截(CORS)或网络连接失败，请确认该API支持前端调用。';
       }
       
@@ -2656,12 +2758,6 @@ export default function App() {
               apiConfig={apiConfig} 
               setApiConfig={setApiConfig} 
               onBack={() => setScreen('home')}
-              fetchModels={fetchModels}
-              isAiLoading={isAiLoading}
-              apiError={apiError}
-              setApiError={setApiError}
-              apiSuccess={apiSuccess}
-              setApiSuccess={setApiSuccess}
               time={time}
             />
           )}
@@ -3111,12 +3207,18 @@ export default function App() {
                           if (baseUrl.endsWith('/chat/completions')) baseUrl = baseUrl.replace('/chat/completions', '');
                           const url = baseUrl.endsWith('/v1') ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
 
+                          const controller = new AbortController();
+                          const timeoutId = setTimeout(() => controller.abort(), 30000);
+
                           const resp = await fetch(url, {
                             method: 'POST',
                             headers: {
                               'Content-Type': 'application/json',
                               'Authorization': `Bearer ${apiConfig.apiKey}`,
                             },
+                            mode: 'cors',
+                            credentials: 'omit',
+                            signal: controller.signal,
                             body: JSON.stringify({
                               model: apiConfig.selectedModel || 'gpt-3.5-turbo',
                               messages: [
@@ -3127,6 +3229,8 @@ export default function App() {
                               max_tokens: 500
                             })
                           });
+                          clearTimeout(timeoutId);
+                          
                           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                           const data = await resp.json();
                           const summary = data.choices?.[0]?.message?.content;
