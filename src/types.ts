@@ -95,3 +95,15 @@ export interface FavoriteItem {
   sender: 'user' | 'assistant';
   timestamp: number;
 }
+
+export interface IconStyleConfig {
+  isEnabled: boolean;
+  borderRadius: number;
+  iconSize: number;
+  bgOpacity: number;
+  bgLightColor: string;
+  bgDarkColor: string;
+  shadowIntensity: number;
+  iconLightColor: string;
+  iconDarkColor: string;
+}

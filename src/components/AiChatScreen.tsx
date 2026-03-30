@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Delete,
   SlidersHorizontal,
@@ -151,11 +151,69 @@ export function AiChatScreen(props: AiChatScreenProps) {
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const isSummarizingRef = useRef<Record<string, boolean>>({});
   const lastSummaryTimeRef = useRef<Record<string, number>>({});
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
   const currentChatSettings: ChatSettings = chatSettings[currentChatId] || { remark: '', background: '', isBlocked: false, isPinned: false };
   const displayChatName = currentChatSettings.remark || (activeChatContact ? activeChatContact.chatName : 'AI 助手');
   const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
+
+  // --- Pagination ---
+  const PAGE_SIZE = 50;
+  const [displayLimit, setDisplayLimit] = useState(PAGE_SIZE);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const prevScrollHeightRef = useRef(0);
+
+  useEffect(() => {
+    setDisplayLimit(PAGE_SIZE);
+  }, [currentChatId]);
+
+  const prevLengthRef = useRef(currentMessages.length);
+  useEffect(() => {
+    if (currentMessages.length > prevLengthRef.current) {
+      const diff = currentMessages.length - prevLengthRef.current;
+      setDisplayLimit(prev => prev + diff);
+    }
+    prevLengthRef.current = currentMessages.length;
+  }, [currentMessages.length]);
+
+  const startIndex = Math.max(0, currentMessages.length - displayLimit);
+  const visibleMessages = currentMessages.slice(startIndex);
+  const hasMoreMessages = currentMessages.length > displayLimit;
+
+  const handleScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (!scrollContainerRef.current || !hasMoreMessages || isLoadingMore) return;
+    if (scrollContainerRef.current.scrollTop <= 5) {
+      prevScrollHeightRef.current = scrollContainerRef.current.scrollHeight;
+      setIsLoadingMore(true);
+      setTimeout(() => {
+        setDisplayLimit(prev => prev + PAGE_SIZE);
+        setIsLoadingMore(false);
+      }, 300);
+    }
+  }, [hasMoreMessages, isLoadingMore]);
+
+  useEffect(() => {
+    if (!isLoadingMore && prevScrollHeightRef.current > 0 && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight - prevScrollHeightRef.current;
+      prevScrollHeightRef.current = 0;
+    }
+  }, [isLoadingMore, displayLimit]);
+
+  // --- Auto Scroll ---
+  const isFirstMount = useRef(true);
+  const prevChatIdRef = useRef(currentChatId);
+
+  useEffect(() => {
+    if (isFirstMount.current || prevChatIdRef.current !== currentChatId) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      isFirstMount.current = false;
+      prevChatIdRef.current = currentChatId;
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [currentMessages.length, isAiLoading, currentChatId]);
 
   // --- Show toast helper ---
   const showToast = (msg: string, duration = 2000) => {
@@ -635,8 +693,12 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Messages */}
       <div 
+        ref={scrollContainerRef}
         className="flex-1 overflow-y-auto overflow-x-hidden p-6 flex flex-col gap-4 bg-zinc-50 dark:bg-zinc-900 relative" 
-        onScroll={() => { if (contextMenu.isVisible) closeCtx(); }}
+        onScroll={(e) => { 
+          if (contextMenu.isVisible) closeCtx(); 
+          handleScroll(e);
+        }}
         style={currentChatSettings.background ? (currentChatSettings.background.startsWith('data:image') || currentChatSettings.background.startsWith('http') ? { backgroundImage: `url("${currentChatSettings.background}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : { backgroundColor: currentChatSettings.background }) : undefined}
       >
         <AnimatePresence>
@@ -647,8 +709,19 @@ export function AiChatScreen(props: AiChatScreenProps) {
           {autoSummaryStatus && isSummarizingRef.current[currentChatId] && (<motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 bg-zinc-800/80 backdrop-blur text-white rounded-full text-[10px] font-bold shadow-lg flex items-center gap-2"><Sparkles size={12} className="animate-pulse text-yellow-300" />{autoSummaryStatus}</motion.div>)}
         </AnimatePresence>
 
-        {currentMessages.map((msg, i) => (
-          <div key={msg.id || i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}>
+        {isLoadingMore && (
+          <div className="flex justify-center py-2">
+            <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm border border-zinc-100 dark:border-zinc-700">
+              <RefreshCw size={14} className="animate-spin text-zinc-400" />
+              <span className="text-[10px] font-bold text-zinc-500">加载中...</span>
+            </div>
+          </div>
+        )}
+
+        {visibleMessages.map((msg, i) => {
+          const globalIndex = startIndex + i;
+          return (
+          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}>
             {/* Multi-select checkbox */}
             {isMultiSelectMode && (
               <button
@@ -663,9 +736,9 @@ export function AiChatScreen(props: AiChatScreenProps) {
               </button>
             )}
             <div
-              onContextMenu={(e) => handleContextMenu(e, i, msg)}
+              onContextMenu={(e) => handleContextMenu(e, globalIndex, msg)}
               onClick={() => { if (isMultiSelectMode) toggleMessageSelection(msg.id); else if (msg.isMergedForward) setMergedMessageDetails(msg.originalMessages!); }}
-              className={`max-w-[80%] p-4 rounded-2xl text-sm relative transition-transform duration-200 select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-black text-white rounded-tr-none' : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-zinc-700 dark:!text-zinc-200 shadow-none' : ''} ${contextMenu.isVisible && contextMenu.messageIndex === i ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-200 ring-offset-1' : ''} ${isMultiSelectMode || msg.isMergedForward ? 'cursor-pointer' : ''}`}
+              className={`max-w-[80%] p-4 rounded-2xl text-sm relative transition-transform duration-200 select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-black text-white rounded-tr-none' : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-zinc-700 dark:!text-zinc-200 shadow-none' : ''} ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-200 ring-offset-1' : ''} ${isMultiSelectMode || msg.isMergedForward ? 'cursor-pointer' : ''}`}
             >
               {msg.isMergedForward ? (
                  <div className="flex flex-col gap-1">
@@ -683,9 +756,10 @@ export function AiChatScreen(props: AiChatScreenProps) {
               )}
             </div>
           </div>
-        ))}
-        {isAiLoading && <div className="flex justify-start"><div className="bg-white dark:bg-zinc-800 p-4 rounded-2xl flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 正在生成回复...</div></div>}
+        );})}
+        {isAiLoading && <div className="flex justify-start"><div className="bg-white dark:bg-zinc-800 p-4 rounded-2xl flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 打字中...</div></div>}
         {currentMessages.length === 0 && <div className="text-center text-zinc-400 dark:text-zinc-500 py-20">暂无消息，开始聊天吧</div>}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Context Menu */}

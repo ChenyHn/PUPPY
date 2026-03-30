@@ -131,22 +131,30 @@ interface ApiConfig {
 
 // --- Components ---
 
-const GlassCard = ({ children, className = "", blur = "20px", opacity = "0.3", ...props }: { children: React.ReactNode, className?: string, blur?: string, opacity?: string, [key: string]: any }) => (
-  <div 
-    className={`shadow-[0_8px_32px_rgba(0,0,0,0.08)] rounded-[24px] border border-white/40 ${className}`}
-    style={{ 
-      backdropFilter: `blur(${blur})`, 
-      WebkitBackdropFilter: `blur(${blur})`,
-      backgroundColor: `rgba(255, 255, 255, ${opacity})` 
-    }}
-    {...props}
-  >
-    {children}
-  </div>
-);
+const GlassCard = ({ children, className = "", blur, opacity, darkOpacity, ...props }: { children: React.ReactNode, className?: string, blur?: string, opacity?: string, darkOpacity?: string, [key: string]: any }) => {
+  // Use global frost intensity if available via CSS variables, otherwise fallback to defaults
+  // The global CSS variables are set on the root wrapper
+  return (
+    <div 
+      className={`glass-card shadow-[0_8px_32px_rgba(0,0,0,0.1)] rounded-[24px] border border-white/20 dark:border-white/10 ${className}`}
+      style={{ 
+        backdropFilter: blur ? `blur(${blur})` : 'var(--glass-blur, blur(40px))', 
+        WebkitBackdropFilter: blur ? `blur(${blur})` : 'var(--glass-blur, blur(40px))',
+        '--glass-opacity': opacity || 'var(--glass-base-opacity, 0.2)',
+        '--glass-dark-opacity': darkOpacity || 'var(--glass-base-dark-opacity, 0.4)',
+      } as React.CSSProperties}
+      {...props}
+    >
+      <div className="glass-noise" />
+      <div className="relative z-10 w-full h-full">
+        {children}
+      </div>
+    </div>
+  );
+};
 
 const StatusBar = ({ className = "", time }: { className?: string, time: string }) => (
-  <div className={`flex justify-between items-center px-8 py-3 font-semibold text-[12px] text-zinc-800 backdrop-blur-md bg-white/10 ${className}`}>
+  <div className={`flex justify-between items-center px-8 py-3 font-semibold text-[12px] text-zinc-800 backdrop-blur-md ${className}`}>
     <span>{time}</span>
     <div className="flex items-center gap-2">
       <Signal size={14} strokeWidth={2} />
@@ -156,32 +164,77 @@ const StatusBar = ({ className = "", time }: { className?: string, time: string 
   </div>
 );
 
-const AppIcon = ({ icon: Icon, label, onClick, isEditingLayout, customIcon }: { icon: any, label: string, onClick?: () => void, isEditingLayout?: boolean, customIcon?: string }) => (
-  <motion.div 
-    drag={isEditingLayout}
-    dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-    dragElastic={0.1}
-    animate={isEditingLayout ? { rotate: [0, -1, 1, 0], scale: 1.05 } : { rotate: 0, scale: 1 }}
-    transition={isEditingLayout ? { repeat: Infinity, duration: 0.2 } : {}}
-    className="flex flex-col items-center gap-1.5 cursor-pointer active:scale-90 transition-transform relative" 
-    onClick={isEditingLayout ? undefined : onClick}
-  >
-    <div className="w-[60px] h-[60px] flex items-center justify-center bg-white/30 backdrop-blur-xl rounded-[20px] shadow-[0_4px_16px_rgba(0,0,0,0.05)] overflow-hidden relative border border-white/40">
-      {customIcon ? (
-        <img src={customIcon} alt={label} className="w-full h-full object-cover" />
-      ) : (
-        <Icon size={26} strokeWidth={1.2} className="text-zinc-800" />
-      )}
-      <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent pointer-events-none" />
-    </div>
-    {label && <span className="text-[10px] text-zinc-800 font-bold tracking-tight drop-shadow-sm">{label}</span>}
-    {isEditingLayout && (
-      <div className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-800 text-white rounded-full flex items-center justify-center shadow-lg">
-        <Plus size={12} className="rotate-45" />
+const AppIcon = ({ 
+  icon: Icon, 
+  label, 
+  onClick, 
+  isEditingLayout, 
+  customIcon, 
+  iconStyleConfig,
+  iconFrostIntensity = 60,
+  componentBgOpacity = 0.3
+}: { 
+  icon: any, 
+  label: string, 
+  onClick?: () => void, 
+  isEditingLayout?: boolean, 
+  customIcon?: string, 
+  iconStyleConfig?: any,
+  iconFrostIntensity?: number,
+  componentBgOpacity?: number
+}) => {
+  // Default values if config is not enabled or missing
+  const size = iconStyleConfig?.isEnabled ? iconStyleConfig.iconSize : 60;
+  const radius = iconStyleConfig?.isEnabled ? iconStyleConfig.borderRadius : 20;
+  const shadow = iconStyleConfig?.isEnabled ? iconStyleConfig.shadowIntensity : 0.05;
+  
+  const iconColorLight = iconStyleConfig?.isEnabled ? (iconStyleConfig.iconLightColor || '#27272a') : '#27272a';
+  const iconColorDark = iconStyleConfig?.isEnabled ? (iconStyleConfig.iconDarkColor || '#f4f4f5') : '#f4f4f5';
+
+  const blurPx = (iconFrostIntensity / 100) * 40;
+  const lightBgColor = componentBgOpacity === 0 ? 'transparent' : `rgba(255, 255, 255, ${componentBgOpacity})`;
+  const darkBgColor = componentBgOpacity === 0 ? 'transparent' : `rgba(0, 0, 0, ${componentBgOpacity})`;
+
+  return (
+    <motion.div 
+      drag={isEditingLayout}
+      dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+      dragElastic={0.1}
+      animate={isEditingLayout ? { rotate: [0, -1, 1, 0], scale: 1.05 } : { rotate: 0, scale: 1 }}
+      transition={isEditingLayout ? { repeat: Infinity, duration: 0.2 } : {}}
+      className="flex flex-col items-center gap-1.5 cursor-pointer active:scale-90 transition-transform relative" 
+      onClick={isEditingLayout ? undefined : onClick}
+    >
+      <div 
+        className="app-icon-inner flex items-center justify-center overflow-hidden relative border border-white/20 dark:border-white/10"
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          borderRadius: `${radius}px`,
+          boxShadow: `0 4px 16px rgba(0,0,0,${shadow})`,
+          backdropFilter: `blur(${blurPx}px)`,
+          WebkitBackdropFilter: `blur(${blurPx}px)`,
+          '--icon-light-bg': lightBgColor,
+          '--icon-dark-bg': darkBgColor,
+          '--icon-color-light': iconColorLight,
+          '--icon-color-dark': iconColorDark,
+        } as React.CSSProperties}
+      >
+        {customIcon ? (
+          <img src={customIcon} alt={label} className="w-full h-full object-cover z-10 relative" />
+        ) : (
+          <Icon size={Math.max(20, size * 0.45)} strokeWidth={1.2} className="app-icon-icon z-10 relative" />
+        )}
       </div>
-    )}
-  </motion.div>
-);
+      {label && <span className="text-[10px] text-zinc-800 dark:text-zinc-100 font-bold tracking-tight drop-shadow-sm mt-1">{label}</span>}
+      {isEditingLayout && (
+        <div className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-800 dark:bg-zinc-700 text-white rounded-full flex items-center justify-center shadow-lg z-20">
+          <Plus size={12} className="rotate-45" />
+        </div>
+      )}
+    </motion.div>
+  );
+};
 
 const ChatListItem = ({ name, msg, time, unread = 0, avatar }: any) => (
   <div className="flex items-center gap-4 p-4 active:bg-zinc-50 transition-colors cursor-pointer">
@@ -257,6 +310,24 @@ export default function App() {
     const saved = localStorage.getItem('aiphone_custom_icons');
     return saved ? JSON.parse(saved) : {};
   });
+  const [iconStyleConfig, setIconStyleConfig] = useState<any>(() => {
+    const saved = localStorage.getItem('aiphone_icon_style_config');
+    return saved ? JSON.parse(saved) : {
+      isEnabled: true,
+      borderRadius: 20,
+      iconSize: 60,
+      bgOpacity: 0.2,
+      bgLightColor: '#ffffff',
+      bgDarkColor: '#000000',
+      shadowIntensity: 0.05,
+      iconLightColor: '#27272a',
+      iconDarkColor: '#f4f4f5'
+    };
+  });
+  const [frostIntensity, setFrostIntensity] = useState<number>(() => {
+    const saved = localStorage.getItem('aiphone_frost_intensity');
+    return saved !== null ? Number(saved) : 60;
+  });
   const [worldBooks, setWorldBooks] = useState<any[]>(() => {
     const saved = localStorage.getItem('aiphone_world_books');
     return saved ? JSON.parse(saved) : [];
@@ -266,6 +337,40 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [editingWorldBook, setEditingWorldBook] = useState<any | null>(null);
+
+  // 主屏幕图标组件样式状态
+  const [iconFrostIntensity, setIconFrostIntensity] = useState<number>(() => {
+    const saved = localStorage.getItem('iconFrostIntensity');
+    return saved !== null ? Number(saved) : 60;
+  });
+  const [componentBgOpacity, setComponentBgOpacity] = useState<number>(() => {
+    const saved = localStorage.getItem('componentBgOpacity');
+    return saved !== null ? Number(saved) : 0.3;
+  });
+
+  // 监听 localStorage 变化以实现实时响应
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const savedIconFrost = localStorage.getItem('iconFrostIntensity');
+      if (savedIconFrost !== null) {
+        setIconFrostIntensity(Number(savedIconFrost));
+      }
+      
+      const savedOpacity = localStorage.getItem('componentBgOpacity');
+      if (savedOpacity !== null) {
+        setComponentBgOpacity(Number(savedOpacity));
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    // 轮询以便在同一个标签页中获取本地存储的更新
+    const interval = setInterval(handleStorageChange, 200);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
 
   const [contacts, setContacts] = useState<Persona[]>(() => {
     const saved = localStorage.getItem('aiphone_contacts');
@@ -326,6 +431,18 @@ export default function App() {
   }, [customIcons]);
 
   useEffect(() => {
+    localStorage.setItem('aiphone_icon_style_config', JSON.stringify(iconStyleConfig));
+  }, [iconStyleConfig]);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_frost_intensity', frostIntensity.toString());
+  }, [frostIntensity]);
+
+  useEffect(() => {
+    localStorage.setItem('iconFrostIntensity', iconFrostIntensity.toString());
+  }, [iconFrostIntensity]);
+
+  useEffect(() => {
     localStorage.setItem('aiphone_lock_screen_enabled', JSON.stringify(isLockScreenEnabled));
   }, [isLockScreenEnabled]);
 
@@ -345,25 +462,63 @@ export default function App() {
     localStorage.setItem('aiphone_motto', motto);
   }, [motto]);
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const compressImage = (file: File, maxWidth: number = 1024): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          } else {
+            reject(new Error('Canvas context not available'));
+          }
+        };
+        img.onerror = () => reject(new Error('Image load failed'));
+      };
+      reader.onerror = () => reject(new Error('File read failed'));
+    });
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatar(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImage(file, 800);
+        setAvatar(compressed);
+      } catch (err) {
+        console.error('Failed to process avatar:', err);
+        alert('图片处理失败，请重试');
+      }
     }
   };
 
-  const handleWallpaperChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleWallpaperChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setWallpaper(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImage(file, 1024);
+        setWallpaper(compressed);
+      } catch (err) {
+        console.error('Failed to process wallpaper:', err);
+        setWallpaper(null);
+        alert('图片加载失败，已恢复默认背景');
+      }
     }
   };
 
@@ -536,7 +691,7 @@ export default function App() {
       }}
     >
       {/* Mobile Frame */}
-      <div className="relative w-full h-full max-w-[390px] max-h-[844px] sm:h-[844px] sm:rounded-[44px] sm:border-[12px] sm:border-white sm:shadow-[0_20px_60px_rgba(0,0,0,0.05)] overflow-hidden bg-zinc-100">
+      <div className={`relative w-full h-full max-w-[390px] max-h-[844px] sm:h-[844px] sm:rounded-[44px] sm:border-[12px] sm:border-white sm:shadow-[0_20px_60px_rgba(0,0,0,0.05)] overflow-hidden ${wallpaper ? 'bg-black' : 'bg-zinc-100'}`}>
         
         <AnimatePresence mode="wait">
           {/* 1. Splash Screen */}
@@ -581,7 +736,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ y: "-100%", opacity: 0 }}
               transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute inset-0 bg-zinc-100 flex flex-col"
+              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100'}`}
               onClick={() => {
                 if (!isPasswordEnabled) {
                   setScreen('home');
@@ -590,8 +745,21 @@ export default function App() {
                 }
               }}
             >
-              <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200" />
-              <StatusBar time={time} className="z-10" />
+              {wallpaper ? (
+                <img 
+                  src={wallpaper} 
+                  alt="wallpaper" 
+                  className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none" 
+                  onError={(e) => { 
+                    (e.target as HTMLImageElement).style.display = 'none'; 
+                    setWallpaper(null);
+                    alert('图片加载失败，已恢复默认背景');
+                  }}
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 pointer-events-none" />
+              )}
+              <StatusBar time={time} className={`z-10 ${wallpaper ? '' : 'bg-white/10'}`} />
               
               <div className="flex-1 flex flex-col items-center justify-start pt-24 relative z-10">
                 <span className="text-[84px] font-thin tracking-tighter text-zinc-700 leading-none">{time}</span>
@@ -682,17 +850,23 @@ export default function App() {
               key="home"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="absolute inset-0 bg-zinc-100 flex flex-col"
+              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100'}`}
               onContextMenu={(e) => e.preventDefault()}
             >
-              <div 
-                className="absolute inset-0 bg-cover bg-center transition-all duration-500"
-                style={{ 
-                  backgroundImage: wallpaper ? `url(${wallpaper})` : 'none',
-                  backgroundColor: wallpaper ? 'transparent' : '#f4f4f5'
-                }}
-              />
-              {!wallpaper && <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 pointer-events-none" />}
+              {wallpaper ? (
+                <img 
+                  src={wallpaper} 
+                  alt="wallpaper" 
+                  className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none" 
+                  onError={(e) => { 
+                    (e.target as HTMLImageElement).style.display = 'none'; 
+                    setWallpaper(null);
+                    alert('图片加载失败，已恢复默认背景');
+                  }}
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 pointer-events-none" />
+              )}
               
               <input 
                 type="file" 
@@ -702,7 +876,7 @@ export default function App() {
                 onChange={handleWallpaperChange} 
               />
 
-              <StatusBar time={time} className="z-10 backdrop-blur-xl bg-white/20" />
+              <StatusBar time={time} className={`z-10 ${wallpaper ? '' : 'backdrop-blur-xl bg-white/20'}`} />
               
               <div 
                 className="flex-1 flex flex-col relative z-10"
@@ -736,49 +910,51 @@ export default function App() {
                   transition={isEditingLayout ? { repeat: Infinity, duration: 0.3 } : {}}
                   className="px-6 pt-10 pb-4 widget-container"
                 >
-                  <GlassCard className="p-6 flex gap-6 items-center" blur="60px" opacity="0.3">
-                    {/* Time & Weather Section */}
-                    <div className="flex-1 flex flex-col gap-1">
-                      <span className="font-thin text-zinc-700 tracking-tighter leading-none" style={{ fontSize: '48px' }}>{time}</span>
-                      <span className="font-bold text-zinc-500 tracking-[0.3em] uppercase mt-2" style={{ fontSize: '9px' }}>{date}</span>
-                      <div className="mt-4 pt-3 border-t border-zinc-200/30 flex items-center gap-3">
-                        <CloudSun className="text-zinc-400" size={16} strokeWidth={1} />
-                        <div className="flex gap-2 items-center">
-                          <span className="font-light text-zinc-600" style={{ fontSize: '20px' }}>22°</span>
-                          <span className="font-bold text-zinc-400 tracking-[0.2em] uppercase" style={{ fontSize: '8px' }}>Cloudy</span>
+                  <GlassCard className="p-6" blur="60px" opacity="0.2" darkOpacity="0.4">
+                    <div className="flex flex-row gap-6 items-center justify-between">
+                      {/* Time & Weather Section */}
+                      <div className="flex-1 flex flex-col gap-1 min-w-0">
+                        <span className="font-thin text-zinc-800 dark:text-white drop-shadow-sm tracking-tighter leading-none" style={{ fontSize: '48px' }}>{time}</span>
+                        <span className="font-bold text-zinc-600 dark:text-zinc-200 drop-shadow-sm tracking-[0.3em] uppercase mt-2" style={{ fontSize: '9px' }}>{date}</span>
+                        <div className="mt-4 pt-3 border-t border-zinc-300/30 dark:border-white/10 flex items-center gap-3">
+                          <CloudSun className="text-zinc-500 dark:text-zinc-300 flex-shrink-0" size={16} strokeWidth={1} />
+                          <div className="flex gap-2 items-center">
+                            <span className="font-light text-zinc-700 dark:text-zinc-100 drop-shadow-sm whitespace-nowrap" style={{ fontSize: '20px' }}>22°</span>
+                            <span className="font-bold text-zinc-500 dark:text-zinc-300 drop-shadow-sm tracking-[0.2em] uppercase whitespace-nowrap" style={{ fontSize: '8px' }}>Cloudy</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Divider */}
-                    <div className="w-px h-20 bg-zinc-200/30" />
+                      {/* Divider */}
+                      <div className="w-px h-20 bg-zinc-300/30 dark:bg-white/10 flex-shrink-0" />
 
-                    {/* Avatar & Motto Section */}
-                    <div className="w-[140px] flex flex-col items-center gap-3">
-                      <label className="cursor-pointer group relative">
-                        <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
-                        <div className="w-[96px] h-[96px] rounded-[32px] bg-white/50 border border-white flex items-center justify-center text-zinc-300 overflow-hidden group-hover:bg-white/80 transition-colors">
-                          {avatar ? (
-                            <img src={avatar} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <CircleUserRound size={48} strokeWidth={1} />
-                          )}
-                        </div>
-                        {isEditingLayout && (
-                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-200 rounded-full flex items-center justify-center text-zinc-500 shadow-sm">
-                            <Plus size={12} />
+                      {/* Avatar & Motto Section */}
+                      <div className="w-[140px] flex-shrink-0 flex flex-col items-center gap-3">
+                        <label className="cursor-pointer group relative">
+                          <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
+                          <div className="w-[96px] h-[96px] rounded-[32px] bg-white/30 dark:bg-black/20 border border-white/40 dark:border-white/20 flex items-center justify-center text-zinc-400 dark:text-zinc-300 overflow-hidden group-hover:bg-white/50 dark:group-hover:bg-black/40 transition-colors shadow-[0_4px_16px_rgba(0,0,0,0.05)]">
+                            {avatar ? (
+                              <img src={avatar} alt="avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <CircleUserRound size={48} strokeWidth={1} />
+                            )}
                           </div>
-                        )}
-                      </label>
-                      <div className="w-full">
-                        <input 
-                          type="text"
-                          value={motto}
-                          onChange={(e) => setMotto(e.target.value)}
-                          style={{ fontSize: '10px' }}
-                          className="w-full bg-transparent border-none outline-none text-zinc-500 text-center font-medium placeholder:text-zinc-300"
-                          placeholder="点击输入文案"
-                        />
+                          {isEditingLayout && (
+                            <div className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-200 dark:bg-zinc-700 rounded-full flex items-center justify-center text-zinc-500 dark:text-zinc-300 shadow-sm">
+                              <Plus size={12} />
+                            </div>
+                          )}
+                        </label>
+                        <div className="w-full">
+                          <input 
+                            type="text"
+                            value={motto}
+                            onChange={(e) => setMotto(e.target.value)}
+                            style={{ fontSize: '10px' }}
+                            className="w-full bg-transparent border-none outline-none text-zinc-600 dark:text-zinc-200 drop-shadow-sm text-center font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
+                            placeholder="点击输入文案"
+                          />
+                        </div>
                       </div>
                     </div>
                   </GlassCard>
@@ -786,13 +962,13 @@ export default function App() {
 
                 {/* App Grid */}
                 <div className="flex-1 grid grid-cols-4 gap-y-6 px-6 py-6 content-start">
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={MessageCircle} label="聊天" onClick={() => setScreen('app-chat')} isEditingLayout={isEditingLayout} customIcon={customIcons['chat']} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={Music} label="音乐" isEditingLayout={isEditingLayout} customIcon={customIcons['music']} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={FileText} label="备忘录" isEditingLayout={isEditingLayout} customIcon={customIcons['notes']} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={ImageIcon} label="相册" isEditingLayout={isEditingLayout} customIcon={customIcons['photos']} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={BookOpen} label="世界书" onClick={() => setScreen('app-world')} isEditingLayout={isEditingLayout} customIcon={customIcons['world']} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={Settings} label="设置" onClick={() => setScreen('app-settings')} isEditingLayout={isEditingLayout} customIcon={customIcons['settings']} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={Palette} label="外观" onClick={() => setScreen('app-appearance')} isEditingLayout={isEditingLayout} customIcon={customIcons['appearance']} /></div>
+                  <div className="app-icon-container flex justify-center"><AppIcon icon={MessageCircle} label="聊天" onClick={() => setScreen('app-chat')} isEditingLayout={isEditingLayout} customIcon={customIcons['chat']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                  <div className="app-icon-container flex justify-center"><AppIcon icon={Music} label="音乐" isEditingLayout={isEditingLayout} customIcon={customIcons['music']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                  <div className="app-icon-container flex justify-center"><AppIcon icon={FileText} label="备忘录" isEditingLayout={isEditingLayout} customIcon={customIcons['notes']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                  <div className="app-icon-container flex justify-center"><AppIcon icon={ImageIcon} label="相册" isEditingLayout={isEditingLayout} customIcon={customIcons['photos']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                  <div className="app-icon-container flex justify-center"><AppIcon icon={BookOpen} label="世界书" onClick={() => setScreen('app-world')} isEditingLayout={isEditingLayout} customIcon={customIcons['world']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                  <div className="app-icon-container flex justify-center"><AppIcon icon={Settings} label="设置" onClick={() => setScreen('app-settings')} isEditingLayout={isEditingLayout} customIcon={customIcons['settings']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                  <div className="app-icon-container flex justify-center"><AppIcon icon={Palette} label="外观" onClick={() => setScreen('app-appearance')} isEditingLayout={isEditingLayout} customIcon={customIcons['appearance']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
                 </div>
 
                 {/* Page Indicator */}
@@ -803,11 +979,13 @@ export default function App() {
 
                 {/* Dock */}
                 <div className="mx-4 mb-2">
-                  <GlassCard className="flex justify-around p-2 rounded-[24px]" blur="80px" opacity="0.4">
-                    <div className="app-icon-container"><AppIcon icon={Phone} label="" onClick={() => setScreen('app-phone-list')} isEditingLayout={isEditingLayout} customIcon={customIcons['phone']} /></div>
-                    <div className="app-icon-container"><AppIcon icon={MessageCircle} label="" onClick={() => setScreen('app-chat')} isEditingLayout={isEditingLayout} customIcon={customIcons['chat']} /></div>
-                    <div className="app-icon-container"><AppIcon icon={Globe} label="" isEditingLayout={isEditingLayout} customIcon={customIcons['browser']} /></div>
-                    <div className="app-icon-container"><AppIcon icon={Sparkles} label="" isEditingLayout={isEditingLayout} customIcon={customIcons['ai']} /></div>
+                  <GlassCard className="p-3 rounded-[32px]" blur="60px" opacity="0.2" darkOpacity="0.4">
+                    <div className="flex flex-row justify-around items-center">
+                      <div className="app-icon-container"><AppIcon icon={Phone} label="" onClick={() => setScreen('app-phone-list')} isEditingLayout={isEditingLayout} customIcon={customIcons['phone']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                      <div className="app-icon-container"><AppIcon icon={MessageCircle} label="" onClick={() => setScreen('app-chat')} isEditingLayout={isEditingLayout} customIcon={customIcons['chat']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                      <div className="app-icon-container"><AppIcon icon={Globe} label="" isEditingLayout={isEditingLayout} customIcon={customIcons['browser']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                      <div className="app-icon-container"><AppIcon icon={Sparkles} label="" isEditingLayout={isEditingLayout} customIcon={customIcons['ai']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                    </div>
                   </GlassCard>
                 </div>
 
@@ -1194,6 +1372,12 @@ export default function App() {
               setFontLink={setFontLink}
               customIcons={customIcons}
               setCustomIcons={setCustomIcons}
+              iconStyleConfig={iconStyleConfig}
+              setIconStyleConfig={setIconStyleConfig}
+              iconFrostIntensity={iconFrostIntensity}
+              setIconFrostIntensity={setIconFrostIntensity}
+              frostIntensity={frostIntensity}
+              setFrostIntensity={setFrostIntensity}
             />
           )}
 
@@ -1346,9 +1530,69 @@ export default function App() {
       <style>{`
         :root {
           --custom-font-family: inherit;
+          --frost-intensity: ${frostIntensity};
+          --glass-blur-px: calc(var(--frost-intensity) / 100 * 40px);
+          --glass-blur: blur(var(--glass-blur-px));
+          /* Calculate opacity: higher frost intensity -> lower opacity for better noise visibility */
+          --glass-base-opacity: calc(0.3 - (var(--frost-intensity) / 100 * 0.15));
+          --glass-base-dark-opacity: calc(0.5 - (var(--frost-intensity) / 100 * 0.25));
+          /* Noise opacity maps from 0 to 0.15 based on intensity */
+          --noise-opacity: calc(var(--frost-intensity) / 100 * 0.15);
         }
         * {
           font-family: var(--custom-font-family) !important;
+        }
+        .glass-card {
+          position: relative;
+          background-color: rgba(255, 255, 255, var(--glass-opacity, 0.2));
+          overflow: hidden;
+        }
+        .glass-noise {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 0;
+          opacity: var(--noise-opacity);
+          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+          mix-blend-mode: overlay;
+        }
+        @media (prefers-color-scheme: dark) {
+          .glass-noise {
+            opacity: calc(var(--noise-opacity) * 1.5);
+            mix-blend-mode: screen;
+            filter: invert(1) brightness(0.8);
+          }
+        }
+        .dark .glass-noise {
+          opacity: calc(var(--noise-opacity) * 1.5);
+          mix-blend-mode: screen;
+          filter: invert(1) brightness(0.8);
+        }
+        .app-icon-inner {
+          background-color: var(--icon-light-bg);
+        }
+        .app-icon-icon {
+          color: var(--icon-color-light);
+        }
+        @media (prefers-color-scheme: dark) {
+          .glass-card {
+            background-color: rgba(0, 0, 0, var(--glass-dark-opacity, 0.4));
+          }
+          .app-icon-inner {
+            background-color: var(--icon-dark-bg);
+          }
+          .app-icon-icon {
+            color: var(--icon-color-dark);
+          }
+        }
+        .dark .glass-card {
+          background-color: rgba(0, 0, 0, var(--glass-dark-opacity, 0.4));
+        }
+        .dark .app-icon-inner {
+          background-color: var(--icon-dark-bg);
+        }
+        .dark .app-icon-icon {
+          color: var(--icon-color-dark);
         }
         .no-scrollbar::-webkit-scrollbar {
           display: none;
