@@ -56,7 +56,9 @@ import {
   SlidersHorizontal,
   Upload,
   Bookmark,
-  Bot
+  Bot,
+  Copy,
+  Quote
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -342,7 +344,7 @@ export default function App() {
   });
 
   // Chat State
-  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
+  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'assistant', content: string, groupId?: string, quote?: { content: string, sender: string }}[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isAddingFriend, setIsAddingFriend] = useState(false);
@@ -581,7 +583,14 @@ export default function App() {
     
     const userMsg = chatInput.trim();
     const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
-    const newMessages = [...currentMessages, { role: 'user' as const, content: userMsg }];
+    const newMessage: { role: 'user', content: string, quote?: { content: string, sender: string } } = { 
+      role: 'user', 
+      content: userMsg 
+    };
+    if (quoteToReply) {
+      newMessage.quote = quoteToReply;
+    }
+    const newMessages = [...currentMessages, newMessage];
 
     if (activeChatContact) {
       setChatHistories(prev => ({
@@ -592,26 +601,45 @@ export default function App() {
       setChatMessages(newMessages);
     }
     setChatInput('');
+    setQuoteToReply(null);
+    setTimeout(() => {
+      if (chatInputRef.current) {
+        chatInputRef.current.style.height = '48px';
+      }
+    }, 10);
   };
 
-  const generateAiReply = async (regenerateIndex?: number) => {
+  const generateAiReply = async (regenerateIdOrIndex?: string | number) => {
     const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
     
     // Determine the messages to send to the API
     let messagesToSend = currentMessages;
     let isRegenerating = false;
+    let regenerateStartIndex = -1;
+    let targetGroupId: string | undefined = undefined;
 
-    if (regenerateIndex !== undefined && regenerateIndex >= 0 && regenerateIndex < currentMessages.length) {
-      // If regenerating, use messages up to (but not including) the message to regenerate
-      messagesToSend = currentMessages.slice(0, regenerateIndex);
-      isRegenerating = true;
+    if (regenerateIdOrIndex !== undefined) {
+      if (typeof regenerateIdOrIndex === 'string') {
+        targetGroupId = regenerateIdOrIndex;
+        regenerateStartIndex = currentMessages.findIndex(m => m.groupId === targetGroupId);
+      } else {
+        regenerateStartIndex = regenerateIdOrIndex;
+        targetGroupId = currentMessages[regenerateStartIndex]?.groupId;
+      }
+      
+      if (regenerateStartIndex !== -1 && regenerateStartIndex < currentMessages.length) {
+        messagesToSend = currentMessages.slice(0, regenerateStartIndex);
+        isRegenerating = true;
+      }
     }
 
     if (messagesToSend.length === 0) return; // Nothing to reply to
     
+    const newGroupId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
+
     // Helper to sequentially append split reply messages
     const appendMessagesSequentially = async (texts: string[], isError: boolean = false) => {
-      let insertBaseIndex = isRegenerating && regenerateIndex !== undefined ? regenerateIndex : -1;
+      let insertBaseIndex = regenerateStartIndex;
       
       let currentLocalMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
 
@@ -620,13 +648,17 @@ export default function App() {
           if (activeChatContact) {
               setChatHistories(prev => {
                   const hist = prev[activeChatContact.id] || [];
-                  const newHist = [...hist.slice(0, insertBaseIndex), ...hist.slice(insertBaseIndex + 1)];
+                  const newHist = targetGroupId 
+                    ? hist.filter(m => m.groupId !== targetGroupId)
+                    : [...hist.slice(0, insertBaseIndex), ...hist.slice(insertBaseIndex + 1)];
                   currentLocalMessages = newHist;
                   return { ...prev, [activeChatContact.id]: newHist };
               });
           } else {
               setChatMessages(prev => {
-                  const newHist = [...prev.slice(0, insertBaseIndex), ...prev.slice(insertBaseIndex + 1)];
+                  const newHist = targetGroupId 
+                    ? prev.filter(m => m.groupId !== targetGroupId)
+                    : [...prev.slice(0, insertBaseIndex), ...prev.slice(insertBaseIndex + 1)];
                   currentLocalMessages = newHist;
                   return newHist;
               });
@@ -642,7 +674,7 @@ export default function App() {
             await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
         }
         
-        const newMsg: {role: 'user'|'assistant', content: string} = { role: 'assistant', content: text };
+        const newMsg: {role: 'user'|'assistant', content: string, groupId?: string, quote?: { content: string, sender: string }} = { role: 'assistant', content: text, groupId: isError ? undefined : newGroupId };
         
         if (activeChatContact) {
             const currentContactId = activeChatContact.id;
@@ -764,7 +796,13 @@ export default function App() {
       : systemPrompt;
 
     // Limit context to last N messages (configurable)
-    const contextMessages = messagesToSend.slice(-(apiConfig.contextMessageCount || 10));
+    const contextMessages = messagesToSend.slice(-(apiConfig.contextMessageCount || 10)).map(m => {
+      let content = m.content;
+      if (m.quote) {
+        content = `[引用 ${m.quote.sender} 的消息: "${m.quote.content}"]\n${content}`;
+      }
+      return { role: m.role, content };
+    });
 
     // Build headers
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -832,10 +870,12 @@ export default function App() {
       setChatErrorToast(errorMsg);
       setTimeout(() => setChatErrorToast(''), 3000);
       
-      // API call failed — fallback to simulated reply
-      const simReply = generateSimulatedReply(activeChatContact, userMsgForSim);
-      const fallbackMsg = `⚠️ API调用失败，已降级为模拟回复。\n\n${simReply}\n\n(错误: ${errorMsg})`;
-      await appendMessagesSequentially(splitTextIntoMessages(fallbackMsg), true);
+      if (!isRegenerating) {
+        // API call failed for new message — fallback to simulated reply
+        const simReply = generateSimulatedReply(activeChatContact, userMsgForSim);
+        const fallbackMsg = `⚠️ API调用失败，已降级为模拟回复。\n\n${simReply}\n\n(错误: ${errorMsg})`;
+        await appendMessagesSequentially(splitTextIntoMessages(fallbackMsg), true);
+      }
     } finally {
       setIsAiLoading(false);
     }
@@ -902,7 +942,7 @@ export default function App() {
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [activeChatContact, setActiveChatContact] = useState<Persona | null>(null);
-  const [chatHistories, setChatHistories] = useState<Record<string, {role: 'user' | 'assistant', content: string}[]>>(() => {
+  const [chatHistories, setChatHistories] = useState<Record<string, {role: 'user' | 'assistant', content: string, groupId?: string, quote?: { content: string, sender: string }}[]>>(() => {
     const saved = localStorage.getItem('aiphone_chat_histories');
     return saved ? JSON.parse(saved) : {};
   });
@@ -951,6 +991,91 @@ export default function App() {
     return saved ? JSON.parse(saved) : {};
   });
 
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; messageIndex: number; messageContent: string; messageRole: 'user' | 'assistant' | ''; messageGroupId?: string; isVisible: boolean }>({ x: 0, y: 0, messageIndex: -1, messageContent: '', messageRole: '', isVisible: false });
+  const [quoteToReply, setQuoteToReply] = useState<{ content: string, sender: string } | null>(null);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [editingMessageContent, setEditingMessageContent] = useState('');
+  const [toastMessage, setToastMessage] = useState<string>('');
+  const chatInputRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const handleContextMenu = (e: React.MouseEvent, index: number, content: string, role: 'user' | 'assistant', groupId?: string) => {
+    e.preventDefault();
+    const menuWidth = 120;
+    const menuHeight = 180;
+    
+    let x = e.clientX;
+    let y = e.clientY;
+
+    if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
+    if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+
+    setContextMenu({ x, y, messageIndex: index, messageContent: content, messageRole: role, messageGroupId: groupId, isVisible: true });
+  };
+
+  const handleEditMessageClick = () => {
+    setEditingMessageIndex(contextMenu.messageIndex);
+    setEditingMessageContent(contextMenu.messageContent);
+    setContextMenu({ ...contextMenu, isVisible: false });
+  };
+
+  const handleSaveEditMessage = () => {
+    if (!editingMessageContent.trim() || editingMessageIndex === null) return;
+    const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
+    
+    if (currentChatId === 'ai_assistant') {
+      setChatMessages(prev => prev.map((msg, i) => i === editingMessageIndex ? { ...msg, content: editingMessageContent } : msg));
+    } else {
+      setChatHistories(prev => ({
+        ...prev,
+        [currentChatId]: (prev[currentChatId] || []).map((msg, i) => i === editingMessageIndex ? { ...msg, content: editingMessageContent } : msg)
+      }));
+    }
+    setEditingMessageIndex(null);
+  };
+
+  const handleRegenerateMessage = () => {
+    if (contextMenu.messageIndex === -1) return;
+    generateAiReply(contextMenu.messageGroupId || contextMenu.messageIndex);
+    setContextMenu({ ...contextMenu, isVisible: false });
+  };
+
+  const handleCopyMessage = () => {
+    navigator.clipboard.writeText(contextMenu.messageContent).then(() => {
+      setToastMessage('已复制');
+      setTimeout(() => setToastMessage(''), 2000);
+    });
+    setContextMenu({ ...contextMenu, isVisible: false });
+  };
+
+  const handleQuoteMessage = () => {
+    const senderName = contextMenu.messageRole === 'user' 
+      ? '我' 
+      : (activeChatContact ? (chatSettings[activeChatContact.id]?.remark || activeChatContact.chatName) : 'AI 助手');
+    
+    setQuoteToReply({ content: contextMenu.messageContent, sender: senderName });
+    setContextMenu({ ...contextMenu, isVisible: false });
+    setTimeout(() => {
+      if (chatInputRef.current) {
+        chatInputRef.current.focus();
+      }
+    }, 10);
+  };
+
+  const handleDeleteMessage = () => {
+    if (contextMenu.messageIndex === -1) return;
+    const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
+    
+    if (currentChatId === 'ai_assistant') {
+      setChatMessages(prev => prev.filter((_, i) => i !== contextMenu.messageIndex));
+    } else {
+      setChatHistories(prev => ({
+        ...prev,
+        [currentChatId]: (prev[currentChatId] || []).filter((_, i) => i !== contextMenu.messageIndex)
+      }));
+    }
+    setContextMenu({ ...contextMenu, isVisible: false });
+  };
+
   useEffect(() => {
     localStorage.setItem('aiphone_chat_memories', JSON.stringify(chatMemories));
   }, [chatMemories]);
@@ -977,28 +1102,30 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-zinc-100 flex items-center justify-center"
+              className="absolute inset-0 bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center"
             >
-              <div className="absolute top-[5%] left-[-10%] w-80 h-80 bg-white rounded-full blur-[100px] opacity-80" />
-              <div className="absolute bottom-[10%] right-[-5%] w-96 h-96 bg-white rounded-full blur-[100px] opacity-80" />
-              
-              <GlassCard className="flex flex-col items-center gap-6 p-14" blur="50px" opacity="0.4">
-                <div className="w-24 h-24 bg-white/50 rounded-[32px] flex items-center justify-center text-zinc-600 shadow-sm animate-pulse">
-                  <Smartphone size={52} strokeWidth={1} />
-                </div>
-                <div className="flex flex-col items-center">
-                  <h1 className="text-3xl font-light text-zinc-600 tracking-[0.2em]">AI PHONE</h1>
-                  <p className="text-[9px] text-zinc-400 font-bold tracking-[0.4em] uppercase mt-2">Pure White Edition</p>
-                </div>
-                <div className="w-32 h-0.5 bg-zinc-100 rounded-full mt-10 overflow-hidden">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="flex flex-col items-center gap-8"
+              >
+                <h1
+                  className="text-5xl sm:text-6xl font-light tracking-wider text-zinc-800 dark:text-zinc-100"
+                  style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
+                >
+                  puppy
+                </h1>
+                
+                <div className="w-32 h-[2px] bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
                   <motion.div 
                     initial={{ width: 0 }}
                     animate={{ width: "100%" }}
                     transition={{ duration: 2.5, ease: "easeInOut" }}
-                    className="h-full bg-zinc-300"
+                    className="h-full bg-zinc-800 dark:bg-zinc-200"
                   />
                 </div>
-              </GlassCard>
+              </motion.div>
             </motion.div>
           )}
 
@@ -1768,21 +1895,24 @@ export default function App() {
               </AnimatePresence>
               {(activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages).map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}>
-                  <div className={`max-w-[80%] p-4 rounded-2xl text-sm relative ${
+                  <div 
+                    onContextMenu={(e) => handleContextMenu(e, i, msg.content, msg.role, msg.groupId)}
+                    className={`max-w-[80%] p-4 rounded-2xl text-sm relative transition-transform duration-200 select-text flex flex-col gap-1.5 ${
                     msg.role === 'user' 
                       ? 'bg-black text-white rounded-tr-none' 
                       : 'bg-white text-zinc-700 rounded-tl-none shadow'
-                  }`}>
-                    {msg.content}
-                    {msg.role === 'assistant' && !isAiLoading && (
-                      <button 
-                        onClick={() => generateAiReply(i)}
-                        className="absolute -right-8 bottom-0 p-1.5 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-all"
-                        title="重新生成"
-                      >
-                        <RefreshCw size={14} />
-                      </button>
+                  } ${contextMenu.isVisible && contextMenu.messageIndex === i ? 'scale-95 opacity-80' : ''}`}>
+                    {msg.quote && (
+                      <div className={`p-2 rounded-lg text-xs border-l-[3px] flex flex-col gap-0.5 ${
+                        msg.role === 'user'
+                          ? 'bg-white/10 border-white/30 text-white/80'
+                          : 'bg-zinc-100 border-zinc-300 text-zinc-500'
+                      }`}>
+                        <span className="font-bold">{msg.quote.sender}</span>
+                        <span className="line-clamp-3 break-words whitespace-pre-wrap">{msg.quote.content}</span>
+                      </div>
                     )}
+                    <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                   </div>
                 </div>
               ))}
@@ -1792,19 +1922,143 @@ export default function App() {
               )}
             </div>
 
+            <AnimatePresence>
+              {contextMenu.isVisible && (
+                <>
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-40" 
+                    onClick={() => setContextMenu({ ...contextMenu, isVisible: false })}
+                    onContextMenu={(e) => { e.preventDefault(); setContextMenu({ ...contextMenu, isVisible: false }); }}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    className="fixed z-50 w-32 bg-white/70 dark:bg-zinc-800/70 backdrop-blur-2xl border border-zinc-200/50 dark:border-zinc-700/50 rounded-2xl shadow-xl overflow-hidden flex flex-col"
+                  >
+                    <button onClick={handleCopyMessage} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left active:bg-black/10">
+                      <Copy size={16} />
+                      复制
+                    </button>
+                    <div className="h-px bg-zinc-200/50 dark:bg-zinc-700/50 mx-2" />
+                    <button onClick={handleQuoteMessage} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left active:bg-black/10">
+                      <Quote size={16} />
+                      引用
+                    </button>
+                    {contextMenu.messageRole === 'user' && (
+                      <>
+                        <div className="h-px bg-zinc-200/50 dark:bg-zinc-700/50 mx-2" />
+                        <button onClick={handleEditMessageClick} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left active:bg-black/10">
+                          <Pencil size={16} />
+                          编辑
+                        </button>
+                      </>
+                    )}
+                    {contextMenu.messageRole === 'assistant' && !isAiLoading && (
+                      <>
+                        <div className="h-px bg-zinc-200/50 dark:bg-zinc-700/50 mx-2" />
+                        <button onClick={handleRegenerateMessage} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left active:bg-black/10">
+                          <RefreshCw size={16} />
+                          重 roll
+                        </button>
+                      </>
+                    )}
+                    <div className="h-px bg-zinc-200/50 dark:bg-zinc-700/50 mx-2" />
+                    <button onClick={handleDeleteMessage} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50/50 dark:hover:bg-red-500/10 transition-colors text-left active:bg-red-100/50">
+                      <Delete size={16} />
+                      删除
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {toastMessage && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-zinc-800/80 backdrop-blur-md text-white text-xs font-bold rounded-full shadow-lg"
+                >
+                  {toastMessage}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {editingMessageIndex !== null && (
+              <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
+                <div className="bg-white rounded-[24px] w-full max-w-[340px] flex flex-col overflow-hidden shadow-2xl">
+                  <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100">
+                    <span className="text-[14px] font-bold text-zinc-800">编辑消息</span>
+                    <button 
+                      onClick={() => setEditingMessageIndex(null)}
+                      className="text-zinc-400 hover:text-zinc-600 p-1"
+                    >
+                      <Delete size={18} />
+                    </button>
+                  </div>
+                  <div className="p-5 flex flex-col gap-4">
+                    <textarea 
+                      rows={6}
+                      className="w-full bg-zinc-50 rounded-xl p-3 text-sm outline-none border border-transparent focus:border-zinc-300 transition-colors resize-none leading-relaxed"
+                      value={editingMessageContent}
+                      onChange={e => setEditingMessageContent(e.target.value)}
+                    />
+                    <div className="flex gap-3 mt-2">
+                      <button 
+                        onClick={() => setEditingMessageIndex(null)}
+                        className="flex-1 py-3 bg-zinc-100 text-zinc-600 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
+                      >
+                        取消
+                      </button>
+                      <button 
+                        onClick={handleSaveEditMessage}
+                        className="flex-1 py-3 bg-zinc-800 text-white rounded-xl text-sm font-bold shadow-md hover:bg-zinc-700 active:scale-95 transition-all flex justify-center items-center gap-2"
+                      >
+                        <Check size={16} /> 保存
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="p-4 bg-white border-t border-zinc-100 pb-8 flex flex-col gap-3">
               {currentChatSettings.isBlocked ? (
                 <div className="flex items-center justify-center p-4 bg-zinc-50 rounded-2xl text-zinc-400 text-sm border border-zinc-100">
                   您已被拉黑
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <input 
-                    type="text" 
+                <>
+                  {quoteToReply && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-zinc-50 rounded-xl border border-zinc-100 text-xs shadow-sm">
+                      <div className="flex flex-col flex-1 min-w-0 pr-2 border-l-2 border-zinc-300 pl-2">
+                        <span className="font-bold text-zinc-600">{quoteToReply.sender}</span>
+                        <span className="text-zinc-500 truncate">{quoteToReply.content}</span>
+                      </div>
+                      <button onClick={() => setQuoteToReply(null)} className="p-1 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-200 transition-colors">
+                        <Delete size={14} />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-end gap-2">
+                    <textarea 
+                    ref={chatInputRef}
                     placeholder="输入消息..."
-                    className="flex-1 bg-zinc-50 p-4 rounded-2xl text-sm outline-none border border-zinc-200 focus:border-zinc-400 transition-colors h-12"
+                    className="flex-1 bg-zinc-50 p-3.5 rounded-2xl text-sm outline-none border border-zinc-200 focus:border-zinc-400 transition-colors resize-none overflow-y-auto leading-tight"
+                    style={{ height: '48px', minHeight: '48px', maxHeight: '120px' }}
                     value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
+                    onChange={(e) => {
+                      setChatInput(e.target.value);
+                      e.target.style.height = '48px';
+                      e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
@@ -1828,6 +2082,7 @@ export default function App() {
                     <Send size={18} />
                   </button>
                 </div>
+                </>
               )}
             </div>
 
