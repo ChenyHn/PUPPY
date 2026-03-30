@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as mammoth from 'mammoth';
 import { 
   Smartphone, 
@@ -164,6 +164,13 @@ const StatusBar = ({ className = "", time }: { className?: string, time: string 
   </div>
 );
 
+const hexToRgb = (hex: string) => {
+  const r = parseInt(hex.slice(1, 3), 16) || 0;
+  const g = parseInt(hex.slice(3, 5), 16) || 0;
+  const b = parseInt(hex.slice(5, 7), 16) || 0;
+  return { r, g, b };
+};
+
 const AppIcon = ({ 
   icon: Icon, 
   label, 
@@ -172,7 +179,7 @@ const AppIcon = ({
   customIcon, 
   iconStyleConfig,
   iconFrostIntensity = 60,
-  componentBgOpacity = 0.3
+  isDragging = false,
 }: { 
   icon: any, 
   label: string, 
@@ -181,28 +188,62 @@ const AppIcon = ({
   customIcon?: string, 
   iconStyleConfig?: any,
   iconFrostIntensity?: number,
-  componentBgOpacity?: number
+  isDragging?: boolean,
 }) => {
   // Default values if config is not enabled or missing
   const size = iconStyleConfig?.isEnabled ? iconStyleConfig.iconSize : 60;
   const radius = iconStyleConfig?.isEnabled ? iconStyleConfig.borderRadius : 20;
-  const shadow = iconStyleConfig?.isEnabled ? iconStyleConfig.shadowIntensity : 0.05;
+  const shadowIntensity = iconStyleConfig?.isEnabled ? iconStyleConfig.shadowIntensity : 0.05;
+  
+  // Shadow color support
+  const shadowColorMode = iconStyleConfig?.isEnabled ? (iconStyleConfig.shadowColorMode || 'auto') : 'auto';
+  const shadowLightColor = iconStyleConfig?.isEnabled ? (iconStyleConfig.shadowLightColor || '#4a4a4a') : '#4a4a4a';
+  const shadowDarkColor = iconStyleConfig?.isEnabled ? (iconStyleConfig.shadowDarkColor || '#888888') : '#888888';
+  
+  // Determine shadow color based on mode
+  const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let shadowColorHex: string;
+  if (shadowColorMode === 'auto') {
+    shadowColorHex = isDarkMode ? '#555555' : '#000000';
+  } else {
+    shadowColorHex = isDarkMode ? shadowDarkColor : shadowLightColor;
+  }
+  const shadowRgb = hexToRgb(shadowColorHex);
   
   const iconColorLight = iconStyleConfig?.isEnabled ? (iconStyleConfig.iconLightColor || '#27272a') : '#27272a';
   const iconColorDark = iconStyleConfig?.isEnabled ? (iconStyleConfig.iconDarkColor || '#f4f4f5') : '#f4f4f5';
 
+  // Icon background uses iconStyleConfig settings (NOT componentBgOpacity which is for GlassCards)
   const blurPx = (iconFrostIntensity / 100) * 40;
-  const lightBgColor = componentBgOpacity === 0 ? 'transparent' : `rgba(255, 255, 255, ${componentBgOpacity})`;
-  const darkBgColor = componentBgOpacity === 0 ? 'transparent' : `rgba(0, 0, 0, ${componentBgOpacity})`;
+  const iconBgOpacity = iconStyleConfig?.isEnabled ? iconStyleConfig.bgOpacity : 0.2;
+  const bgLightHex = iconStyleConfig?.isEnabled ? (iconStyleConfig.bgLightColor || '#ffffff') : '#ffffff';
+  const bgDarkHex = iconStyleConfig?.isEnabled ? (iconStyleConfig.bgDarkColor || '#18181b') : '#18181b';
+  
+  const lightRgb = hexToRgb(bgLightHex);
+  const darkRgb = hexToRgb(bgDarkHex);
+  const lightBgColor = iconBgOpacity === 0 ? 'transparent' : `rgba(${lightRgb.r}, ${lightRgb.g}, ${lightRgb.b}, ${iconBgOpacity})`;
+  const darkBgColor = iconBgOpacity === 0 ? 'transparent' : `rgba(${darkRgb.r}, ${darkRgb.g}, ${darkRgb.b}, ${iconBgOpacity})`;
+
+  // Wobble animation delay based on label for variation
+  const wobbleDelay = (label?.charCodeAt(0) || 0) % 5 * 0.05;
 
   return (
     <motion.div 
-      drag={isEditingLayout}
-      dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-      dragElastic={0.1}
-      animate={isEditingLayout ? { rotate: [0, -1, 1, 0], scale: 1.05 } : { rotate: 0, scale: 1 }}
-      transition={isEditingLayout ? { repeat: Infinity, duration: 0.2 } : {}}
-      className="flex flex-col items-center gap-1.5 cursor-pointer active:scale-90 transition-transform relative" 
+      layout={isEditingLayout && !isDragging}
+      animate={isEditingLayout ? { 
+        rotate: [0, -1.5, 1.5, -1, 1, 0], 
+        scale: isDragging ? 1.1 : 1.0 
+      } : { rotate: 0, scale: 1 }}
+      transition={isEditingLayout ? { 
+        rotate: { repeat: Infinity, duration: 0.4, delay: wobbleDelay, ease: "easeInOut" },
+        scale: { duration: 0.2 },
+        layout: { type: "spring", stiffness: 300, damping: 25 }
+      } : { duration: 0.2 }}
+      className={`flex flex-col items-center gap-1.5 cursor-pointer relative select-none ${isDragging ? 'z-50' : ''}`}
+      style={{ 
+        touchAction: isEditingLayout ? 'none' : 'auto',
+        opacity: isDragging ? 0.9 : 1,
+      }}
       onClick={isEditingLayout ? undefined : onClick}
     >
       <div 
@@ -211,7 +252,7 @@ const AppIcon = ({
           width: `${size}px`,
           height: `${size}px`,
           borderRadius: `${radius}px`,
-          boxShadow: `0 4px 16px rgba(0,0,0,${shadow})`,
+          boxShadow: `0 4px 16px rgba(${shadowRgb.r},${shadowRgb.g},${shadowRgb.b},${shadowIntensity})`,
           backdropFilter: `blur(${blurPx}px)`,
           WebkitBackdropFilter: `blur(${blurPx}px)`,
           '--icon-light-bg': lightBgColor,
@@ -233,6 +274,135 @@ const AppIcon = ({
         </div>
       )}
     </motion.div>
+  );
+};
+
+// Define home screen app list
+interface HomeAppItem {
+  id: string;
+  icon: any;
+  label: string;
+  screen?: string;
+}
+
+const DEFAULT_HOME_APPS: HomeAppItem[] = [
+  { id: 'chat', icon: MessageCircle, label: '聊天', screen: 'app-chat' },
+  { id: 'music', icon: Music, label: '音乐' },
+  { id: 'notes', icon: FileText, label: '备忘录' },
+  { id: 'photos', icon: ImageIcon, label: '相册' },
+  { id: 'world', icon: BookOpen, label: '世界书', screen: 'app-world' },
+  { id: 'settings', icon: Settings, label: '设置', screen: 'app-settings' },
+  { id: 'appearance', icon: Palette, label: '外观', screen: 'app-appearance' },
+];
+
+const DEFAULT_DOCK_APPS: HomeAppItem[] = [
+  { id: 'dock-phone', icon: Phone, label: '', screen: 'app-phone-list' },
+  { id: 'dock-chat', icon: MessageCircle, label: '', screen: 'app-chat' },
+  { id: 'dock-browser', icon: Globe, label: '' },
+  { id: 'dock-ai', icon: Sparkles, label: '' },
+];
+
+// Reorderable Grid Component
+const ReorderableGrid = ({ 
+  items, 
+  onReorder, 
+  isEditingLayout, 
+  customIcons, 
+  iconStyleConfig, 
+  iconFrostIntensity, 
+  onAppClick,
+  gridRef 
+}: {
+  items: HomeAppItem[];
+  onReorder: (newItems: HomeAppItem[]) => void;
+  isEditingLayout: boolean;
+  customIcons: Record<string, string>;
+  iconStyleConfig: any;
+  iconFrostIntensity: number;
+  onAppClick: (screen?: string) => void;
+  gridRef: React.RefObject<HTMLDivElement | null>;
+}) => {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  const getGridPosition = (clientX: number, clientY: number): number | null => {
+    if (!gridRef.current) return null;
+    const gridRect = gridRef.current.getBoundingClientRect();
+    const col = Math.floor((clientX - gridRect.left) / (gridRect.width / 4));
+    const rows = Math.ceil(items.length / 4);
+    const rowHeight = gridRect.height / Math.max(rows, 1);
+    const row = Math.floor((clientY - gridRect.top) / rowHeight);
+    const index = row * 4 + col;
+    if (col < 0 || col >= 4 || row < 0 || index >= items.length || index < 0) return null;
+    return index;
+  };
+
+  const handleDragStart = (index: number) => {
+    if (!isEditingLayout) return;
+    setDragIndex(index);
+  };
+
+  const handleDrag = (e: any, info: any, index: number) => {
+    if (!isEditingLayout || dragIndex === null) return;
+    const element = itemRefs.current[index];
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const newOverIndex = getGridPosition(centerX, centerY);
+    if (newOverIndex !== null && newOverIndex !== overIndex) {
+      setOverIndex(newOverIndex);
+    }
+  };
+
+  const handleDragEnd = (index: number) => {
+    if (dragIndex !== null && overIndex !== null && dragIndex !== overIndex) {
+      const newItems = [...items];
+      const [draggedItem] = newItems.splice(dragIndex, 1);
+      newItems.splice(overIndex, 0, draggedItem);
+      onReorder(newItems);
+    }
+    setDragIndex(null);
+    setOverIndex(null);
+  };
+
+  return (
+    <div ref={gridRef} className="flex-1 grid grid-cols-4 gap-y-6 px-6 py-6 content-start">
+      {items.map((app, index) => {
+        const iconId = app.id.replace('dock-', '');
+        return (
+          <motion.div 
+            key={app.id}
+            ref={(el: HTMLDivElement | null) => { itemRefs.current[index] = el; }}
+            className="app-icon-container flex justify-center"
+            drag={isEditingLayout}
+            dragConstraints={gridRef}
+            dragElastic={0.1}
+            dragMomentum={false}
+            dragSnapToOrigin={true}
+            dragTransition={{ bounceStiffness: 300, bounceDamping: 20 }}
+            onDragStart={() => handleDragStart(index)}
+            onDrag={(e, info) => handleDrag(e, info, index)}
+            onDragEnd={() => handleDragEnd(index)}
+            whileDrag={{ scale: 1.1, zIndex: 50 }}
+            layout
+            transition={{ layout: { type: "spring", stiffness: 300, damping: 25 } }}
+          >
+            <AppIcon 
+              icon={app.icon} 
+              label={app.label} 
+              onClick={() => onAppClick(app.screen)} 
+              isEditingLayout={isEditingLayout} 
+              customIcon={customIcons[iconId]} 
+              iconStyleConfig={iconStyleConfig} 
+              iconFrostIntensity={iconFrostIntensity}
+              isDragging={dragIndex === index}
+            />
+          </motion.div>
+        );
+      })}
+    </div>
   );
 };
 
@@ -271,6 +441,24 @@ export default function App() {
   const [time, setTime] = useState('');
   const [date, setDate] = useState('');
   const [isEditingLayout, setIsEditingLayout] = useState(false);
+  const [homeApps, setHomeApps] = useState<HomeAppItem[]>(() => {
+    const saved = localStorage.getItem('aiphone_home_app_order');
+    if (saved) {
+      try {
+        const savedOrder: string[] = JSON.parse(saved);
+        // Reconstruct from saved order, keeping icon/label data from defaults
+        const appMap = new Map(DEFAULT_HOME_APPS.map(a => [a.id, a]));
+        const ordered = savedOrder.map(id => appMap.get(id)).filter(Boolean) as HomeAppItem[];
+        // Add any new apps not in saved order
+        DEFAULT_HOME_APPS.forEach(a => {
+          if (!ordered.find(o => o.id === a.id)) ordered.push(a);
+        });
+        return ordered;
+      } catch { return [...DEFAULT_HOME_APPS]; }
+    }
+    return [...DEFAULT_HOME_APPS];
+  });
+  const gridRef = useRef<HTMLDivElement>(null);
   const [isLockScreenEnabled, setIsLockScreenEnabled] = useState<boolean>(() => {
     const saved = localStorage.getItem('aiphone_lock_screen_enabled');
     return saved !== null ? JSON.parse(saved) : true;
@@ -441,6 +629,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('iconFrostIntensity', iconFrostIntensity.toString());
   }, [iconFrostIntensity]);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_home_app_order', JSON.stringify(homeApps.map(a => a.id)));
+  }, [homeApps]);
 
   useEffect(() => {
     localStorage.setItem('aiphone_lock_screen_enabled', JSON.stringify(isLockScreenEnabled));
@@ -880,23 +1072,23 @@ export default function App() {
               
               <div 
                 className="flex-1 flex flex-col relative z-10"
+                onDoubleClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  const isInteractive = target.closest('button') || target.closest('input') || target.closest('.app-icon-container') || target.closest('.widget-container');
+                  if (!isInteractive) {
+                    if (isEditingLayout) {
+                      setIsEditingLayout(false);
+                    } else {
+                      setIsEditingLayout(true);
+                    }
+                  }
+                }}
                 onClick={(e) => {
+                  if (isEditingLayout) return; // Don't trigger wallpaper change in edit mode
                   const target = e.target as HTMLElement;
                   const isInteractive = target.closest('button') || target.closest('input') || target.closest('.app-icon-container') || target.closest('.widget-container');
                   if (!isInteractive) {
                     wallpaperInputRef.current?.click();
-                  }
-                }}
-                onPointerDown={(e) => {
-                  const target = e.target as HTMLElement;
-                  const isInteractive = target.closest('button') || target.closest('input') || target.closest('.app-icon-container') || target.closest('.widget-container');
-                  if (!isInteractive) {
-                    const timer = setTimeout(() => setIsEditingLayout(true), 800);
-                    const cleanup = () => {
-                      clearTimeout(timer);
-                      window.removeEventListener('pointerup', cleanup);
-                    };
-                    window.addEventListener('pointerup', cleanup);
                   }
                 }}
               >
@@ -910,13 +1102,13 @@ export default function App() {
                   transition={isEditingLayout ? { repeat: Infinity, duration: 0.3 } : {}}
                   className="px-6 pt-10 pb-4 widget-container"
                 >
-                  <GlassCard className="p-6" blur="60px" opacity="0.2" darkOpacity="0.4">
-                    <div className="flex flex-row gap-6 items-center justify-between">
+                  <GlassCard className="p-6">
+                    <div className="flex flex-row items-center justify-between w-full">
                       {/* Time & Weather Section */}
                       <div className="flex-1 flex flex-col gap-1 min-w-0">
                         <span className="font-thin text-zinc-800 dark:text-white drop-shadow-sm tracking-tighter leading-none" style={{ fontSize: '48px' }}>{time}</span>
                         <span className="font-bold text-zinc-600 dark:text-zinc-200 drop-shadow-sm tracking-[0.3em] uppercase mt-2" style={{ fontSize: '9px' }}>{date}</span>
-                        <div className="mt-4 pt-3 border-t border-zinc-300/30 dark:border-white/10 flex items-center gap-3">
+                        <div className="mt-4 pt-3 flex items-center gap-3">
                           <CloudSun className="text-zinc-500 dark:text-zinc-300 flex-shrink-0" size={16} strokeWidth={1} />
                           <div className="flex gap-2 items-center">
                             <span className="font-light text-zinc-700 dark:text-zinc-100 drop-shadow-sm whitespace-nowrap" style={{ fontSize: '20px' }}>22°</span>
@@ -925,11 +1117,8 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Divider */}
-                      <div className="w-px h-20 bg-zinc-300/30 dark:bg-white/10 flex-shrink-0" />
-
                       {/* Avatar & Motto Section */}
-                      <div className="w-[140px] flex-shrink-0 flex flex-col items-center gap-3">
+                      <div className="flex-shrink-0 flex flex-col items-center gap-3">
                         <label className="cursor-pointer group relative">
                           <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
                           <div className="w-[96px] h-[96px] rounded-[32px] bg-white/30 dark:bg-black/20 border border-white/40 dark:border-white/20 flex items-center justify-center text-zinc-400 dark:text-zinc-300 overflow-hidden group-hover:bg-white/50 dark:group-hover:bg-black/40 transition-colors shadow-[0_4px_16px_rgba(0,0,0,0.05)]">
@@ -960,16 +1149,17 @@ export default function App() {
                   </GlassCard>
                 </motion.div>
 
-                {/* App Grid */}
-                <div className="flex-1 grid grid-cols-4 gap-y-6 px-6 py-6 content-start">
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={MessageCircle} label="聊天" onClick={() => setScreen('app-chat')} isEditingLayout={isEditingLayout} customIcon={customIcons['chat']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={Music} label="音乐" isEditingLayout={isEditingLayout} customIcon={customIcons['music']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={FileText} label="备忘录" isEditingLayout={isEditingLayout} customIcon={customIcons['notes']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={ImageIcon} label="相册" isEditingLayout={isEditingLayout} customIcon={customIcons['photos']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={BookOpen} label="世界书" onClick={() => setScreen('app-world')} isEditingLayout={isEditingLayout} customIcon={customIcons['world']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={Settings} label="设置" onClick={() => setScreen('app-settings')} isEditingLayout={isEditingLayout} customIcon={customIcons['settings']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                  <div className="app-icon-container flex justify-center"><AppIcon icon={Palette} label="外观" onClick={() => setScreen('app-appearance')} isEditingLayout={isEditingLayout} customIcon={customIcons['appearance']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                </div>
+                {/* App Grid - Reorderable */}
+                <ReorderableGrid
+                  items={homeApps}
+                  onReorder={setHomeApps}
+                  isEditingLayout={isEditingLayout}
+                  customIcons={customIcons}
+                  iconStyleConfig={iconStyleConfig}
+                  iconFrostIntensity={iconFrostIntensity}
+                  onAppClick={(screen) => { if (screen) setScreen(screen as Screen); }}
+                  gridRef={gridRef}
+                />
 
                 {/* Page Indicator */}
                 <div className="flex justify-center gap-2.5 py-4">
@@ -979,12 +1169,24 @@ export default function App() {
 
                 {/* Dock */}
                 <div className="mx-4 mb-2">
-                  <GlassCard className="p-3 rounded-[32px]" blur="60px" opacity="0.2" darkOpacity="0.4">
+                  <GlassCard className="p-3 rounded-[32px]">
                     <div className="flex flex-row justify-around items-center">
-                      <div className="app-icon-container"><AppIcon icon={Phone} label="" onClick={() => setScreen('app-phone-list')} isEditingLayout={isEditingLayout} customIcon={customIcons['phone']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                      <div className="app-icon-container"><AppIcon icon={MessageCircle} label="" onClick={() => setScreen('app-chat')} isEditingLayout={isEditingLayout} customIcon={customIcons['chat']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                      <div className="app-icon-container"><AppIcon icon={Globe} label="" isEditingLayout={isEditingLayout} customIcon={customIcons['browser']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
-                      <div className="app-icon-container"><AppIcon icon={Sparkles} label="" isEditingLayout={isEditingLayout} customIcon={customIcons['ai']} iconStyleConfig={iconStyleConfig} iconFrostIntensity={iconFrostIntensity} componentBgOpacity={componentBgOpacity} /></div>
+                      {DEFAULT_DOCK_APPS.map(app => {
+                        const iconId = app.id.replace('dock-', '');
+                        return (
+                          <div key={app.id} className="app-icon-container">
+                            <AppIcon 
+                              icon={app.icon} 
+                              label="" 
+                              onClick={() => { if (app.screen) setScreen(app.screen as Screen); }} 
+                              isEditingLayout={isEditingLayout} 
+                              customIcon={customIcons[iconId]} 
+                              iconStyleConfig={iconStyleConfig} 
+                              iconFrostIntensity={iconFrostIntensity} 
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   </GlassCard>
                 </div>
@@ -1378,6 +1580,8 @@ export default function App() {
               setIconFrostIntensity={setIconFrostIntensity}
               frostIntensity={frostIntensity}
               setFrostIntensity={setFrostIntensity}
+              componentBgOpacity={componentBgOpacity}
+              setComponentBgOpacity={setComponentBgOpacity}
             />
           )}
 
@@ -1534,8 +1738,8 @@ export default function App() {
           --glass-blur-px: calc(var(--frost-intensity) / 100 * 40px);
           --glass-blur: blur(var(--glass-blur-px));
           /* Calculate opacity: higher frost intensity -> lower opacity for better noise visibility */
-          --glass-base-opacity: calc(0.3 - (var(--frost-intensity) / 100 * 0.15));
-          --glass-base-dark-opacity: calc(0.5 - (var(--frost-intensity) / 100 * 0.25));
+          --glass-base-opacity: ${componentBgOpacity};
+          --glass-base-dark-opacity: ${componentBgOpacity};
           /* Noise opacity maps from 0 to 0.15 based on intensity */
           --noise-opacity: calc(var(--frost-intensity) / 100 * 0.15);
         }
