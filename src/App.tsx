@@ -58,36 +58,33 @@ import {
   Bookmark,
   Bot,
   Copy,
-  Quote
+  Quote,
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { SettingsScreen } from './components/SettingsScreen';
-
-/**
- * Normalize a user-entered Base URL:
- * - Trim whitespace and trailing slashes
- * - Auto-prepend https:// if no protocol
- * - Strip trailing /chat/completions if user pasted a full endpoint
- */
-function normalizeBaseUrl(raw: string): string {
-  let url = raw.trim().replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(url)) {
-    url = 'https://' + url;
-  }
-  if (url.endsWith('/chat/completions')) {
-    url = url.replace(/\/chat\/completions$/, '');
-  }
-  return url;
-}
 import { AppearanceScreen } from './components/AppearanceScreen';
 import { PersonaScreen } from './components/PersonaScreen';
 import { PhoneListScreen } from './components/PhoneListScreen';
 import { WorldBookListScreen } from './components/WorldBookListScreen';
 import { WorldBookEditScreen } from './components/WorldBookEditScreen';
+import { AiChatScreen } from './components/AiChatScreen';
+import { FavoritesScreen } from './components/FavoritesScreen';
+
+import type { ChatMessage } from './types';
 
 // --- Types ---
-type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit';
+type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-favorites';
+
+interface FavoriteItem {
+  id: string;
+  messageId: string;
+  contactId: string;
+  content: string;
+  sender: 'user' | 'assistant';
+  timestamp: number;
+}
 type WorldBookScope = 'global' | 'local';
 
 interface WorldBook {
@@ -130,113 +127,6 @@ interface ApiConfig {
   temperature: number;
   maxTokens: number;
   contextMessageCount: number;
-}
-
-// --- Helper: Build character system prompt ---
-function buildCharacterSystemPrompt(p: Persona): string {
-  const otherTraits: string[] = [];
-  if (p.height) otherTraits.push(`身高：${p.height}cm`);
-  if (p.weight) otherTraits.push(`体重：${p.weight}kg`);
-  if (p.age) otherTraits.push(`年龄：${p.age}岁`);
-  if (p.gender) otherTraits.push(`性别：${p.gender}`);
-  if (p.occupation) otherTraits.push(`职业：${p.occupation}`);
-  if (p.location) otherTraits.push(`所在地：${p.location}`);
-
-  return `你现在正扮演以下角色，必须严格遵循角色设定，以第一人称视角回复，语气、用词、思维方式都要完全符合角色特点，不能脱离角色，不能说出任何不符合角色身份的话。回复要像真人一样自然、生动、有情感，避免机械感或AI感。绝对不能以AI身份自居，不能说"作为AI"、"我是人工智能"之类的话。
-
-角色信息：
-- 姓名：${p.name || p.chatName}
-- 性格：${p.personality || '未设定'}
-- 背景故事：${p.bio || '未设定'}
-- 其他特征：${otherTraits.length > 0 ? otherTraits.join('；') : '无'}
-
-请以该角色的身份与用户进行对话，每一句话都要符合角色设定，让人感觉就是角色本人在说话。保持对话自然，像是在社交软件上聊天一样。`;
-}
-
-// --- Helper: Generate simulated reply based on persona ---
-function generateSimulatedReply(persona: Persona | null, userMessage: string): string {
-  if (!persona) {
-    // AI assistant fallback
-    const replies = [
-      '你好呀！我是AI助手，不过目前API还没配置好，等配置好了我就能更好地帮你啦~',
-      '嗯嗯，我收到你的消息了！不过现在API还没连上，我只能简单回复你哦。',
-      '哈哈，我暂时还不太聪明，因为API还没配置好。去设置里配置一下吧！',
-      '收到！不过我现在是离线模式，功能有限哦~',
-    ];
-    return replies[Math.floor(Math.random() * replies.length)];
-  }
-
-  const name = persona.chatName || persona.name || '我';
-  const personality = persona.personality || '';
-  
-  // Generate contextual replies based on persona traits
-  const greetings = [
-    `嗯？怎么了~`,
-    `在呢在呢，说吧~`,
-    `哈喽~`,
-    `嗯嗯，我在听~`,
-  ];
-  
-  const responses = [
-    `嗯...让我想想怎么说...`,
-    `哈哈，你说的挺有意思的~`,
-    `是嘛？然后呢？`,
-    `嗯嗯，我懂你的意思~`,
-    `这样啊...`,
-    `哦哦，原来如此~`,
-  ];
-
-  if (userMessage.length < 5) {
-    return greetings[Math.floor(Math.random() * greetings.length)];
-  }
-  
-  if (userMessage.includes('?') || userMessage.includes('？')) {
-    const questionReplies = [
-      `这个嘛...我觉得还好吧~`,
-      `嗯...怎么说呢，我也不太确定诶`,
-      `哈哈，你怎么突然问这个~`,
-      `让我想想...嗯，我觉得可以的！`,
-    ];
-    return questionReplies[Math.floor(Math.random() * questionReplies.length)];
-  }
-
-  return responses[Math.floor(Math.random() * responses.length)];
-}
-
-function splitTextIntoMessages(text: string): string[] {
-  const regex = /([^。！？!?\n~]+[。！？!?\n~]*)/g;
-  const matches = text.match(regex);
-  if (!matches) return [text.trim()];
-
-  const result: string[] = [];
-  let currentMsg = '';
-
-  for (const match of matches) {
-    const trimmed = match.trim();
-    if (!trimmed) continue;
-    
-    currentMsg += (currentMsg ? ' ' : '') + trimmed;
-    
-    if (currentMsg.length > 15 || /[。！？!?\n~]$/.test(match.trimEnd())) {
-      result.push(currentMsg);
-      currentMsg = '';
-    }
-  }
-
-  if (currentMsg.trim()) {
-    result.push(currentMsg.trim());
-  }
-
-  const finalMessages: string[] = [];
-  for (const msg of result) {
-    if (finalMessages.length > 0 && msg.length < 4) {
-      finalMessages[finalMessages.length - 1] += ' ' + msg;
-    } else {
-      finalMessages.push(msg);
-    }
-  }
-
-  return finalMessages.length > 0 ? finalMessages : [text.trim()];
 }
 
 // --- Components ---
@@ -343,13 +233,20 @@ export default function App() {
     return saved ? JSON.parse(saved) : { baseUrl: '', apiKey: '', selectedModel: '', models: [], temperature: 0.7, maxTokens: 2048, contextMessageCount: 10 };
   });
 
+  // Helper to ensure messages have id and timestamp
+  const migrateMessages = (msgs: any[]): any[] => {
+    if (!Array.isArray(msgs)) return [];
+    return msgs.map((m, i) => ({
+      ...m,
+      id: m.id || `migrated_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 9)}`,
+      timestamp: m.timestamp || Date.now() - (msgs.length - i) * 1000,
+    }));
+  };
+
   // Chat State
-  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'assistant', content: string, groupId?: string, quote?: { content: string, sender: string }}[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isAddingFriend, setIsAddingFriend] = useState(false);
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
-  const [chatErrorToast, setChatErrorToast] = useState<string>('');
 
   // Home Screen Customization State
   const [avatar, setAvatar] = useState<string | null>(() => localStorage.getItem('aiphone_avatar'));
@@ -487,399 +384,8 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  const checkAndTriggerAutoSummary = async (chatId: string, currentHistory: any[]) => {
-    const settings = chatSettings[chatId] || {};
-    if (!settings.isAutoSummaryEnabled) return;
-    
-    const threshold = settings.autoSummaryThreshold || 30;
-    const lastIndex = settings.lastSummaryMessageIndex || 0;
-    
-    if (currentHistory.length - lastIndex >= threshold) {
-      const now = Date.now();
-      const lastTime = lastSummaryTimeRef.current[chatId] || 0;
-      if (now - lastTime < 30000) return;
-      
-      if (isSummarizingRef.current[chatId]) return;
-      
-      if (!apiConfig.baseUrl || !apiConfig.apiKey) return;
 
-      isSummarizingRef.current[chatId] = true;
-      setAutoSummaryStatus('正在总结记忆...');
 
-      try {
-        const historyText = currentHistory.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
-        const summaryPrompt = `根据以下对话，生成一段总结（200字以内），并提取3-5个关键词（每个关键词1-2个词）。输出格式：{"title": "...", "content": "...", "keywords": ["词1","词2"]}\n\n对话历史：\n${historyText}`;
-
-        const summaryBaseUrl = normalizeBaseUrl(apiConfig.baseUrl);
-        const url = `${summaryBaseUrl}/chat/completions`;
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiConfig.apiKey}`,
-          },
-          mode: 'cors',
-          credentials: 'omit',
-          signal: controller.signal,
-          body: JSON.stringify({
-            model: apiConfig.selectedModel || 'gpt-3.5-turbo',
-            messages: [
-              { role: 'system', content: '你是一个对话总结助手，必须只输出要求的JSON格式。' },
-              { role: 'user', content: summaryPrompt }
-            ],
-            temperature: 0.3,
-            max_tokens: 800,
-            stream: false,
-            response_format: { type: "json_object" }
-          })
-        });
-        clearTimeout(timeoutId);
-
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        const rawContent = data.choices?.[0]?.message?.content;
-        
-        if (rawContent) {
-          try {
-            const parsed = JSON.parse(rawContent);
-            if (parsed.title && parsed.content && Array.isArray(parsed.keywords)) {
-              const newMemory = {
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-                title: parsed.title,
-                content: parsed.content,
-                keywords: parsed.keywords,
-                createdAt: Date.now(),
-                isPinned: false
-              };
-              setChatMemories(prev => ({
-                ...prev,
-                [chatId]: [...(prev[chatId] || []), newMemory]
-              }));
-            }
-          } catch (e) {
-            console.error('Failed to parse auto summary JSON:', e);
-          }
-          setChatSettings(prev => ({
-            ...prev,
-            [chatId]: { ...prev[chatId], lastSummaryMessageIndex: currentHistory.length }
-          }));
-          lastSummaryTimeRef.current[chatId] = Date.now();
-        }
-      } catch (err) {
-        console.error('Auto summary error:', err);
-      } finally {
-        isSummarizingRef.current[chatId] = false;
-        setAutoSummaryStatus('');
-      }
-    }
-  };
-
-  const addUserMessage = () => {
-    if (!chatInput.trim()) return;
-    
-    const userMsg = chatInput.trim();
-    const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
-    const newMessage: { role: 'user', content: string, quote?: { content: string, sender: string } } = { 
-      role: 'user', 
-      content: userMsg 
-    };
-    if (quoteToReply) {
-      newMessage.quote = quoteToReply;
-    }
-    const newMessages = [...currentMessages, newMessage];
-
-    if (activeChatContact) {
-      setChatHistories(prev => ({
-        ...prev,
-        [activeChatContact.id]: newMessages
-      }));
-    } else {
-      setChatMessages(newMessages);
-    }
-    setChatInput('');
-    setQuoteToReply(null);
-    setTimeout(() => {
-      if (chatInputRef.current) {
-        chatInputRef.current.style.height = '48px';
-      }
-    }, 10);
-  };
-
-  const generateAiReply = async (regenerateIdOrIndex?: string | number) => {
-    const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
-    
-    // Determine the messages to send to the API
-    let messagesToSend = currentMessages;
-    let isRegenerating = false;
-    let regenerateStartIndex = -1;
-    let targetGroupId: string | undefined = undefined;
-
-    if (regenerateIdOrIndex !== undefined) {
-      if (typeof regenerateIdOrIndex === 'string') {
-        targetGroupId = regenerateIdOrIndex;
-        regenerateStartIndex = currentMessages.findIndex(m => m.groupId === targetGroupId);
-      } else {
-        regenerateStartIndex = regenerateIdOrIndex;
-        targetGroupId = currentMessages[regenerateStartIndex]?.groupId;
-      }
-      
-      if (regenerateStartIndex !== -1 && regenerateStartIndex < currentMessages.length) {
-        messagesToSend = currentMessages.slice(0, regenerateStartIndex);
-        isRegenerating = true;
-      }
-    }
-
-    if (messagesToSend.length === 0) return; // Nothing to reply to
-    
-    const newGroupId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
-
-    // Helper to sequentially append split reply messages
-    const appendMessagesSequentially = async (texts: string[], isError: boolean = false) => {
-      let insertBaseIndex = regenerateStartIndex;
-      
-      let currentLocalMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
-
-      // Immediately remove the regenerated message from UI to simulate clearing it
-      if (isRegenerating && insertBaseIndex !== -1) {
-          if (activeChatContact) {
-              setChatHistories(prev => {
-                  const hist = prev[activeChatContact.id] || [];
-                  const newHist = targetGroupId 
-                    ? hist.filter(m => m.groupId !== targetGroupId)
-                    : [...hist.slice(0, insertBaseIndex), ...hist.slice(insertBaseIndex + 1)];
-                  currentLocalMessages = newHist;
-                  return { ...prev, [activeChatContact.id]: newHist };
-              });
-          } else {
-              setChatMessages(prev => {
-                  const newHist = targetGroupId 
-                    ? prev.filter(m => m.groupId !== targetGroupId)
-                    : [...prev.slice(0, insertBaseIndex), ...prev.slice(insertBaseIndex + 1)];
-                  currentLocalMessages = newHist;
-                  return newHist;
-              });
-          }
-      }
-
-      let finalMessages: any[] = currentLocalMessages;
-
-      for (let j = 0; j < texts.length; j++) {
-        const text = texts[j];
-        if (j > 0) {
-            setIsAiLoading(true);
-            await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
-        }
-        
-        const newMsg: {role: 'user'|'assistant', content: string, groupId?: string, quote?: { content: string, sender: string }} = { role: 'assistant', content: text, groupId: isError ? undefined : newGroupId };
-        
-        if (activeChatContact) {
-            const currentContactId = activeChatContact.id;
-            setChatHistories(prev => {
-                const hist = prev[currentContactId] || [];
-                let newHist;
-                if (isRegenerating && insertBaseIndex !== -1) {
-                    const targetIndex = Math.min(insertBaseIndex + j, hist.length);
-                    newHist = [...hist.slice(0, targetIndex), newMsg, ...hist.slice(targetIndex)];
-                } else {
-                    newHist = [...hist, newMsg];
-                }
-                finalMessages = newHist;
-                return { ...prev, [currentContactId]: newHist };
-            });
-        } else {
-            setChatMessages(prev => {
-                let newHist;
-                if (isRegenerating && insertBaseIndex !== -1) {
-                    const targetIndex = Math.min(insertBaseIndex + j, prev.length);
-                    newHist = [...prev.slice(0, targetIndex), newMsg, ...prev.slice(targetIndex)];
-                } else {
-                    newHist = [...prev, newMsg];
-                }
-                finalMessages = newHist;
-                return newHist;
-            });
-        }
-      }
-      return finalMessages;
-    };
-
-    // Get the last user message to use for simulated reply if needed
-    const lastUserMessageObj = [...messagesToSend].reverse().find(m => m.role === 'user');
-    const userMsgForSim = lastUserMessageObj ? lastUserMessageObj.content : '';
-
-    // Check if API config is valid; if not, use simulated reply
-    const isApiValid = apiConfig.baseUrl && apiConfig.baseUrl.trim() !== '';
-    if (!isApiValid) {
-      setIsAiLoading(true);
-      // Simulate a short delay for realism
-      await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
-      const simReply = generateSimulatedReply(activeChatContact, userMsgForSim);
-      await appendMessagesSequentially(splitTextIntoMessages(simReply));
-      setIsAiLoading(false);
-      return;
-    }
-
-    setIsAiLoading(true);
-
-    // Build system prompt using buildCharacterSystemPrompt for persona contacts
-    let baseSystemPrompt = activeChatContact 
-      ? buildCharacterSystemPrompt(activeChatContact) 
-      : "你是一个乐于助人的AI助手。";
-
-    let worldBookContent = '';
-    if (activeChatContact) {
-      const localWb = worldBooks.find(wb => wb.isActive && wb.scope === 'local' && wb.boundPersonas.includes(activeChatContact.id));
-      if (localWb) {
-        worldBookContent = localWb.content;
-      } else {
-        const globalWb = worldBooks.find(wb => wb.isActive && wb.scope === 'global');
-        if (globalWb) {
-          worldBookContent = globalWb.content;
-        }
-      }
-    } else {
-      const globalWb = worldBooks.find(wb => wb.isActive && wb.scope === 'global');
-      if (globalWb) {
-        worldBookContent = globalWb.content;
-      }
-    }
-
-    const systemPrompt = worldBookContent 
-      ? `【世界观设定】\n${worldBookContent}\n\n请严格遵循以上世界观设定，同时扮演好角色...\n\n${baseSystemPrompt}`
-      : baseSystemPrompt;
-
-    // Inject long-term memory summary if available
-    const currentSummaryChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
-    const currentMemories = chatMemories[currentSummaryChatId] || [];
-    
-    // Extract keywords from the last user message for memory retrieval
-    const stopWords = ['的', '了', '和', '是', '就', '都', '而', '及', '与', '着', '或', '一个', '没有', '我们', '你们', '他们', '她', '他', '它'];
-    const words = userMsgForSim.match(/[\w\u4e00-\u9fa5]+/g) || [];
-    const userKeywords = new Set(words.filter(w => !stopWords.includes(w) && w.length > 1));
-
-    // Calculate matches
-    const memoryScores = currentMemories.map(m => {
-      let score = 0;
-      if (m.isPinned) score += 1000; // prioritize pinned
-      const memoryKeywords = m.keywords || [];
-      const intersection = memoryKeywords.filter((k: string) => Array.from(userKeywords).some((uk: string) => k.includes(uk) || uk.includes(k)));
-      score += intersection.length;
-      return { memory: m, score };
-    });
-
-    // Sort by score desc, then by createdAt desc
-    memoryScores.sort((a, b) => b.score - a.score || b.memory.createdAt - a.memory.createdAt);
-    
-    // Select top memories: pinned (max 1) + top 2 matched
-    let selectedMemories = [];
-    const pinnedMemories = memoryScores.filter(ms => ms.memory.isPinned).map(ms => ms.memory);
-    if (pinnedMemories.length > 0) {
-      selectedMemories.push(pinnedMemories[0]);
-    }
-    const unpinnedMatches = memoryScores.filter(ms => !ms.memory.isPinned && ms.score > 0).map(ms => ms.memory);
-    selectedMemories = [...selectedMemories, ...unpinnedMatches.slice(0, 2)];
-
-    // If no matches and no pinned, get the most recent one
-    if (selectedMemories.length === 0 && currentMemories.length > 0) {
-      const sortedByDate = [...currentMemories].sort((a, b) => b.createdAt - a.createdAt);
-      selectedMemories.push(sortedByDate[0]);
-    }
-
-    const memoryContext = selectedMemories.map(m => `【记忆 - ${m.title}】${m.content}`).join('\n');
-    
-    const finalSystemPrompt = memoryContext 
-      ? `${systemPrompt}\n\n${memoryContext}`
-      : systemPrompt;
-
-    // Limit context to last N messages (configurable)
-    const contextMessages = messagesToSend.slice(-(apiConfig.contextMessageCount || 10)).map(m => {
-      let content = m.content;
-      if (m.quote) {
-        content = `[引用 ${m.quote.sender} 的消息: "${m.quote.content}"]\n${content}`;
-      }
-      return { role: m.role, content };
-    });
-
-    // Build headers
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (apiConfig.apiKey) {
-      headers['Authorization'] = `Bearer ${apiConfig.apiKey}`;
-    }
-
-    try {
-      const baseUrl = normalizeBaseUrl(apiConfig.baseUrl);
-      const url = `${baseUrl}/chat/completions`;
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        mode: 'cors',
-        credentials: 'omit',
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: apiConfig.selectedModel || 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: finalSystemPrompt },
-            ...contextMessages
-          ],
-          temperature: apiConfig.temperature ?? 0.7,
-          max_tokens: apiConfig.maxTokens ?? 2048,
-          stream: false
-        })
-      });
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const backendMsg = errorData.error?.message || errorData.message || '';
-        throw new Error(backendMsg || `请求失败 (HTTP ${response.status})`);
-      }
-
-      const data = await response.json();
-      if (data.choices?.[0]?.message?.content) {
-        const fullContent = data.choices[0].message.content;
-        const messagesToAppend = splitTextIntoMessages(fullContent);
-        
-        const finalMessages = await appendMessagesSequentially(messagesToAppend);
-
-        if (activeChatContact) {
-          checkAndTriggerAutoSummary(activeChatContact.id, finalMessages);
-        } else {
-          checkAndTriggerAutoSummary('ai_assistant', finalMessages);
-        }
-      } else {
-        throw new Error('返回数据格式不正确，未找到 choices[0].message.content');
-      }
-    } catch (err: any) {
-      console.error('Send message error:', err);
-      let errorMsg = err.message || '未知错误，请检查配置';
-      if (err.name === 'AbortError') {
-        errorMsg = '请求超时(30s)，请检查网络连接或 API 地址';
-      } else if (errorMsg === 'Failed to fetch' || errorMsg.toLowerCase().includes('networkerror') || errorMsg.toLowerCase().includes('network')) {
-        errorMsg = '网络连接失败或跨域(CORS)限制，请使用支持 CORS 的中转 API';
-      }
-      
-      // Show error toast in chat UI (3s auto-dismiss)
-      setChatErrorToast(errorMsg);
-      setTimeout(() => setChatErrorToast(''), 3000);
-      
-      if (!isRegenerating) {
-        // API call failed for new message — fallback to simulated reply
-        const simReply = generateSimulatedReply(activeChatContact, userMsgForSim);
-        const fallbackMsg = `⚠️ API调用失败，已降级为模拟回复。\n\n${simReply}\n\n(错误: ${errorMsg})`;
-        await appendMessagesSequentially(splitTextIntoMessages(fallbackMsg), true);
-      }
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
 
   // ... (handleNumpad, handleDelete, AppIcon, ChatListItem remain same)
 
@@ -942,16 +448,24 @@ export default function App() {
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [activeChatContact, setActiveChatContact] = useState<Persona | null>(null);
-  const [chatHistories, setChatHistories] = useState<Record<string, {role: 'user' | 'assistant', content: string, groupId?: string, quote?: { content: string, sender: string }}[]>>(() => {
+  const [chatHistories, setChatHistories] = useState<Record<string, ChatMessage[]>>(() => {
     const saved = localStorage.getItem('aiphone_chat_histories');
-    return saved ? JSON.parse(saved) : {};
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Migrate all histories
+      const migrated: Record<string, any[]> = {};
+      for (const [key, msgs] of Object.entries(parsed)) {
+        migrated[key] = migrateMessages(msgs as any[]);
+      }
+      return migrated;
+    }
+    return {};
   });
 
   useEffect(() => {
     localStorage.setItem('aiphone_chat_histories', JSON.stringify(chatHistories));
   }, [chatHistories]);
 
-  const [isChatSettingsOpen, setIsChatSettingsOpen] = useState(false);
   const [chatMemories, setChatMemories] = useState<Record<string, any[]>>(() => {
     const saved = localStorage.getItem('aiphone_chat_memories');
     if (saved) return JSON.parse(saved);
@@ -981,100 +495,26 @@ export default function App() {
     return {};
   });
 
-  const isSummarizingRef = React.useRef<Record<string, boolean>>({});
-  const lastSummaryTimeRef = React.useRef<Record<string, number>>({});
-  const [autoSummaryStatus, setAutoSummaryStatus] = useState<string>('');
-  const [editingMemory, setEditingMemory] = useState<{id?: string, title: string, content: string} | null>(null);
 
   const [chatSettings, setChatSettings] = useState<Record<string, { remark: string, background: string, isBlocked: boolean, isPinned: boolean, isAutoSummaryEnabled?: boolean, autoSummaryThreshold?: number, lastSummaryMessageIndex?: number }>>(() => {
     const saved = localStorage.getItem('aiphone_chat_settings');
     return saved ? JSON.parse(saved) : {};
   });
 
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; messageIndex: number; messageContent: string; messageRole: 'user' | 'assistant' | ''; messageGroupId?: string; isVisible: boolean }>({ x: 0, y: 0, messageIndex: -1, messageContent: '', messageRole: '', isVisible: false });
-  const [quoteToReply, setQuoteToReply] = useState<{ content: string, sender: string } | null>(null);
-  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
-  const [editingMessageContent, setEditingMessageContent] = useState('');
-  const [toastMessage, setToastMessage] = useState<string>('');
-  const chatInputRef = React.useRef<HTMLTextAreaElement>(null);
+  const [favorites, setFavorites] = useState<FavoriteItem[]>(() => {
+    const saved = localStorage.getItem('aiphone_favorites');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  const handleContextMenu = (e: React.MouseEvent, index: number, content: string, role: 'user' | 'assistant', groupId?: string) => {
-    e.preventDefault();
-    const menuWidth = 120;
-    const menuHeight = 180;
-    
-    let x = e.clientX;
-    let y = e.clientY;
+  const [showFavoritesScreen, setShowFavoritesScreen] = useState(false);
 
-    if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
-    if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
 
-    setContextMenu({ x, y, messageIndex: index, messageContent: content, messageRole: role, messageGroupId: groupId, isVisible: true });
-  };
 
-  const handleEditMessageClick = () => {
-    setEditingMessageIndex(contextMenu.messageIndex);
-    setEditingMessageContent(contextMenu.messageContent);
-    setContextMenu({ ...contextMenu, isVisible: false });
-  };
 
-  const handleSaveEditMessage = () => {
-    if (!editingMessageContent.trim() || editingMessageIndex === null) return;
-    const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
-    
-    if (currentChatId === 'ai_assistant') {
-      setChatMessages(prev => prev.map((msg, i) => i === editingMessageIndex ? { ...msg, content: editingMessageContent } : msg));
-    } else {
-      setChatHistories(prev => ({
-        ...prev,
-        [currentChatId]: (prev[currentChatId] || []).map((msg, i) => i === editingMessageIndex ? { ...msg, content: editingMessageContent } : msg)
-      }));
-    }
-    setEditingMessageIndex(null);
-  };
 
-  const handleRegenerateMessage = () => {
-    if (contextMenu.messageIndex === -1) return;
-    generateAiReply(contextMenu.messageGroupId || contextMenu.messageIndex);
-    setContextMenu({ ...contextMenu, isVisible: false });
-  };
 
-  const handleCopyMessage = () => {
-    navigator.clipboard.writeText(contextMenu.messageContent).then(() => {
-      setToastMessage('已复制');
-      setTimeout(() => setToastMessage(''), 2000);
-    });
-    setContextMenu({ ...contextMenu, isVisible: false });
-  };
 
-  const handleQuoteMessage = () => {
-    const senderName = contextMenu.messageRole === 'user' 
-      ? '我' 
-      : (activeChatContact ? (chatSettings[activeChatContact.id]?.remark || activeChatContact.chatName) : 'AI 助手');
-    
-    setQuoteToReply({ content: contextMenu.messageContent, sender: senderName });
-    setContextMenu({ ...contextMenu, isVisible: false });
-    setTimeout(() => {
-      if (chatInputRef.current) {
-        chatInputRef.current.focus();
-      }
-    }, 10);
-  };
 
-  const handleDeleteMessage = () => {
-    if (contextMenu.messageIndex === -1) return;
-    const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
-    
-    if (currentChatId === 'ai_assistant') {
-      setChatMessages(prev => prev.filter((_, i) => i !== contextMenu.messageIndex));
-    } else {
-      setChatHistories(prev => ({
-        ...prev,
-        [currentChatId]: (prev[currentChatId] || []).filter((_, i) => i !== contextMenu.messageIndex)
-      }));
-    }
-    setContextMenu({ ...contextMenu, isVisible: false });
-  };
 
   useEffect(() => {
     localStorage.setItem('aiphone_chat_memories', JSON.stringify(chatMemories));
@@ -1083,6 +523,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('aiphone_chat_settings', JSON.stringify(chatSettings));
   }, [chatSettings]);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_favorites', JSON.stringify(favorites));
+  }, [favorites]);
 
   return (
     <div 
@@ -1506,7 +950,6 @@ export default function App() {
                                   return (
                                     <div key="ai_assistant" onClick={() => {
                                       setActiveChatContact(null);
-                                      setIsChatSettingsOpen(false);
                                       setScreen('ai-chat');
                                     }} className={aiSettings.isPinned ? 'bg-zinc-50/80' : ''}>
                                       <ChatListItem 
@@ -1526,7 +969,6 @@ export default function App() {
                                   return (
                                     <div key={contact.id} onClick={() => {
                                       setActiveChatContact(contact);
-                                      setIsChatSettingsOpen(false);
                                       setScreen('ai-chat');
                                     }} className={contactSettings.isPinned ? 'bg-zinc-50/80' : ''}>
                                       <ChatListItem name={displayName} msg={lastMsg} time="09:15" avatar={contact.avatar} />
@@ -1657,6 +1099,21 @@ export default function App() {
                               <span className="text-sm font-bold text-zinc-700">卡包</span>
                             </div>
                             <ChevronRight size={16} className="text-zinc-400" />
+                          </div>
+                          <div 
+                            className="flex items-center justify-between p-4 bg-white/40 backdrop-blur-md rounded-2xl active:bg-white/60 transition-colors border border-white/40 shadow-sm cursor-pointer"
+                            onClick={() => setShowFavoritesScreen(true)}
+                          >
+                            <div className="flex items-center gap-4">
+                              <Star size={20} className="text-zinc-600" strokeWidth={1.5} />
+                              <span className="text-sm font-bold text-zinc-700">我的收藏</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {favorites.length > 0 && (
+                                <span className="text-xs text-zinc-500">{favorites.length} 条</span>
+                              )}
+                              <ChevronRight size={16} className="text-zinc-400" />
+                            </div>
                           </div>
                         </div>
 
@@ -1837,761 +1294,53 @@ export default function App() {
 
         </AnimatePresence>
 
-        {/* 8. AI Chat Screen - 放在 AnimatePresence 外部避免白屏 */}
-        {screen === 'ai-chat' && (() => {
-          const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
-          const currentChatSettings = chatSettings[currentChatId] || { remark: '', background: '', isBlocked: false };
-          const displayChatName = currentChatSettings.remark || (activeChatContact ? activeChatContact.chatName : 'AI 助手');
+        {/* 8. AI Chat Screen */}
+        {screen === 'ai-chat' && (
+          <AiChatScreen
+            activeChatContact={activeChatContact}
+            setActiveChatContact={setActiveChatContact}
+            chatHistories={chatHistories}
+            setChatHistories={setChatHistories}
+            chatMessages={chatMessages}
+            setChatMessages={setChatMessages}
+            chatSettings={chatSettings}
+            setChatSettings={setChatSettings}
+            chatMemories={chatMemories}
+            setChatMemories={setChatMemories}
+            apiConfig={apiConfig}
+            worldBooks={worldBooks}
+            setScreen={setScreen}
+            favorites={favorites}
+            setFavorites={setFavorites}
+            phonePersonas={phonePersonas}
+          />
+        )}
 
-          return (
-          <div className="absolute inset-0 bg-white flex flex-col z-50">
-            <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
-              <button onClick={() => {
-                setScreen('app-chat');
+        {/* Favorites Screen */}
+        {showFavoritesScreen && (
+          <FavoritesScreen
+            favorites={favorites}
+            setFavorites={setFavorites}
+            contacts={contacts}
+            chatSettings={chatSettings}
+            onBack={() => setShowFavoritesScreen(false)}
+            onJumpToChat={(contactId, messageId) => {
+              setShowFavoritesScreen(false);
+              if (contactId === 'ai_assistant') {
                 setActiveChatContact(null);
-              }} className="text-zinc-400">
-                ← 返回
-              </button>
-              <h2 className="text-[16px] font-bold text-zinc-800">
-                {displayChatName}
-              </h2>
-              <button onClick={() => setIsChatSettingsOpen(true)} className="text-zinc-500 hover:text-[#07C160] active:text-[#07C160] transition-colors">
-                <SlidersHorizontal size={20} strokeWidth={1.5} />
-              </button>
-            </div>
-
-            <div 
-              className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 bg-zinc-50 relative"
-              style={{ background: currentChatSettings.background || undefined }}
-            >
-              {/* Network/API error toast & status indicator */}
-              <AnimatePresence>
-                {chatErrorToast && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-2 left-4 right-4 z-20 px-4 py-2.5 bg-red-500 text-white rounded-xl text-[11px] font-bold shadow-lg text-center"
-                  >
-                    ⚠️ API错误: {chatErrorToast}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              {chatErrorToast && (
-                <div className="absolute top-1 right-2 z-10 w-2 h-2 rounded-full bg-red-500 shadow-sm" title="API连接失败" />
-              )}
-              <AnimatePresence>
-                {autoSummaryStatus && isSummarizingRef.current[currentChatId] && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 bg-zinc-800/80 backdrop-blur text-white rounded-full text-[10px] font-bold shadow-lg flex items-center gap-2"
-                  >
-                    <Sparkles size={12} className="animate-pulse text-yellow-300" />
-                    {autoSummaryStatus}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              {(activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages).map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}>
-                  <div 
-                    onContextMenu={(e) => handleContextMenu(e, i, msg.content, msg.role, msg.groupId)}
-                    className={`max-w-[80%] p-4 rounded-2xl text-sm relative transition-transform duration-200 select-text flex flex-col gap-1.5 ${
-                    msg.role === 'user' 
-                      ? 'bg-black text-white rounded-tr-none' 
-                      : 'bg-white text-zinc-700 rounded-tl-none shadow'
-                  } ${contextMenu.isVisible && contextMenu.messageIndex === i ? 'scale-95 opacity-80' : ''}`}>
-                    {msg.quote && (
-                      <div className={`p-2 rounded-lg text-xs border-l-[3px] flex flex-col gap-0.5 ${
-                        msg.role === 'user'
-                          ? 'bg-white/10 border-white/30 text-white/80'
-                          : 'bg-zinc-100 border-zinc-300 text-zinc-500'
-                      }`}>
-                        <span className="font-bold">{msg.quote.sender}</span>
-                        <span className="line-clamp-3 break-words whitespace-pre-wrap">{msg.quote.content}</span>
-                      </div>
-                    )}
-                    <span className="whitespace-pre-wrap break-words">{msg.content}</span>
-                  </div>
-                </div>
-              ))}
-              {isAiLoading && <div className="flex justify-start"><div className="bg-white p-4 rounded-2xl flex items-center gap-2"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 正在生成回复...</div></div>}
-              {(activeChatContact ? (chatHistories[activeChatContact.id] || []).length : chatMessages.length) === 0 && (
-                <div className="text-center text-zinc-400 py-20">暂无消息，开始聊天吧</div>
-              )}
-            </div>
-
-            <AnimatePresence>
-              {contextMenu.isVisible && (
-                <>
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 z-40" 
-                    onClick={() => setContextMenu({ ...contextMenu, isVisible: false })}
-                    onContextMenu={(e) => { e.preventDefault(); setContextMenu({ ...contextMenu, isVisible: false }); }}
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
-                    className="fixed z-50 w-32 bg-white/70 dark:bg-zinc-800/70 backdrop-blur-2xl border border-zinc-200/50 dark:border-zinc-700/50 rounded-2xl shadow-xl overflow-hidden flex flex-col"
-                  >
-                    <button onClick={handleCopyMessage} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left active:bg-black/10">
-                      <Copy size={16} />
-                      复制
-                    </button>
-                    <div className="h-px bg-zinc-200/50 dark:bg-zinc-700/50 mx-2" />
-                    <button onClick={handleQuoteMessage} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left active:bg-black/10">
-                      <Quote size={16} />
-                      引用
-                    </button>
-                    {contextMenu.messageRole === 'user' && (
-                      <>
-                        <div className="h-px bg-zinc-200/50 dark:bg-zinc-700/50 mx-2" />
-                        <button onClick={handleEditMessageClick} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left active:bg-black/10">
-                          <Pencil size={16} />
-                          编辑
-                        </button>
-                      </>
-                    )}
-                    {contextMenu.messageRole === 'assistant' && !isAiLoading && (
-                      <>
-                        <div className="h-px bg-zinc-200/50 dark:bg-zinc-700/50 mx-2" />
-                        <button onClick={handleRegenerateMessage} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left active:bg-black/10">
-                          <RefreshCw size={16} />
-                          重 roll
-                        </button>
-                      </>
-                    )}
-                    <div className="h-px bg-zinc-200/50 dark:bg-zinc-700/50 mx-2" />
-                    <button onClick={handleDeleteMessage} className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50/50 dark:hover:bg-red-500/10 transition-colors text-left active:bg-red-100/50">
-                      <Delete size={16} />
-                      删除
-                    </button>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-              {toastMessage && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-zinc-800/80 backdrop-blur-md text-white text-xs font-bold rounded-full shadow-lg"
-                >
-                  {toastMessage}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {editingMessageIndex !== null && (
-              <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
-                <div className="bg-white rounded-[24px] w-full max-w-[340px] flex flex-col overflow-hidden shadow-2xl">
-                  <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100">
-                    <span className="text-[14px] font-bold text-zinc-800">编辑消息</span>
-                    <button 
-                      onClick={() => setEditingMessageIndex(null)}
-                      className="text-zinc-400 hover:text-zinc-600 p-1"
-                    >
-                      <Delete size={18} />
-                    </button>
-                  </div>
-                  <div className="p-5 flex flex-col gap-4">
-                    <textarea 
-                      rows={6}
-                      className="w-full bg-zinc-50 rounded-xl p-3 text-sm outline-none border border-transparent focus:border-zinc-300 transition-colors resize-none leading-relaxed"
-                      value={editingMessageContent}
-                      onChange={e => setEditingMessageContent(e.target.value)}
-                    />
-                    <div className="flex gap-3 mt-2">
-                      <button 
-                        onClick={() => setEditingMessageIndex(null)}
-                        className="flex-1 py-3 bg-zinc-100 text-zinc-600 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
-                      >
-                        取消
-                      </button>
-                      <button 
-                        onClick={handleSaveEditMessage}
-                        className="flex-1 py-3 bg-zinc-800 text-white rounded-xl text-sm font-bold shadow-md hover:bg-zinc-700 active:scale-95 transition-all flex justify-center items-center gap-2"
-                      >
-                        <Check size={16} /> 保存
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="p-4 bg-white border-t border-zinc-100 pb-8 flex flex-col gap-3">
-              {currentChatSettings.isBlocked ? (
-                <div className="flex items-center justify-center p-4 bg-zinc-50 rounded-2xl text-zinc-400 text-sm border border-zinc-100">
-                  您已被拉黑
-                </div>
-              ) : (
-                <>
-                  {quoteToReply && (
-                    <div className="flex items-center justify-between px-3 py-2 bg-zinc-50 rounded-xl border border-zinc-100 text-xs shadow-sm">
-                      <div className="flex flex-col flex-1 min-w-0 pr-2 border-l-2 border-zinc-300 pl-2">
-                        <span className="font-bold text-zinc-600">{quoteToReply.sender}</span>
-                        <span className="text-zinc-500 truncate">{quoteToReply.content}</span>
-                      </div>
-                      <button onClick={() => setQuoteToReply(null)} className="p-1 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-200 transition-colors">
-                        <Delete size={14} />
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex items-end gap-2">
-                    <textarea 
-                    ref={chatInputRef}
-                    placeholder="输入消息..."
-                    className="flex-1 bg-zinc-50 p-3.5 rounded-2xl text-sm outline-none border border-zinc-200 focus:border-zinc-400 transition-colors resize-none overflow-y-auto leading-tight"
-                    style={{ height: '48px', minHeight: '48px', maxHeight: '120px' }}
-                    value={chatInput}
-                    onChange={(e) => {
-                      setChatInput(e.target.value);
-                      e.target.style.height = '48px';
-                      e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        addUserMessage();
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => generateAiReply()}
-                    disabled={isAiLoading || ((activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages).length === 0)}
-                    className="w-12 h-12 bg-zinc-100 text-zinc-600 rounded-2xl flex items-center justify-center disabled:opacity-50 hover:bg-zinc-200 active:bg-zinc-300 active:scale-95 transition-all flex-shrink-0"
-                    title="生成AI回复"
-                  >
-                    <Bot size={20} />
-                  </button>
-                  <button 
-                    onClick={addUserMessage}
-                    disabled={!chatInput.trim()}
-                    className="w-12 h-12 bg-[#1E1E1E] text-white rounded-2xl flex items-center justify-center disabled:opacity-50 active:bg-[#333333] hover:bg-[#2c2c2c] active:scale-95 transition-all dark:bg-zinc-300 dark:text-zinc-900 dark:hover:bg-zinc-400 dark:active:bg-zinc-500 flex-shrink-0 shadow-sm"
-                  >
-                    <Send size={18} />
-                  </button>
-                </div>
-                </>
-              )}
-            </div>
-
-            {isChatSettingsOpen && (() => {
-              const bgInputRef = React.createRef<HTMLInputElement>();
-              return (
-              <div className="absolute inset-0 z-50 bg-zinc-50 flex flex-col">
-                {/* Memory Edit Modal */}
-                {editingMemory !== null && (
-                  <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
-                    <div className="bg-white rounded-[24px] w-full max-w-[340px] flex flex-col overflow-hidden shadow-2xl">
-                      <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100">
-                        <span className="text-[14px] font-bold text-zinc-800">
-                          {editingMemory.id ? '编辑记忆' : '添加记忆'}
-                        </span>
-                        <button 
-                          onClick={() => setEditingMemory(null)}
-                          className="text-zinc-400 hover:text-zinc-600 p-1"
-                        >
-                          <Delete size={18} />
-                        </button>
-                      </div>
-                      <div className="p-5 flex flex-col gap-4">
-                        <input 
-                          type="text" 
-                          placeholder="记忆标题 (例如: 用户的爱好)"
-                          className="w-full bg-zinc-50 rounded-xl p-3 text-sm outline-none border border-transparent focus:border-zinc-300 transition-colors"
-                          value={editingMemory.title}
-                          onChange={e => setEditingMemory(prev => prev ? { ...prev, title: e.target.value } : null)}
-                        />
-                        <textarea 
-                          rows={6}
-                          placeholder="记忆内容..."
-                          className="w-full bg-zinc-50 rounded-xl p-3 text-sm outline-none border border-transparent focus:border-zinc-300 transition-colors resize-none leading-relaxed"
-                          value={editingMemory.content}
-                          onChange={e => setEditingMemory(prev => prev ? { ...prev, content: e.target.value } : null)}
-                        />
-                        <div className="flex gap-3 mt-2">
-                          <button 
-                            onClick={() => setEditingMemory(null)}
-                            className="flex-1 py-3 bg-zinc-100 text-zinc-600 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
-                          >
-                            取消
-                          </button>
-                          <button 
-                            onClick={async () => {
-                              if (!editingMemory.title.trim() || !editingMemory.content.trim()) {
-                                alert('标题和内容不能为空');
-                                return;
-                              }
-                              
-                              let keywords: string[] = [];
-                              
-                              if (apiConfig.baseUrl && apiConfig.apiKey) {
-                                try {
-                                  setAutoSummaryStatus('正在提取关键词...');
-                                  const keywordPrompt = `根据以下内容提取3-5个关键词，输出格式为JSON：{"keywords": ["词1", "词2"]} \n\n内容：${editingMemory.content}`;
-                                  
-                                  const controller = new AbortController();
-                                  const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-                                  const resp = await fetch(`${normalizeBaseUrl(apiConfig.baseUrl)}/chat/completions`, {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                      'Authorization': `Bearer ${apiConfig.apiKey}`,
-                                    },
-                                    signal: controller.signal,
-                                    body: JSON.stringify({
-                                      model: apiConfig.selectedModel || 'gpt-3.5-turbo',
-                                      messages: [
-                                        { role: 'system', content: '你是一个提取关键词的助手，必须只输出要求的JSON格式。' },
-                                        { role: 'user', content: keywordPrompt }
-                                      ],
-                                      temperature: 0.3,
-                                      response_format: { type: "json_object" }
-                                    })
-                                  });
-                                  clearTimeout(timeoutId);
-                                  
-                                  if (resp.ok) {
-                                    const data = await resp.json();
-                                    const raw = data.choices?.[0]?.message?.content;
-                                    if (raw) {
-                                      const parsed = JSON.parse(raw);
-                                      if (Array.isArray(parsed.keywords)) {
-                                        keywords = parsed.keywords;
-                                      }
-                                    }
-                                  }
-                                } catch (e) {
-                                  console.error('Failed to generate keywords:', e);
-                                  // Fallback to simple extraction
-                                  const words = editingMemory.content.match(/[\w\u4e00-\u9fa5]+/g) || [];
-                                  keywords = Array.from(new Set(words.filter(w => w.length > 1))).slice(0, 5) as string[];
-                                } finally {
-                                  setAutoSummaryStatus('');
-                                }
-                              } else {
-                                // Fallback to simple extraction if API not available
-                                const words = editingMemory.content.match(/[\w\u4e00-\u9fa5]+/g) || [];
-                                keywords = Array.from(new Set(words.filter(w => w.length > 1))).slice(0, 5) as string[];
-                              }
-
-                              const newMem = {
-                                id: editingMemory.id || (Date.now().toString() + Math.random().toString(36).substring(2, 9)),
-                                title: editingMemory.title.trim(),
-                                content: editingMemory.content.trim(),
-                                keywords,
-                                createdAt: editingMemory.id ? (chatMemories[currentChatId]?.find(m => m.id === editingMemory.id)?.createdAt || Date.now()) : Date.now(),
-                                isPinned: editingMemory.id ? !!(chatMemories[currentChatId]?.find(m => m.id === editingMemory.id)?.isPinned) : false
-                              };
-
-                              setChatMemories(prev => {
-                                const list = prev[currentChatId] || [];
-                                if (editingMemory.id) {
-                                  return { ...prev, [currentChatId]: list.map(m => m.id === editingMemory.id ? newMem : m) };
-                                } else {
-                                  return { ...prev, [currentChatId]: [newMem, ...list] };
-                                }
-                              });
-                              setEditingMemory(null);
-                            }}
-                            className="flex-1 py-3 bg-zinc-800 text-white rounded-xl text-sm font-bold shadow-md hover:bg-zinc-700 active:scale-95 transition-all flex justify-center items-center gap-2"
-                          >
-                            <Check size={16} /> 保存
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {/* Full-screen settings top bar */}
-                <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
-                  <button onClick={() => setIsChatSettingsOpen(false)} className="text-zinc-500 text-sm font-bold active:text-zinc-800 transition-colors">
-                    取消
-                  </button>
-                  <h3 className="text-[16px] font-bold text-zinc-800">聊天设置</h3>
-                  <button 
-                    onClick={() => setIsChatSettingsOpen(false)}
-                    className="flex items-center gap-1 px-4 py-1.5 bg-zinc-800 text-white rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
-                  >
-                    <Check size={14} />
-                    保存
-                  </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-                  {/* Remark */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">备注名</span>
-                    <div className="bg-white rounded-2xl border border-zinc-100 p-4">
-                      <input
-                        type="text"
-                        className="w-full bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
-                        placeholder="添加备注名"
-                        value={currentChatSettings.remark}
-                        onChange={e => {
-                          setChatSettings(prev => ({
-                            ...prev,
-                            [currentChatId]: { ...currentChatSettings, remark: e.target.value }
-                          }));
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Background */}
-                  <div className="flex flex-col gap-3">
-                    <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">聊天背景</span>
-                    
-                    {/* Background preview */}
-                    <div 
-                      className="w-full h-24 rounded-2xl border border-zinc-100 overflow-hidden flex items-center justify-center"
-                      style={{ 
-                        background: currentChatSettings.background || '#fafafa',
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
-                      }}
-                    >
-                      {!currentChatSettings.background && <span className="text-xs text-zinc-400">当前背景预览</span>}
-                    </div>
-
-                    {/* Color presets */}
-                    <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-                      {[
-                        { id: 'default', color: '' },
-                        { id: 'bg1', color: '#F2F2F2' },
-                        { id: 'bg2', color: '#E5F2FA' },
-                        { id: 'bg3', color: '#F0F4E8' },
-                        { id: 'bg4', color: '#FFF3E0' },
-                        { id: 'bg5', color: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' },
-                        { id: 'bg6', color: 'linear-gradient(120deg, #e0c3fc 0%, #8ec5fc 100%)' },
-                      ].map(bg => (
-                        <button
-                          key={bg.id}
-                          className={`w-12 h-12 rounded-xl flex-shrink-0 border-2 transition-all ${currentChatSettings.background === bg.color ? 'border-[#07C160] scale-110 shadow-md' : 'border-zinc-200/50'}`}
-                          style={{ background: bg.color || '#fafafa' }}
-                          onClick={() => {
-                            setChatSettings(prev => ({
-                              ...prev,
-                              [currentChatId]: { ...currentChatSettings, background: bg.color }
-                            }));
-                          }}
-                        >
-                          {!bg.color && <span className="text-[10px] text-zinc-400 flex items-center justify-center h-full">默认</span>}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Upload image button */}
-                    <input 
-                      type="file" 
-                      ref={bgInputRef} 
-                      className="hidden" 
-                      accept="image/*" 
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            const dataUrl = reader.result as string;
-                            setChatSettings(prev => ({
-                              ...prev,
-                              [currentChatId]: { ...currentChatSettings, background: `url(${dataUrl}) center/cover no-repeat` }
-                            }));
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                    <button 
-                      onClick={() => bgInputRef.current?.click()}
-                      className="flex items-center justify-center gap-2 w-full bg-white p-4 rounded-2xl border border-zinc-100 text-zinc-600 text-sm font-bold active:bg-zinc-50 transition-colors"
-                    >
-                      <Upload size={16} strokeWidth={1.5} />
-                      从相册选择背景图片
-                    </button>
-                  </div>
-
-                  {/* Pin Toggle */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">聊天管理</span>
-                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-zinc-100">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-zinc-800">置顶聊天</span>
-                        <span className="text-[10px] text-zinc-500 mt-0.5">置顶后将显示在消息列表最上方</span>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          setChatSettings(prev => ({
-                            ...prev,
-                            [currentChatId]: { ...currentChatSettings, isPinned: !currentChatSettings.isPinned }
-                          }));
-                        }}
-                        className={`w-11 h-6 rounded-full transition-colors relative ${currentChatSettings.isPinned ? 'bg-[#07C160]' : 'bg-zinc-200'}`}
-                      >
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${currentChatSettings.isPinned ? 'left-6' : 'left-1'}`} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Long-term Memory Summary */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex justify-between items-center px-1 mb-2">
-                      <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase">记忆库</span>
-                      <button 
-                        onClick={() => {
-                          setEditingMemory({ title: '', content: '' });
-                        }}
-                        className="text-[10px] font-bold text-[#07C160] hover:text-[#06ad56] transition-colors flex items-center gap-1"
-                      >
-                        <Plus size={12} />
-                        手动添加
-                      </button>
-                    </div>
-
-                    {/* Memory List */}
-                    <div className="flex flex-col gap-2">
-                      {!(chatMemories[currentChatId] && chatMemories[currentChatId].length > 0) ? (
-                        <div className="text-center text-xs text-zinc-400 py-4 bg-white rounded-2xl border border-zinc-100">暂无记忆</div>
-                      ) : (
-                        chatMemories[currentChatId].map((mem: any) => (
-                          <div key={mem.id} className="bg-white rounded-2xl border border-zinc-100 p-4 relative flex flex-col gap-1">
-                            <div className="flex justify-between items-start gap-4">
-                              <h4 className="text-sm font-bold text-zinc-800 flex-1 break-words">{mem.title}</h4>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <button
-                                  onClick={() => {
-                                    setChatMemories(prev => ({
-                                      ...prev,
-                                      [currentChatId]: prev[currentChatId].map((m: any) => m.id === mem.id ? { ...m, isPinned: !m.isPinned } : m)
-                                    }));
-                                  }}
-                                  className={mem.isPinned ? "text-[#07C160]" : "text-zinc-300 hover:text-zinc-400"}
-                                >
-                                  <Bookmark size={14} fill={mem.isPinned ? "currentColor" : "none"} />
-                                </button>
-                                <button 
-                                  onClick={() => setEditingMemory({ ...mem })}
-                                  className="text-zinc-300 hover:text-zinc-400"
-                                >
-                                  <Pencil size={14} />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    if (window.confirm('确定删除此记忆？')) {
-                                      setChatMemories(prev => ({
-                                        ...prev,
-                                        [currentChatId]: prev[currentChatId].filter((m: any) => m.id !== mem.id)
-                                      }));
-                                    }
-                                  }}
-                                  className="text-zinc-300 hover:text-red-400"
-                                >
-                                  <Delete size={14} />
-                                </button>
-                              </div>
-                            </div>
-                            <p className="text-xs text-zinc-500 line-clamp-2 mt-1">{mem.content}</p>
-                            <span className="text-[9px] text-zinc-300 mt-2">
-                              {new Date(mem.createdAt).toLocaleDateString()} {new Date(mem.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                            </span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-
-                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-zinc-100 mt-2">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-zinc-800">开启自动总结</span>
-                        <span className="text-[10px] text-zinc-500 mt-0.5">累积新消息后自动生成</span>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          setChatSettings(prev => ({
-                            ...prev,
-                            [currentChatId]: { 
-                              ...currentChatSettings, 
-                              isAutoSummaryEnabled: !currentChatSettings.isAutoSummaryEnabled,
-                              autoSummaryThreshold: currentChatSettings.autoSummaryThreshold || 30
-                            }
-                          }));
-                        }}
-                        className={`w-11 h-6 rounded-full transition-colors relative ${currentChatSettings.isAutoSummaryEnabled ? 'bg-[#07C160]' : 'bg-zinc-200'}`}
-                      >
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${currentChatSettings.isAutoSummaryEnabled ? 'left-6' : 'left-1'}`} />
-                      </button>
-                    </div>
-
-                    {currentChatSettings.isAutoSummaryEnabled && (
-                      <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-zinc-100">
-                        <span className="text-sm font-bold text-zinc-800">自动总结阈值(条)</span>
-                        <div className="flex items-center gap-2">
-                          <input 
-                            type="number" 
-                            min="10" 
-                            max="200" 
-                            className="w-16 text-center bg-zinc-50 rounded-lg p-1 text-sm outline-none border border-transparent focus:border-zinc-300 transition-colors"
-                            value={currentChatSettings.autoSummaryThreshold || 30}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || 30;
-                              setChatSettings(prev => ({
-                                ...prev,
-                                [currentChatId]: { ...currentChatSettings, autoSummaryThreshold: val }
-                              }));
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={async () => {
-                        const history = currentChatId === 'ai_assistant' ? chatMessages : (chatHistories[currentChatId] || []);
-                        if (history.length === 0) {
-                          alert('没有可总结的消息');
-                          return;
-                        }
-                        if (!apiConfig.baseUrl || !apiConfig.apiKey) {
-                          alert('总结失败，请先在设置中配置API');
-                          return;
-                        }
-                        
-                        const historyText = history.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
-                        const summaryPrompt = `根据以下对话，生成一段总结（200字以内），并提取3-5个关键词（每个关键词1-2个词）。输出格式：{"title": "...", "content": "...", "keywords": ["词1","词2"]}\n\n对话历史：\n${historyText}`;
-
-                        try {
-                          setAutoSummaryStatus('正在手动生成记忆...');
-                          const manualBaseUrl = normalizeBaseUrl(apiConfig.baseUrl);
-                          const url = `${manualBaseUrl}/chat/completions`;
-
-                          const controller = new AbortController();
-                          const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-                          const resp = await fetch(url, {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                              'Authorization': `Bearer ${apiConfig.apiKey}`,
-                            },
-                            mode: 'cors',
-                            credentials: 'omit',
-                            signal: controller.signal,
-                            body: JSON.stringify({
-                              model: apiConfig.selectedModel || 'gpt-3.5-turbo',
-                              messages: [
-                                { role: 'system', content: '你是一个对话总结助手，必须只输出要求的JSON格式。' },
-                                { role: 'user', content: summaryPrompt }
-                              ],
-                              temperature: 0.3,
-                              max_tokens: 800,
-                              stream: false,
-                              response_format: { type: "json_object" }
-                            })
-                          });
-                          clearTimeout(timeoutId);
-                          
-                          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                          const data = await resp.json();
-                          const rawContent = data.choices?.[0]?.message?.content;
-                          
-                          if (rawContent) {
-                            try {
-                              const parsed = JSON.parse(rawContent);
-                              if (parsed.title && parsed.content && Array.isArray(parsed.keywords)) {
-                                const newMemory = {
-                                  id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-                                  title: parsed.title,
-                                  content: parsed.content,
-                                  keywords: parsed.keywords,
-                                  createdAt: Date.now(),
-                                  isPinned: false
-                                };
-                                setChatMemories(prev => ({
-                                  ...prev,
-                                  [currentChatId]: [...(prev[currentChatId] || []), newMemory]
-                                }));
-                                alert('记忆已生成并追加');
-                              }
-                            } catch (e) {
-                              throw new Error('解析JSON失败');
-                            }
-                          } else {
-                            throw new Error('返回数据为空');
-                          }
-                        } catch (err: any) {
-                          console.error('Generate summary error:', err);
-                          alert('总结失败，请检查API配置');
-                        } finally {
-                          setAutoSummaryStatus('');
-                        }
-                      }}
-                      className="flex items-center justify-center gap-2 w-full bg-zinc-800 text-white p-3 rounded-2xl text-sm font-bold active:scale-[0.98] transition-all shadow-sm mt-2"
-                    >
-                      <Sparkles size={16} />
-                      生成新的记忆
-                    </button>
-                    <p className="text-[9px] text-zinc-400 px-1 mt-1">AI会自动为您提取聊天中的重要信息并保存为长期记忆。系统会自动根据您的最新消息检索最相关的记忆进行上下文补充。</p>
-                  </div>
-
-                  {/* Block Toggle */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">隐私</span>
-                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-zinc-100">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-zinc-800">加入黑名单</span>
-                        <span className="text-[10px] text-zinc-500 mt-0.5">拉黑后将无法发送消息</span>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          setChatSettings(prev => ({
-                            ...prev,
-                            [currentChatId]: { ...currentChatSettings, isBlocked: !currentChatSettings.isBlocked }
-                          }));
-                        }}
-                        className={`w-11 h-6 rounded-full transition-colors relative ${currentChatSettings.isBlocked ? 'bg-[#07C160]' : 'bg-zinc-200'}`}
-                      >
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${currentChatSettings.isBlocked ? 'left-6' : 'left-1'}`} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Danger Zone */}
-                  <div className="flex flex-col gap-2 mt-4">
-                    <span className="text-[10px] font-bold text-red-400 tracking-widest uppercase px-1">危险操作</span>
-                    <button 
-                      onClick={() => {
-                        if (window.confirm(`确定要清空与 ${displayChatName} 的聊天记录吗？此操作不可撤销。`)) {
-                          if (currentChatId === 'ai_assistant') {
-                            setChatMessages([]);
-                          } else {
-                            setChatHistories(prev => ({ ...prev, [currentChatId]: [] }));
-                          }
-                          setIsChatSettingsOpen(false);
-                        }
-                      }}
-                      className="w-full bg-white text-red-500 font-bold p-4 rounded-2xl border border-red-100 active:bg-red-50 transition-colors"
-                    >
-                      清空聊天记录
-                    </button>
-                  </div>
-                </div>
-              </div>
-              );
-            })()}
-          </div>
-          );
-        })()}
+              } else {
+                const contact = contacts.find(c => c.id === contactId);
+                if (contact) {
+                  setActiveChatContact(contact);
+                } else {
+                  // Contact no longer exists, just close
+                  return;
+                }
+              }
+              setScreen('ai-chat');
+            }}
+          />
+        )}
       </div>
 
       <style>{`

@@ -1,0 +1,1227 @@
+import React, { useState, useRef } from 'react';
+import {
+  Delete,
+  SlidersHorizontal,
+  RefreshCw,
+  Send,
+  Check,
+  Pencil,
+  Plus,
+  Upload,
+  Bookmark,
+  Bot,
+  Copy,
+  Quote,
+  Sparkles,
+  Star,
+  CheckSquare,
+  Square,
+  X,
+  Forward,
+  Trash2,
+  User,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import type { Persona, ApiConfig, WorldBook, Screen, ChatMessage, ChatSettings, MemoryEntry, FavoriteItem } from '../types';
+
+// --- Helpers ---
+
+function generateMsgId(): string {
+  return Date.now().toString() + '_' + Math.random().toString(36).substring(2, 11);
+}
+
+function normalizeBaseUrl(raw: string): string {
+  let url = raw.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  if (url.endsWith('/chat/completions')) url = url.replace(/\/chat\/completions$/, '');
+  return url;
+}
+
+function buildCharacterSystemPrompt(p: Persona): string {
+  const t: string[] = [];
+  if (p.height) t.push(`身高：${p.height}cm`);
+  if (p.weight) t.push(`体重：${p.weight}kg`);
+  if (p.age) t.push(`年龄：${p.age}岁`);
+  if (p.gender) t.push(`性别：${p.gender}`);
+  if (p.occupation) t.push(`职业：${p.occupation}`);
+  if (p.location) t.push(`所在地：${p.location}`);
+  return `你现在正扮演以下角色，必须严格遵循角色设定，以第一人称视角回复，语气、用词、思维方式都要完全符合角色特点，不能脱离角色，不能说出任何不符合角色身份的话。回复要像真人一样自然、生动、有情感，避免机械感或AI感。绝对不能以AI身份自居，不能说"作为AI"、"我是人工智能"之类的话。\n\n角色信息：\n- 姓名：${p.name || p.chatName}\n- 性格：${p.personality || '未设定'}\n- 背景故事：${p.bio || '未设定'}\n- 其他特征：${t.length > 0 ? t.join('；') : '无'}\n\n请以该角色的身份与用户进行对话，每一句话都要符合角色设定，让人感觉就是角色本人在说话。保持对话自然，像是在社交软件上聊天一样。`;
+}
+
+function generateSimulatedReply(persona: Persona | null, userMessage: string): string {
+  if (!persona) {
+    const r = ['你好呀！我是AI助手，不过目前API还没配置好，等配置好了我就能更好地帮你啦~','嗯嗯，我收到你的消息了！不过现在API还没连上，我只能简单回复你哦。','哈哈，我暂时还不太聪明，因为API还没配置好。去设置里配置一下吧！','收到！不过我现在是离线模式，功能有限哦~'];
+    return r[Math.floor(Math.random() * r.length)];
+  }
+  const g = ['嗯？怎么了~','在呢在呢，说吧~','哈喽~','嗯嗯，我在听~'];
+  const rs = ['嗯...让我想想怎么说...','哈哈，你说的挺有意思的~','是嘛？然后呢？','嗯嗯，我懂你的意思~','这样啊...','哦哦，原来如此~'];
+  if (userMessage.length < 5) return g[Math.floor(Math.random() * g.length)];
+  if (userMessage.includes('?') || userMessage.includes('？')) {
+    const q = ['这个嘛...我觉得还好吧~','嗯...怎么说呢，我也不太确定诶','哈哈，你怎么突然问这个~','让我想想...嗯，我觉得可以的！'];
+    return q[Math.floor(Math.random() * q.length)];
+  }
+  return rs[Math.floor(Math.random() * rs.length)];
+}
+
+function splitTextIntoMessages(text: string): string[] {
+  const regex = /([^。！？!?\n~]+[。！？!?\n~]*)/g;
+  const matches = text.match(regex);
+  if (!matches) return [text.trim()];
+  const result: string[] = [];
+  let cur = '';
+  for (const m of matches) {
+    const tr = m.trim();
+    if (!tr) continue;
+    cur += (cur ? ' ' : '') + tr;
+    if (cur.length > 15 || /[。！？!?\n~]$/.test(m.trimEnd())) { result.push(cur); cur = ''; }
+  }
+  if (cur.trim()) result.push(cur.trim());
+  const fin: string[] = [];
+  for (const msg of result) {
+    if (fin.length > 0 && msg.length < 4) fin[fin.length - 1] += ' ' + msg;
+    else fin.push(msg);
+  }
+  return fin.length > 0 ? fin : [text.trim()];
+}
+
+// --- Props ---
+
+export interface AiChatScreenProps {
+  activeChatContact: Persona | null;
+  setActiveChatContact: (p: Persona | null) => void;
+  chatHistories: Record<string, ChatMessage[]>;
+  setChatHistories: React.Dispatch<React.SetStateAction<Record<string, ChatMessage[]>>>;
+  chatMessages: ChatMessage[];
+  setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  chatSettings: Record<string, ChatSettings>;
+  setChatSettings: React.Dispatch<React.SetStateAction<Record<string, ChatSettings>>>;
+  chatMemories: Record<string, MemoryEntry[]>;
+  setChatMemories: React.Dispatch<React.SetStateAction<Record<string, MemoryEntry[]>>>;
+  apiConfig: ApiConfig;
+  worldBooks: WorldBook[];
+  setScreen: (s: Screen) => void;
+  favorites: FavoriteItem[];
+  setFavorites: React.Dispatch<React.SetStateAction<FavoriteItem[]>>;
+  phonePersonas: Persona[];
+}
+
+// --- Component ---
+
+export function AiChatScreen(props: AiChatScreenProps) {
+  const {
+    activeChatContact, setActiveChatContact,
+    chatHistories, setChatHistories,
+    chatMessages, setChatMessages,
+    chatSettings, setChatSettings,
+    chatMemories, setChatMemories,
+    apiConfig, worldBooks, setScreen,
+    favorites, setFavorites,
+    phonePersonas,
+  } = props;
+
+  const [chatInput, setChatInput] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isChatSettingsOpen, setIsChatSettingsOpen] = useState(false);
+  const [chatErrorToast, setChatErrorToast] = useState('');
+  const [autoSummaryStatus, setAutoSummaryStatus] = useState('');
+  const [editingMemory, setEditingMemory] = useState<{ id?: string; title: string; content: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ rect?: DOMRect; messageIndex: number; messageContent: string; messageRole: 'user' | 'assistant' | ''; messageGroupId?: string; messageId?: string; messageTimestamp?: number; isVisible: boolean }>({ messageIndex: -1, messageContent: '', messageRole: '', isVisible: false });
+  const [quoteToReply, setQuoteToReply] = useState<{ content: string; sender: string } | null>(null);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [editingMessageContent, setEditingMessageContent] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+
+  // Multi-select mode state
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+
+  // Forward contact picker state
+  const [showForwardPicker, setShowForwardPicker] = useState(false);
+  const [showForwardOptions, setShowForwardOptions] = useState(false);
+  const [forwardMode, setForwardMode] = useState<'single' | 'one-by-one' | 'combined' | null>(null);
+  const [forwardTargetId, setForwardTargetId] = useState<string | null>(null);
+  const [singleForwardMessage, setSingleForwardMessage] = useState<ChatMessage | null>(null);
+
+  // Merged message details modal state
+  const [mergedMessageDetails, setMergedMessageDetails] = useState<ChatMessage['originalMessages'] | null>(null);
+
+  // Delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const isSummarizingRef = useRef<Record<string, boolean>>({});
+  const lastSummaryTimeRef = useRef<Record<string, number>>({});
+
+  const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
+  const currentChatSettings: ChatSettings = chatSettings[currentChatId] || { remark: '', background: '', isBlocked: false, isPinned: false };
+  const displayChatName = currentChatSettings.remark || (activeChatContact ? activeChatContact.chatName : 'AI 助手');
+  const currentMessages = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
+
+  // --- Show toast helper ---
+  const showToast = (msg: string, duration = 2000) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), duration);
+  };
+
+  // --- Exit multi-select mode ---
+  const exitMultiSelectMode = () => {
+    setIsMultiSelectMode(false);
+    setSelectedMessageIds(new Set());
+  };
+
+  // --- Toggle message selection ---
+  const toggleMessageSelection = (msgId: string) => {
+    setSelectedMessageIds(prev => {
+      const next = new Set(prev);
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
+      return next;
+    });
+  };
+
+  // --- Auto Summary ---
+  const checkAndTriggerAutoSummary = async (chatId: string, history: ChatMessage[]) => {
+    const s = chatSettings[chatId] || {} as any;
+    if (!s.isAutoSummaryEnabled) return;
+    const threshold = s.autoSummaryThreshold || 30;
+    const lastIdx = s.lastSummaryMessageIndex || 0;
+    if (history.length - lastIdx < threshold) return;
+    const now = Date.now();
+    if (now - (lastSummaryTimeRef.current[chatId] || 0) < 30000) return;
+    if (isSummarizingRef.current[chatId]) return;
+    if (!apiConfig.baseUrl || !apiConfig.apiKey) return;
+    isSummarizingRef.current[chatId] = true;
+    setAutoSummaryStatus('正在总结记忆...');
+    try {
+      const txt = history.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
+      const prompt = `根据以下对话，生成一段总结（200字以内），并提取3-5个关键词（每个关键词1-2个词）。输出格式：{"title": "...", "content": "...", "keywords": ["词1","词2"]}\n\n对话历史：\n${txt}`;
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 30000);
+      const resp = await fetch(`${normalizeBaseUrl(apiConfig.baseUrl)}/chat/completions`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+        mode: 'cors', credentials: 'omit', signal: ctrl.signal,
+        body: JSON.stringify({ model: apiConfig.selectedModel || 'gpt-3.5-turbo', messages: [{ role: 'system', content: '你是一个对话总结助手，必须只输出要求的JSON格式。' }, { role: 'user', content: prompt }], temperature: 0.3, max_tokens: 800, stream: false, response_format: { type: 'json_object' } })
+      });
+      clearTimeout(tid);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const raw = data.choices?.[0]?.message?.content;
+      if (raw) {
+        try {
+          const p = JSON.parse(raw);
+          if (p.title && p.content && Array.isArray(p.keywords)) {
+            setChatMemories(prev => ({ ...prev, [chatId]: [...(prev[chatId] || []), { id: Date.now().toString() + Math.random().toString(36).substring(2, 9), title: p.title, content: p.content, keywords: p.keywords, createdAt: Date.now(), isPinned: false }] }));
+          }
+        } catch (e) { console.error('Failed to parse auto summary JSON:', e); }
+        setChatSettings(prev => ({ ...prev, [chatId]: { ...prev[chatId], lastSummaryMessageIndex: history.length } }));
+        lastSummaryTimeRef.current[chatId] = Date.now();
+      }
+    } catch (err) { console.error('Auto summary error:', err); }
+    finally { isSummarizingRef.current[chatId] = false; setAutoSummaryStatus(''); }
+  };
+
+  // --- Add user message ---
+  const addUserMessage = () => {
+    if (!chatInput.trim()) return;
+    const newMsg: ChatMessage = { id: generateMsgId(), role: 'user', content: chatInput.trim(), timestamp: Date.now() };
+    if (quoteToReply) newMsg.quote = quoteToReply;
+    const newMsgs = [...currentMessages, newMsg];
+    if (activeChatContact) setChatHistories(prev => ({ ...prev, [activeChatContact.id]: newMsgs }));
+    else setChatMessages(newMsgs);
+    setChatInput(''); setQuoteToReply(null);
+    setTimeout(() => { if (chatInputRef.current) chatInputRef.current.style.height = '48px'; }, 10);
+  };
+
+  // --- Generate AI Reply ---
+  const generateAiReply = async (regenerateIdOrIndex?: string | number) => {
+    const msgs = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
+    let messagesToSend = msgs;
+    let isRegenerating = false;
+    let regenerateStartIndex = -1;
+    let targetGroupId: string | undefined;
+
+    if (regenerateIdOrIndex !== undefined) {
+      if (typeof regenerateIdOrIndex === 'string') {
+        targetGroupId = regenerateIdOrIndex;
+        regenerateStartIndex = msgs.findIndex(m => m.groupId === targetGroupId);
+      } else {
+        regenerateStartIndex = regenerateIdOrIndex;
+        targetGroupId = msgs[regenerateStartIndex]?.groupId;
+      }
+      if (regenerateStartIndex !== -1 && regenerateStartIndex < msgs.length) {
+        messagesToSend = msgs.slice(0, regenerateStartIndex);
+        isRegenerating = true;
+      }
+    }
+    if (messagesToSend.length === 0) return;
+
+    const newGroupId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
+
+    const appendSeq = async (texts: string[], isErr = false) => {
+      let insertBase = regenerateStartIndex;
+      let localMsgs = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
+      if (isRegenerating && insertBase !== -1) {
+        if (activeChatContact) {
+          setChatHistories(prev => { const h = prev[activeChatContact.id] || []; const n = targetGroupId ? h.filter(m => m.groupId !== targetGroupId) : [...h.slice(0, insertBase), ...h.slice(insertBase + 1)]; localMsgs = n; return { ...prev, [activeChatContact.id]: n }; });
+        } else {
+          setChatMessages(prev => { const n = targetGroupId ? prev.filter(m => m.groupId !== targetGroupId) : [...prev.slice(0, insertBase), ...prev.slice(insertBase + 1)]; localMsgs = n; return n; });
+        }
+      }
+      let final2: ChatMessage[] = localMsgs;
+      for (let j = 0; j < texts.length; j++) {
+        if (j > 0) { setIsAiLoading(true); await new Promise(r => setTimeout(r, 600 + Math.random() * 400)); }
+        const nm: ChatMessage = { id: generateMsgId(), role: 'assistant', content: texts[j], groupId: isErr ? undefined : newGroupId, timestamp: Date.now() };
+        if (activeChatContact) {
+          const cid = activeChatContact.id;
+          setChatHistories(prev => { const h = prev[cid] || []; let n; if (isRegenerating && insertBase !== -1) { const ti = Math.min(insertBase + j, h.length); n = [...h.slice(0, ti), nm, ...h.slice(ti)]; } else { n = [...h, nm]; } final2 = n; return { ...prev, [cid]: n }; });
+        } else {
+          setChatMessages(prev => { let n; if (isRegenerating && insertBase !== -1) { const ti = Math.min(insertBase + j, prev.length); n = [...prev.slice(0, ti), nm, ...prev.slice(ti)]; } else { n = [...prev, nm]; } final2 = n; return n; });
+        }
+      }
+      return final2;
+    };
+
+    const lastUser = [...messagesToSend].reverse().find(m => m.role === 'user');
+    const userMsgSim = lastUser ? lastUser.content : '';
+
+    if (!apiConfig.baseUrl || !apiConfig.baseUrl.trim()) {
+      setIsAiLoading(true);
+      await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+      await appendSeq(splitTextIntoMessages(generateSimulatedReply(activeChatContact, userMsgSim)));
+      setIsAiLoading(false);
+      return;
+    }
+
+    setIsAiLoading(true);
+    let baseSys = activeChatContact ? buildCharacterSystemPrompt(activeChatContact) : '你是一个乐于助人的AI助手。';
+    let wbContent = '';
+    if (activeChatContact) {
+      const lw = worldBooks.find(wb => wb.isActive && wb.scope === 'local' && wb.boundPersonas.includes(activeChatContact.id));
+      wbContent = lw ? lw.content : (worldBooks.find(wb => wb.isActive && wb.scope === 'global')?.content || '');
+    } else { wbContent = worldBooks.find(wb => wb.isActive && wb.scope === 'global')?.content || ''; }
+    const sysPr = wbContent ? `【世界观设定】\n${wbContent}\n\n请严格遵循以上世界观设定，同时扮演好角色...\n\n${baseSys}` : baseSys;
+
+    const sumId = activeChatContact ? activeChatContact.id : 'ai_assistant';
+    const curMem = chatMemories[sumId] || [];
+    const stopW = ['的','了','和','是','就','都','而','及','与','着','或','一个','没有','我们','你们','他们','她','他','它'];
+    const ws = userMsgSim.match(/[\w\u4e00-\u9fa5]+/g) || [];
+    const uKw = new Set(ws.filter(w => !stopW.includes(w) && w.length > 1));
+    const mScores = curMem.map(m => { let sc = m.isPinned ? 1000 : 0; sc += (m.keywords || []).filter((k: string) => Array.from(uKw).some((uk: string) => k.includes(uk) || uk.includes(k))).length; return { memory: m, score: sc }; });
+    mScores.sort((a, b) => b.score - a.score || b.memory.createdAt - a.memory.createdAt);
+    let selMem: MemoryEntry[] = [];
+    const pinned = mScores.filter(ms => ms.memory.isPinned).map(ms => ms.memory);
+    if (pinned.length > 0) selMem.push(pinned[0]);
+    selMem = [...selMem, ...mScores.filter(ms => !ms.memory.isPinned && ms.score > 0).map(ms => ms.memory).slice(0, 2)];
+    if (selMem.length === 0 && curMem.length > 0) selMem.push([...curMem].sort((a, b) => b.createdAt - a.createdAt)[0]);
+    const memCtx = selMem.map(m => `【记忆 - ${m.title}】${m.content}`).join('\n');
+    const finalSys = memCtx ? `${sysPr}\n\n${memCtx}` : sysPr;
+
+    const ctxMsgs = messagesToSend.slice(-(apiConfig.contextMessageCount || 10)).map(m => {
+      let c = m.content;
+      if (m.quote) c = `[引用 ${m.quote.sender} 的消息: "${m.quote.content}"]\n${c}`;
+      return { role: m.role, content: c };
+    });
+    const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiConfig.apiKey) hdrs['Authorization'] = `Bearer ${apiConfig.apiKey}`;
+
+    try {
+      const url = `${normalizeBaseUrl(apiConfig.baseUrl)}/chat/completions`;
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 30000);
+      const resp = await fetch(url, { method: 'POST', headers: hdrs, mode: 'cors', credentials: 'omit', signal: ctrl.signal, body: JSON.stringify({ model: apiConfig.selectedModel || 'gpt-3.5-turbo', messages: [{ role: 'system', content: finalSys }, ...ctxMsgs], temperature: apiConfig.temperature ?? 0.7, max_tokens: apiConfig.maxTokens ?? 2048, stream: false }) });
+      clearTimeout(tid);
+      if (!resp.ok) { const ed = await resp.json().catch(() => ({})); throw new Error(ed.error?.message || ed.message || `请求失败 (HTTP ${resp.status})`); }
+      const data = await resp.json();
+      if (data.choices?.[0]?.message?.content) {
+        const final3 = await appendSeq(splitTextIntoMessages(data.choices[0].message.content));
+        checkAndTriggerAutoSummary(activeChatContact ? activeChatContact.id : 'ai_assistant', final3);
+      } else throw new Error('返回数据格式不正确');
+    } catch (err: any) {
+      let eMsg = err.message || '未知错误';
+      if (err.name === 'AbortError') eMsg = '请求超时(30s)，请检查网络连接或 API 地址';
+      else if (eMsg === 'Failed to fetch' || eMsg.toLowerCase().includes('network')) eMsg = '网络连接失败或跨域(CORS)限制';
+      setChatErrorToast(eMsg); setTimeout(() => setChatErrorToast(''), 3000);
+      if (!isRegenerating) await appendSeq(splitTextIntoMessages(`⚠️ API调用失败，已降级为模拟回复。\n\n${generateSimulatedReply(activeChatContact, userMsgSim)}\n\n(错误: ${eMsg})`), true);
+    } finally { setIsAiLoading(false); }
+  };
+
+  // --- Context menu handlers ---
+  const handleContextMenu = (e: React.MouseEvent, index: number, msg: ChatMessage) => {
+    e.preventDefault();
+    if (isMultiSelectMode) return; // Disable context menu in multi-select mode
+    const target = e.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    setContextMenu({ rect, messageIndex: index, messageContent: msg.content, messageRole: msg.role, messageGroupId: msg.groupId, messageId: msg.id, messageTimestamp: msg.timestamp, isVisible: true });
+  };
+  const closeCtx = () => setContextMenu(p => ({ ...p, isVisible: false }));
+  const handleCopyMessage = () => { navigator.clipboard.writeText(contextMenu.messageContent).then(() => { showToast('已复制'); }); closeCtx(); };
+  const handleQuoteMessage = () => {
+    const sender = contextMenu.messageRole === 'user' ? '我' : (activeChatContact ? (chatSettings[activeChatContact.id]?.remark || activeChatContact.chatName) : 'AI 助手');
+    setQuoteToReply({ content: contextMenu.messageContent, sender }); closeCtx();
+    setTimeout(() => chatInputRef.current?.focus(), 10);
+  };
+  const handleEditMessageClick = () => { setEditingMessageIndex(contextMenu.messageIndex); setEditingMessageContent(contextMenu.messageContent); closeCtx(); };
+  const handleSaveEditMessage = () => {
+    if (!editingMessageContent.trim() || editingMessageIndex === null) return;
+    if (currentChatId === 'ai_assistant') setChatMessages(prev => prev.map((m, i) => i === editingMessageIndex ? { ...m, content: editingMessageContent } : m));
+    else setChatHistories(prev => ({ ...prev, [currentChatId]: (prev[currentChatId] || []).map((m, i) => i === editingMessageIndex ? { ...m, content: editingMessageContent } : m) }));
+    setEditingMessageIndex(null);
+  };
+  const handleRegenerateMessage = () => { if (contextMenu.messageIndex === -1) return; generateAiReply(contextMenu.messageGroupId || contextMenu.messageIndex); closeCtx(); };
+  const handleDeleteMessage = () => {
+    if (contextMenu.messageIndex === -1) return;
+    if (currentChatId === 'ai_assistant') setChatMessages(prev => prev.filter((_, i) => i !== contextMenu.messageIndex));
+    else setChatHistories(prev => ({ ...prev, [currentChatId]: (prev[currentChatId] || []).filter((_, i) => i !== contextMenu.messageIndex) }));
+    closeCtx();
+  };
+
+  // --- Recall (撤回) handler ---
+  const handleRecallMessage = () => {
+    if (!contextMenu.messageId) return;
+    const msgId = contextMenu.messageId;
+    if (currentChatId === 'ai_assistant') {
+      setChatMessages(prev => prev.filter(m => m.id !== msgId));
+    } else {
+      setChatHistories(prev => ({ ...prev, [currentChatId]: (prev[currentChatId] || []).filter(m => m.id !== msgId) }));
+    }
+    closeCtx();
+    showToast('你撤回了一条消息');
+  };
+
+  // --- Enter multi-select mode ---
+  const handleEnterMultiSelect = () => {
+    closeCtx();
+    setIsMultiSelectMode(true);
+    setSelectedMessageIds(new Set());
+  };
+
+  // --- Batch delete ---
+  const handleBatchDelete = () => {
+    if (selectedMessageIds.size === 0) {
+      showToast('请先选择消息');
+      return;
+    }
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmBatchDelete = () => {
+    const idsToDelete = selectedMessageIds;
+    if (currentChatId === 'ai_assistant') {
+      setChatMessages(prev => prev.filter(m => !idsToDelete.has(m.id)));
+    } else {
+      setChatHistories(prev => ({ ...prev, [currentChatId]: (prev[currentChatId] || []).filter(m => !idsToDelete.has(m.id)) }));
+    }
+    setShowDeleteConfirm(false);
+    exitMultiSelectMode();
+    showToast(`已删除 ${idsToDelete.size} 条消息`);
+  };
+
+  // --- Forward ---
+  const handleForwardClick = () => {
+    if (selectedMessageIds.size === 0) {
+      showToast('请先选择消息');
+      return;
+    }
+    setShowForwardOptions(true);
+  };
+
+  // --- Single message forward from context menu ---
+  const handleSingleForward = () => {
+    if (contextMenu.messageIndex === -1) return;
+    const msg = currentMessages[contextMenu.messageIndex];
+    if (!msg) return;
+    setSingleForwardMessage(msg);
+    setForwardMode('single');
+    setForwardTargetId(null);
+    setShowForwardPicker(true);
+    closeCtx();
+  };
+
+  const confirmForward = () => {
+    if (!forwardTargetId) {
+      showToast('请选择联系人');
+      return;
+    }
+
+    let targetName = 'AI 助手';
+    if (forwardTargetId !== 'ai_assistant') {
+      const persona = phonePersonas.find(p => p.id === forwardTargetId);
+      if (persona) {
+        targetName = chatSettings[persona.id]?.remark || persona.chatName;
+      }
+    } else {
+      targetName = chatSettings['ai_assistant']?.remark || 'AI 助手';
+    }
+
+    const getSenderName = (role: string) => role === 'user' ? '我' : (activeChatContact ? (chatSettings[activeChatContact.id]?.remark || activeChatContact.chatName) : 'AI 助手');
+
+    let newMsgs: ChatMessage[] = [];
+    let toastMsg = `已转发给 ${targetName}`;
+
+    if (forwardMode === 'single' && singleForwardMessage) {
+      newMsgs.push({
+        id: generateMsgId(),
+        role: 'user',
+        content: singleForwardMessage.content,
+        timestamp: Date.now(),
+      });
+    } else if (forwardMode === 'one-by-one') {
+      const selectedMsgs = currentMessages.filter(m => selectedMessageIds.has(m.id));
+      if (selectedMsgs.length === 0) return;
+      newMsgs = selectedMsgs.map((m, i) => ({
+        id: generateMsgId() + '_' + i,
+        role: 'user',
+        content: m.content,
+        timestamp: Date.now() + i,
+      }));
+      toastMsg = `已转发 ${selectedMsgs.length} 条消息`;
+    } else if (forwardMode === 'combined') {
+      const selectedMsgs = currentMessages.filter(m => selectedMessageIds.has(m.id));
+      if (selectedMsgs.length === 0) return;
+      const originalMessages = selectedMsgs.map(m => ({
+        content: m.content,
+        sender: getSenderName(m.role),
+        timestamp: m.timestamp
+      }));
+      const mergedContent = selectedMsgs.map(m => `转发自：${getSenderName(m.role)}\n${m.content}`).join('\n\n');
+      newMsgs.push({
+        id: generateMsgId(),
+        role: 'user',
+        content: mergedContent,
+        timestamp: Date.now(),
+        isMergedForward: true,
+        originalMessages: originalMessages
+      });
+      toastMsg = `已转发 ${selectedMsgs.length} 条消息`;
+    }
+
+    if (newMsgs.length > 0) {
+      if (forwardTargetId === 'ai_assistant') {
+        setChatMessages(prev => [...prev, ...newMsgs]);
+      } else {
+        setChatHistories(prev => ({
+          ...prev,
+          [forwardTargetId!]: [...(prev[forwardTargetId!] || []), ...newMsgs],
+        }));
+      }
+    }
+
+    setShowForwardPicker(false);
+    setSingleForwardMessage(null);
+    setForwardMode(null);
+    if (isMultiSelectMode) {
+      exitMultiSelectMode();
+    }
+    showToast(toastMsg);
+  };
+
+  // --- Favorite handlers ---
+  const generateMessageId = (contactId: string, index: number): string => {
+    return `${contactId}_msg_${index}`;
+  };
+
+  const isMessageFavorited = (index: number): boolean => {
+    const messageId = generateMessageId(currentChatId, index);
+    return favorites.some(f => f.messageId === messageId);
+  };
+
+  const handleToggleFavorite = () => {
+    if (contextMenu.messageIndex === -1) return;
+    const messageId = generateMessageId(currentChatId, contextMenu.messageIndex);
+    const alreadyFavorited = favorites.some(f => f.messageId === messageId);
+
+    if (alreadyFavorited) {
+      setFavorites(prev => prev.filter(f => f.messageId !== messageId));
+      showToast('已取消收藏');
+    } else {
+      const newFavorite: FavoriteItem = {
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+        messageId,
+        contactId: currentChatId,
+        content: contextMenu.messageContent,
+        sender: contextMenu.messageRole as 'user' | 'assistant',
+        timestamp: Date.now(),
+      };
+      setFavorites(prev => [...prev, newFavorite]);
+      showToast('已收藏');
+    }
+    closeCtx();
+  };
+
+  // --- Batch favorite in multi-select mode ---
+  const handleBatchFavorite = () => {
+    if (selectedMessageIds.size === 0) {
+      showToast('请先选择消息');
+      return;
+    }
+
+    let addedCount = 0;
+    const newFavorites: FavoriteItem[] = [];
+
+    currentMessages.forEach((msg, index) => {
+      if (!selectedMessageIds.has(msg.id)) return;
+      const messageId = generateMessageId(currentChatId, index);
+      const alreadyFavorited = favorites.some(f => f.messageId === messageId);
+      if (alreadyFavorited) return;
+
+      newFavorites.push({
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 9) + '_' + index,
+        messageId,
+        contactId: currentChatId,
+        content: msg.content,
+        sender: msg.role,
+        timestamp: Date.now(),
+      });
+      addedCount++;
+    });
+
+    if (newFavorites.length > 0) {
+      setFavorites(prev => [...prev, ...newFavorites]);
+    }
+
+    exitMultiSelectMode();
+    showToast(`已收藏 ${addedCount} 条消息`);
+  };
+
+  // --- Check if recall is available (within 2 minutes) ---
+  const canRecall = contextMenu.messageRole === 'user' && contextMenu.messageTimestamp && (Date.now() - contextMenu.messageTimestamp <= 120000);
+
+  // --- Context menu positioning ---
+  const isMenuAbove = contextMenu.rect ? (contextMenu.rect.top - 140 >= 60) : true;
+
+  const getContextMenuStyle = (): React.CSSProperties => {
+    if (!contextMenu.rect) return { left: -9999, top: -9999 };
+    const rect = contextMenu.rect;
+    
+    const maxWidth = Math.min(320, window.innerWidth - 32);
+    let left = rect.left + rect.width / 2;
+    
+    if (left - maxWidth / 2 < 16) {
+      left = maxWidth / 2 + 16;
+    }
+    if (left + maxWidth / 2 > window.innerWidth - 16) {
+      left = window.innerWidth - maxWidth / 2 - 16;
+    }
+
+    let top = isMenuAbove ? rect.top - 8 : rect.bottom + 8;
+
+    return { 
+      position: 'fixed',
+      left, 
+      top, 
+      transform: `translate(-50%, ${isMenuAbove ? '-100%' : '0'})`, 
+      maxWidth, 
+      width: 'max-content',
+      zIndex: 50
+    };
+  };
+
+  // --- Render ---
+  return (
+    <div className="absolute inset-0 bg-white dark:bg-zinc-900 flex flex-col z-50">
+      {/* Header */}
+      {isMultiSelectMode ? (
+        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-700">
+          <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">已选择 {selectedMessageIds.size} 条消息</span>
+          <button onClick={exitMultiSelectMode} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm">完成</button>
+        </div>
+      ) : (
+        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-700">
+          <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-zinc-400 dark:text-zinc-300">← 返回</button>
+          <h2 className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100">{displayChatName}</h2>
+          <button onClick={() => setIsChatSettingsOpen(true)} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 active:text-zinc-700 dark:active:text-zinc-300 transition-colors"><SlidersHorizontal size={20} strokeWidth={1.5} /></button>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div 
+        className="flex-1 overflow-y-auto overflow-x-hidden p-6 flex flex-col gap-4 bg-zinc-50 dark:bg-zinc-900 relative" 
+        onScroll={() => { if (contextMenu.isVisible) closeCtx(); }}
+        style={currentChatSettings.background ? (currentChatSettings.background.startsWith('data:image') || currentChatSettings.background.startsWith('http') ? { backgroundImage: `url("${currentChatSettings.background}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : { backgroundColor: currentChatSettings.background }) : undefined}
+      >
+        <AnimatePresence>
+          {chatErrorToast && (<motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-2 left-4 right-4 z-20 px-4 py-2.5 bg-red-500 text-white rounded-xl text-[11px] font-bold shadow-lg text-center">⚠️ API错误: {chatErrorToast}</motion.div>)}
+        </AnimatePresence>
+        {chatErrorToast && <div className="absolute top-1 right-2 z-10 w-2 h-2 rounded-full bg-red-500 shadow-sm" title="API连接失败" />}
+        <AnimatePresence>
+          {autoSummaryStatus && isSummarizingRef.current[currentChatId] && (<motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 bg-zinc-800/80 backdrop-blur text-white rounded-full text-[10px] font-bold shadow-lg flex items-center gap-2"><Sparkles size={12} className="animate-pulse text-yellow-300" />{autoSummaryStatus}</motion.div>)}
+        </AnimatePresence>
+
+        {currentMessages.map((msg, i) => (
+          <div key={msg.id || i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}>
+            {/* Multi-select checkbox */}
+            {isMultiSelectMode && (
+              <button
+                onClick={() => toggleMessageSelection(msg.id)}
+                className={`flex-shrink-0 mr-2 self-center transition-colors ${msg.role === 'user' ? 'order-first' : ''}`}
+              >
+                {selectedMessageIds.has(msg.id) ? (
+                  <CheckSquare size={20} className="text-zinc-800 dark:text-zinc-200" />
+                ) : (
+                  <Square size={20} className="text-zinc-300 dark:text-zinc-600" />
+                )}
+              </button>
+            )}
+            <div
+              onContextMenu={(e) => handleContextMenu(e, i, msg)}
+              onClick={() => { if (isMultiSelectMode) toggleMessageSelection(msg.id); else if (msg.isMergedForward) setMergedMessageDetails(msg.originalMessages!); }}
+              className={`max-w-[80%] p-4 rounded-2xl text-sm relative transition-transform duration-200 select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-black text-white rounded-tr-none' : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-zinc-700 dark:!text-zinc-200 shadow-none' : ''} ${contextMenu.isVisible && contextMenu.messageIndex === i ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-200 ring-offset-1' : ''} ${isMultiSelectMode || msg.isMergedForward ? 'cursor-pointer' : ''}`}
+            >
+              {msg.isMergedForward ? (
+                 <div className="flex flex-col gap-1">
+                   <div className="font-bold text-[13px] border-b border-black/10 dark:border-white/10 pb-1.5 mb-1 flex items-center gap-1.5">
+                     <span className="w-1 h-3 bg-zinc-400 dark:bg-zinc-500 rounded-full" />
+                     [合并转发] 共 {msg.originalMessages?.length} 条消息
+                   </div>
+                   <span className="line-clamp-3 text-xs opacity-80 whitespace-pre-wrap break-words">{msg.content}</span>
+                 </div>
+              ) : (
+                <>
+                  {msg.quote && (<div className={`p-2 rounded-lg text-xs border-l-[3px] flex flex-col gap-0.5 ${msg.role === 'user' ? 'bg-white/10 border-white/30 text-white/80' : 'bg-zinc-100 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-500 text-zinc-500 dark:text-zinc-400'}`}><span className="font-bold">{msg.quote.sender}</span><span className="line-clamp-3 break-words whitespace-pre-wrap">{msg.quote.content}</span></div>)}
+                  <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+        {isAiLoading && <div className="flex justify-start"><div className="bg-white dark:bg-zinc-800 p-4 rounded-2xl flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 正在生成回复...</div></div>}
+        {currentMessages.length === 0 && <div className="text-center text-zinc-400 dark:text-zinc-500 py-20">暂无消息，开始聊天吧</div>}
+      </div>
+
+      {/* Context Menu */}
+      <AnimatePresence>
+        {contextMenu.isVisible && !isMultiSelectMode && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-40" onClick={closeCtx} onContextMenu={(e) => { e.preventDefault(); closeCtx(); }} />
+            <div style={getContextMenuStyle()} className="pointer-events-none">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: isMenuAbove ? 10 : -10 }} 
+                animate={{ opacity: 1, scale: 1, y: 0 }} 
+                exit={{ opacity: 0, scale: 0.9, y: isMenuAbove ? 10 : -10 }} 
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }} 
+                className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-2xl border border-zinc-200/50 dark:border-zinc-700/50 rounded-2xl shadow-xl flex flex-wrap justify-center p-1.5 gap-1 pointer-events-auto"
+              >
+                <button onClick={handleCopyMessage} className="flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-zinc-700 dark:text-zinc-200 active:bg-black/10 shrink-0"><Copy size={20} strokeWidth={1.5} /><span className="text-[10px] font-medium">复制</span></button>
+                
+                <button onClick={handleQuoteMessage} className="flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-zinc-700 dark:text-zinc-200 active:bg-black/10 shrink-0"><Quote size={20} strokeWidth={1.5} /><span className="text-[10px] font-medium">引用</span></button>
+                
+                {contextMenu.messageRole === 'user' && (
+                  <button onClick={handleEditMessageClick} className="flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-zinc-700 dark:text-zinc-200 active:bg-black/10 shrink-0"><Pencil size={20} strokeWidth={1.5} /><span className="text-[10px] font-medium">编辑</span></button>
+                )}
+                
+                <button onClick={handleDeleteMessage} className="flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-red-50/50 dark:hover:bg-red-900/20 transition-colors text-red-500 active:bg-red-100/50 shrink-0"><Delete size={20} strokeWidth={1.5} /><span className="text-[10px] font-medium">删除</span></button>
+                
+                {contextMenu.messageRole === 'assistant' && !isAiLoading && (
+                  <button onClick={handleRegenerateMessage} className="flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-zinc-700 dark:text-zinc-200 active:bg-black/10 shrink-0"><RefreshCw size={20} strokeWidth={1.5} /><span className="text-[10px] font-medium">重 roll</span></button>
+                )}
+                
+                <button onClick={handleSingleForward} className="flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-zinc-700 dark:text-zinc-200 active:bg-black/10 shrink-0"><Forward size={20} strokeWidth={1.5} /><span className="text-[10px] font-medium">转发</span></button>
+                
+                <button onClick={handleEnterMultiSelect} className="flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-zinc-700 dark:text-zinc-200 active:bg-black/10 shrink-0"><CheckSquare size={20} strokeWidth={1.5} /><span className="text-[10px] font-medium">多选</span></button>
+                
+                {canRecall && (
+                  <button onClick={handleRecallMessage} className="flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-orange-50/50 dark:hover:bg-orange-900/20 transition-colors text-orange-500 active:bg-orange-100/50 shrink-0"><RefreshCw size={20} strokeWidth={1.5} /><span className="text-[10px] font-medium">撤回</span></button>
+                )}
+
+                <button onClick={handleToggleFavorite} className={`flex flex-col items-center justify-center w-[52px] h-[56px] gap-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors active:bg-black/10 shrink-0 ${isMessageFavorited(contextMenu.messageIndex) ? 'text-yellow-500' : 'text-zinc-700 dark:text-zinc-200'}`}><Star size={20} strokeWidth={1.5} fill={isMessageFavorited(contextMenu.messageIndex) ? 'currentColor' : 'none'} /><span className="text-[10px] font-medium">{isMessageFavorited(contextMenu.messageIndex) ? '取消收藏' : '收藏'}</span></button>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toastMessage && (<motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="absolute top-16 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 bg-zinc-800/80 backdrop-blur-md text-white text-xs font-bold rounded-full shadow-lg">{toastMessage}</motion.div>)}
+      </AnimatePresence>
+
+      {/* Edit Message Modal */}
+      {editingMessageIndex !== null && (
+        <div className="absolute inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-white dark:bg-zinc-800 rounded-[24px] w-full max-w-[340px] flex flex-col overflow-hidden shadow-2xl">
+            <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700">
+              <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">编辑消息</span>
+              <button onClick={() => setEditingMessageIndex(null)} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 p-1"><Delete size={18} /></button>
+            </div>
+            <div className="p-5 flex flex-col gap-4">
+              <textarea rows={6} className="w-full bg-zinc-50 dark:bg-zinc-700 rounded-xl p-3 text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-300 dark:focus:border-zinc-500 transition-colors resize-none leading-relaxed" value={editingMessageContent} onChange={e => setEditingMessageContent(e.target.value)} />
+              <div className="flex gap-3 mt-2">
+                <button onClick={() => setEditingMessageIndex(null)} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">取消</button>
+                <button onClick={handleSaveEditMessage} className="flex-1 py-3 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800 rounded-xl text-sm font-bold shadow-md hover:bg-zinc-700 dark:hover:bg-zinc-300 active:scale-95 transition-all flex justify-center items-center gap-2"><Check size={16} /> 保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-select bottom toolbar */}
+      {isMultiSelectMode && (
+        <div className="p-3 bg-white dark:bg-zinc-800 border-t border-zinc-100 dark:border-zinc-700 pb-8 flex items-center justify-around gap-2">
+          <button onClick={handleForwardClick} className="flex-1 flex flex-col items-center gap-1 py-2 text-zinc-700 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-zinc-100 active:scale-95 transition-all">
+            <Forward size={20} />
+            <span className="text-[10px] font-bold">转发</span>
+          </button>
+          <button onClick={handleBatchFavorite} className="flex-1 flex flex-col items-center gap-1 py-2 text-yellow-500 hover:text-yellow-600 active:scale-95 transition-all">
+            <Star size={20} />
+            <span className="text-[10px] font-bold">收藏</span>
+          </button>
+          <button onClick={handleBatchDelete} className="flex-1 flex flex-col items-center gap-1 py-2 text-red-500 hover:text-red-600 active:scale-95 transition-all">
+            <Trash2 size={20} />
+            <span className="text-[10px] font-bold">删除</span>
+          </button>
+          <button onClick={exitMultiSelectMode} className="flex-1 flex flex-col items-center gap-1 py-2 text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 active:scale-95 transition-all">
+            <X size={20} />
+            <span className="text-[10px] font-bold">取消</span>
+          </button>
+        </div>
+      )}
+
+      {/* Normal Input Area (hidden in multi-select mode) */}
+      {!isMultiSelectMode && (
+        <div className="p-4 bg-white dark:bg-zinc-800 border-t border-zinc-100 dark:border-zinc-700 pb-8 flex flex-col gap-3">
+          {currentChatSettings.isBlocked ? (
+            <div className="flex items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-700 rounded-2xl text-zinc-400 dark:text-zinc-500 text-sm border border-zinc-100 dark:border-zinc-600">您已被拉黑</div>
+          ) : (
+            <>
+              {quoteToReply && (
+                <div className="flex items-center justify-between px-3 py-2 bg-zinc-50 dark:bg-zinc-700 rounded-xl border border-zinc-100 dark:border-zinc-600 text-xs shadow-sm">
+                  <div className="flex flex-col flex-1 min-w-0 pr-2 border-l-2 border-zinc-300 dark:border-zinc-500 pl-2">
+                    <span className="font-bold text-zinc-600 dark:text-zinc-300">{quoteToReply.sender}</span>
+                    <span className="text-zinc-500 dark:text-zinc-400 truncate">{quoteToReply.content}</span>
+                  </div>
+                  <button onClick={() => setQuoteToReply(null)} className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"><Delete size={14} /></button>
+                </div>
+              )}
+              <div className="flex items-end gap-2">
+                <textarea ref={chatInputRef} placeholder="输入消息..." className="flex-1 bg-zinc-50 dark:bg-zinc-700 p-3.5 rounded-2xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-zinc-200 dark:border-zinc-600 focus:border-zinc-400 dark:focus:border-zinc-400 transition-colors resize-none overflow-y-auto leading-tight" style={{ height: '48px', minHeight: '48px', maxHeight: '120px' }} value={chatInput} onChange={(e) => { setChatInput(e.target.value); e.target.style.height = '48px'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addUserMessage(); } }} />
+                <button onClick={() => generateAiReply()} disabled={isAiLoading || currentMessages.length === 0} className="w-12 h-12 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-2xl flex items-center justify-center disabled:opacity-50 hover:bg-zinc-200 dark:hover:bg-zinc-600 active:bg-zinc-300 active:scale-95 transition-all flex-shrink-0" title="生成AI回复"><Bot size={20} /></button>
+                <button onClick={addUserMessage} disabled={!chatInput.trim()} className="w-12 h-12 bg-[#1E1E1E] text-white rounded-2xl flex items-center justify-center disabled:opacity-50 active:bg-[#333333] hover:bg-[#2c2c2c] active:scale-95 transition-all dark:bg-zinc-300 dark:text-zinc-900 dark:hover:bg-zinc-400 dark:active:bg-zinc-500 flex-shrink-0 shadow-sm"><Send size={18} /></button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Forward Options ActionSheet */}
+      <AnimatePresence>
+        {showForwardOptions && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[70] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setShowForwardOptions(false)}>
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="w-full bg-white dark:bg-zinc-800 rounded-t-[24px] flex flex-col overflow-hidden shadow-2xl pb-8" onClick={e => e.stopPropagation()}>
+              <div className="w-12 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full mx-auto mt-3 mb-5" />
+              <button onClick={() => { setShowForwardOptions(false); setForwardMode('one-by-one'); setForwardTargetId(null); setShowForwardPicker(true); }} className="px-6 py-4 text-[15px] font-bold text-zinc-800 dark:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors text-center border-b border-zinc-100 dark:border-zinc-700">逐条转发</button>
+              <button onClick={() => { setShowForwardOptions(false); setForwardMode('combined'); setForwardTargetId(null); setShowForwardPicker(true); }} className="px-6 py-4 text-[15px] font-bold text-zinc-800 dark:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors text-center border-b border-zinc-100 dark:border-zinc-700">合并转发</button>
+              <div className="h-2 bg-zinc-100 dark:bg-zinc-900" />
+              <button onClick={() => setShowForwardOptions(false)} className="px-6 py-4 text-[15px] font-bold text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors text-center">取消</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Forward Contact Picker Modal */}
+      <AnimatePresence>
+        {showForwardPicker && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[70] bg-black/40 backdrop-blur-sm flex items-end justify-center">
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="w-full max-h-[70%] bg-white dark:bg-zinc-800 rounded-t-[24px] flex flex-col overflow-hidden shadow-2xl">
+              <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700">
+                <button onClick={() => { setShowForwardPicker(false); setSingleForwardMessage(null); setForwardMode(null); }} className="text-zinc-400 dark:text-zinc-500 text-sm font-bold">取消</button>
+                <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">转发给...</span>
+                <button onClick={confirmForward} disabled={!forwardTargetId} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm ${forwardTargetId ? 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900 active:scale-95' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-400 dark:text-zinc-500'}`}>确定</button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+                {/* AI Assistant option */}
+                <button
+                  onClick={() => setForwardTargetId('ai_assistant')}
+                  className={`flex items-center gap-3 p-3 rounded-2xl transition-colors ${forwardTargetId === 'ai_assistant' ? 'bg-zinc-800/5 dark:bg-zinc-200/10 border-2 border-zinc-800 dark:border-zinc-200' : 'bg-zinc-50 dark:bg-zinc-700 border-2 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-600'}`}
+                >
+                  <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-600 flex items-center justify-center text-zinc-500 dark:text-zinc-300 flex-shrink-0">
+                    <Bot size={20} />
+                  </div>
+                  <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">{chatSettings['ai_assistant']?.remark || 'AI 助手'}</span>
+                  {forwardTargetId === 'ai_assistant' && <Check size={18} className="ml-auto text-zinc-800 dark:text-zinc-200" />}
+                </button>
+                {/* Phone personas */}
+                {phonePersonas.map(persona => (
+                  <button
+                    key={persona.id}
+                    onClick={() => setForwardTargetId(persona.id)}
+                    className={`flex items-center gap-3 p-3 rounded-2xl transition-colors ${forwardTargetId === persona.id ? 'bg-zinc-800/5 dark:bg-zinc-200/10 border-2 border-zinc-800 dark:border-zinc-200' : 'bg-zinc-50 dark:bg-zinc-700 border-2 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-600'}`}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-600 flex items-center justify-center text-zinc-400 dark:text-zinc-300 overflow-hidden flex-shrink-0">
+                      {persona.avatar ? (
+                        <img src={persona.avatar} alt={persona.chatName} className="w-full h-full object-cover" />
+                      ) : (
+                        <User size={20} />
+                      )}
+                    </div>
+                    <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">{chatSettings[persona.id]?.remark || persona.chatName}</span>
+                    {forwardTargetId === persona.id && <Check size={18} className="ml-auto text-zinc-800 dark:text-zinc-200" />}
+                  </button>
+                ))}
+                {phonePersonas.length === 0 && (
+                  <div className="py-8 text-center text-zinc-400 dark:text-zinc-500 text-xs">暂无其他联系人</div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Merged Message Details Modal */}
+      <AnimatePresence>
+        {mergedMessageDetails && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[80] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setMergedMessageDetails(null)}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white dark:bg-zinc-800 rounded-[24px] w-full max-w-[340px] max-h-[80vh] flex flex-col overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700 shrink-0">
+                <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">聊天记录</span>
+                <button onClick={() => setMergedMessageDetails(null)} className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-full transition-colors"><X size={18} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-zinc-50 dark:bg-zinc-900/50">
+                {mergedMessageDetails.map((origMsg, idx) => (
+                  <div key={idx} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[13px] text-zinc-700 dark:text-zinc-200">{origMsg.sender}</span>
+                      <span className="text-[10px] text-zinc-400">{new Date(origMsg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    </div>
+                    <div className="text-[13px] text-zinc-800 dark:text-zinc-100 whitespace-pre-wrap break-words">
+                      {origMsg.content}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[70] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white dark:bg-zinc-800 rounded-[24px] w-full max-w-[300px] flex flex-col overflow-hidden shadow-2xl">
+              <div className="p-6 flex flex-col items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center">
+                  <Trash2 size={24} className="text-red-500" />
+                </div>
+                <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100 text-center">确定删除选中的 {selectedMessageIds.size} 条消息吗？</p>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center">删除后无法恢复</p>
+              </div>
+              <div className="flex border-t border-zinc-100 dark:border-zinc-700">
+                <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3.5 text-sm font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors border-r border-zinc-100 dark:border-zinc-700">取消</button>
+                <button onClick={confirmBatchDelete} className="flex-1 py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">删除</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Chat Settings Panel */}
+      {isChatSettingsOpen && <ChatSettingsPanel
+        currentChatId={currentChatId}
+        currentChatSettings={currentChatSettings}
+        displayChatName={displayChatName}
+        chatSettings={chatSettings}
+        setChatSettings={setChatSettings}
+        chatMemories={chatMemories}
+        setChatMemories={setChatMemories}
+        chatMessages={chatMessages}
+        setChatMessages={setChatMessages}
+        chatHistories={chatHistories}
+        setChatHistories={setChatHistories}
+        apiConfig={apiConfig}
+        editingMemory={editingMemory}
+        setEditingMemory={setEditingMemory}
+        autoSummaryStatus={autoSummaryStatus}
+        setAutoSummaryStatus={setAutoSummaryStatus}
+        onClose={() => setIsChatSettingsOpen(false)}
+        showToast={showToast}
+      />}
+    </div>
+  );
+}
+
+// --- Chat Settings Panel (sub-component) ---
+
+function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName, chatSettings, setChatSettings, chatMemories, setChatMemories, chatMessages, setChatMessages, chatHistories, setChatHistories, apiConfig, editingMemory, setEditingMemory, autoSummaryStatus, setAutoSummaryStatus, onClose, showToast }: {
+  currentChatId: string;
+  currentChatSettings: ChatSettings;
+  displayChatName: string;
+  chatSettings: Record<string, ChatSettings>;
+  setChatSettings: React.Dispatch<React.SetStateAction<Record<string, ChatSettings>>>;
+  chatMemories: Record<string, MemoryEntry[]>;
+  setChatMemories: React.Dispatch<React.SetStateAction<Record<string, MemoryEntry[]>>>;
+  chatMessages: ChatMessage[];
+  setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  chatHistories: Record<string, ChatMessage[]>;
+  setChatHistories: React.Dispatch<React.SetStateAction<Record<string, ChatMessage[]>>>;
+  apiConfig: ApiConfig;
+  editingMemory: { id?: string; title: string; content: string } | null;
+  setEditingMemory: React.Dispatch<React.SetStateAction<{ id?: string; title: string; content: string } | null>>;
+  autoSummaryStatus: string;
+  setAutoSummaryStatus: React.Dispatch<React.SetStateAction<string>>;
+  onClose: () => void;
+  showToast: (msg: string, duration?: number) => void;
+}) {
+  const [remark, setRemark] = useState(currentChatSettings.remark || '');
+  const [bg, setBg] = useState(currentChatSettings.background || '');
+  const [blocked, setBlocked] = useState(currentChatSettings.isBlocked || false);
+  const [pinned, setPinned] = useState(currentChatSettings.isPinned || false);
+  const [autoSummary, setAutoSummary] = useState(currentChatSettings.isAutoSummaryEnabled || false);
+  const [summaryThreshold, setSummaryThreshold] = useState(currentChatSettings.autoSummaryThreshold || 30);
+  const [activeTab, setActiveTab] = useState<'general' | 'memory'>('general');
+
+  const curMem = chatMemories[currentChatId] || [];
+
+  const handleSave = () => {
+    setChatSettings(prev => ({
+      ...prev,
+      [currentChatId]: {
+        ...prev[currentChatId],
+        remark,
+        background: bg,
+        isBlocked: blocked,
+        isPinned: pinned,
+        isAutoSummaryEnabled: autoSummary,
+        autoSummaryThreshold: summaryThreshold,
+      }
+    }));
+    onClose();
+  };
+
+  const handleClearChat = () => {
+    if (currentChatId === 'ai_assistant') setChatMessages([]);
+    else setChatHistories(prev => ({ ...prev, [currentChatId]: [] }));
+    onClose();
+  };
+
+  const handleSaveMemory = () => {
+    if (!editingMemory || !editingMemory.title.trim() || !editingMemory.content.trim()) return;
+    if (editingMemory.id) {
+      setChatMemories(prev => ({ ...prev, [currentChatId]: (prev[currentChatId] || []).map(m => m.id === editingMemory!.id ? { ...m, title: editingMemory!.title, content: editingMemory!.content } : m) }));
+    } else {
+      const newMem: MemoryEntry = { id: Date.now().toString() + Math.random().toString(36).substring(2, 9), title: editingMemory.title, content: editingMemory.content, keywords: [], createdAt: Date.now(), isPinned: false };
+      setChatMemories(prev => ({ ...prev, [currentChatId]: [...(prev[currentChatId] || []), newMem] }));
+    }
+    setEditingMemory(null);
+  };
+
+  const handleDeleteMemory = (id: string) => {
+    setChatMemories(prev => ({ ...prev, [currentChatId]: (prev[currentChatId] || []).filter(m => m.id !== id) }));
+  };
+
+  const handleTogglePin = (id: string) => {
+    setChatMemories(prev => ({ ...prev, [currentChatId]: (prev[currentChatId] || []).map(m => m.id === id ? { ...m, isPinned: !m.isPinned } : m) }));
+  };
+
+  const handleManualSummary = async () => {
+    const msgs = currentChatId === 'ai_assistant' ? chatMessages : (chatHistories[currentChatId] || []);
+    if (msgs.length < 5) { setAutoSummaryStatus('消息太少，无法总结'); setTimeout(() => setAutoSummaryStatus(''), 2000); return; }
+    if (!apiConfig.baseUrl || !apiConfig.apiKey) { setAutoSummaryStatus('请先配置API'); setTimeout(() => setAutoSummaryStatus(''), 2000); return; }
+    setAutoSummaryStatus('正在总结...');
+    try {
+      const txt = msgs.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n');
+      const prompt = `根据以下对话，生成一段总结（200字以内），并提取3-5个关键词。输出格式：{"title":"...","content":"...","keywords":["词1","词2"]}\n\n对话历史：\n${txt}`;
+      const baseUrl = apiConfig.baseUrl.trim().replace(/\/+$/, '');
+      const url = (!/^https?:\/\//i.test(baseUrl) ? 'https://' + baseUrl : baseUrl).replace(/\/chat\/completions$/, '') + '/chat/completions';
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` }, body: JSON.stringify({ model: apiConfig.selectedModel || 'gpt-3.5-turbo', messages: [{ role: 'system', content: '你是一个对话总结助手，必须只输出要求的JSON格式。' }, { role: 'user', content: prompt }], temperature: 0.3, max_tokens: 800, stream: false }) });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const raw = data.choices?.[0]?.message?.content;
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p.title && p.content) {
+          const newMem: MemoryEntry = { id: Date.now().toString() + Math.random().toString(36).substring(2, 9), title: p.title, content: p.content, keywords: p.keywords || [], createdAt: Date.now(), isPinned: false };
+          setChatMemories(prev => ({ ...prev, [currentChatId]: [...(prev[currentChatId] || []), newMem] }));
+          setAutoSummaryStatus('总结完成！');
+        }
+      }
+    } catch (err: any) { setAutoSummaryStatus(`总结失败: ${err.message}`); }
+    setTimeout(() => setAutoSummaryStatus(''), 3000);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        showToast('不支持的文件格式');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        if (!result) return;
+        
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > 800) {
+              height = Math.round((height * 800) / width);
+              width = 800;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, width, height);
+              ctx.drawImage(img, 0, 0, width, height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+              setBg(dataUrl);
+            } else {
+              showToast('图片处理失败');
+            }
+          } catch (err) {
+            showToast('图片加载失败');
+          }
+        };
+        img.onerror = () => showToast('图片加载失败');
+        img.src = result;
+      };
+      reader.onerror = () => showToast('图片加载失败');
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const isImageBg = bg.startsWith('data:image') || bg.startsWith('http');
+  const presetColors = ['#f4f4f5', '#fee2e2', '#fef3c7', '#dcfce7', '#e0e7ff', '#f3e8ff', '#fce7f3', '#18181b', '#3f3f46'];
+
+  return (
+    <div className="absolute inset-0 z-[60] bg-white dark:bg-zinc-900 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="px-6 py-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700 bg-white dark:bg-zinc-800">
+        <button onClick={onClose} className="text-zinc-400 dark:text-zinc-300 hover:text-zinc-600 dark:hover:text-zinc-100 transition-colors">← 返回</button>
+        <span className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100">{displayChatName} 设置</span>
+        <button onClick={handleSave} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm flex items-center gap-1"><Check size={14} />保存</button>
+      </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-zinc-100 dark:border-zinc-700">
+          <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${activeTab === 'general' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-100' : 'text-zinc-400 border-transparent'}`}>通用设置</button>
+          <button onClick={() => setActiveTab('memory')} className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${activeTab === 'memory' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-100' : 'text-zinc-400 border-transparent'}`}>记忆管理</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
+          {activeTab === 'general' && (
+            <>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">备注名</label>
+                <input type="text" placeholder="设置备注名..." className="w-full bg-zinc-50 dark:bg-zinc-700 p-3 rounded-xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-300 dark:focus:border-zinc-500 transition-colors" value={remark} onChange={e => setRemark(e.target.value)} />
+              </div>
+              
+              <div className="flex flex-col gap-3 py-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">聊天背景</label>
+                  <button onClick={() => setBg('')} className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">重置</button>
+                </div>
+                
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => setBg('')} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center ${!bg ? 'border-zinc-800 dark:border-zinc-200' : 'border-zinc-200 dark:border-zinc-700'} bg-zinc-100 dark:bg-zinc-800 text-zinc-400`}><X size={14} /></button>
+                  {presetColors.map(c => (
+                    <button key={c} onClick={() => setBg(c)} className={`w-8 h-8 rounded-full border-2 ${bg === c ? 'border-blue-500' : 'border-transparent shadow-sm'}`} style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+                
+                <label className="relative mt-2 w-full h-32 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex flex-col items-center justify-center text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer overflow-hidden group">
+                  {isImageBg ? (
+                    <>
+                      <img src={bg} alt="背景预览" className="w-full h-full object-cover absolute inset-0 z-0" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                        <span className="text-white text-sm font-bold flex items-center gap-2"><Upload size={16} /> 更换图片</span>
+                      </div>
+                    </>
+                  ) : (
+                     <>
+                       <Upload size={24} className="mb-2" />
+                       <span className="text-sm font-bold">从相册选择图片</span>
+                       <span className="text-xs text-zinc-400 mt-1">支持 JPG, PNG 等格式</span>
+                     </>
+                  )}
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800 mt-2">
+                <span className="text-sm text-zinc-700 dark:text-zinc-200">置顶聊天</span>
+                <button onClick={() => setPinned(!pinned)} className={`w-10 h-5 rounded-full transition-colors relative border ${pinned ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${pinned ? 'left-[22px] bg-white dark:bg-zinc-800' : 'left-0.5 bg-white'}`} /></button>
+              </div>
+              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
+                <span className="text-sm text-zinc-700 dark:text-zinc-200">拉黑</span>
+                <button onClick={() => setBlocked(!blocked)} className={`w-10 h-5 rounded-full transition-colors relative border ${blocked ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${blocked ? 'left-[22px] bg-white dark:bg-zinc-800' : 'left-0.5 bg-white'}`} /></button>
+              </div>
+              <button onClick={handleClearChat} className="mt-4 py-3 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-4 border-none">清空聊天记录</button>
+            </>
+          )}
+
+          {activeTab === 'memory' && (
+            <>
+              <div className="bg-zinc-50 dark:bg-zinc-700/50 p-4 rounded-2xl mb-2 border border-zinc-100 dark:border-zinc-700">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">自动总结记忆</span>
+                  <button onClick={() => setAutoSummary(!autoSummary)} className={`w-10 h-5 rounded-full transition-colors relative border ${autoSummary ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${autoSummary ? 'left-[22px] bg-white dark:bg-zinc-800' : 'left-0.5 bg-white'}`} /></button>
+                </div>
+                {autoSummary && (
+                  <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-600">
+                    <label className="text-xs text-zinc-500 dark:text-zinc-400">每积累多少条新消息后自动总结：</label>
+                    <div className="flex items-center gap-3">
+                      <input type="number" min="5" max="100" className="w-20 bg-white dark:bg-zinc-800 p-2 rounded-lg text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-zinc-200 dark:border-zinc-600 focus:border-zinc-400 dark:focus:border-zinc-400 transition-colors text-center" value={summaryThreshold} onChange={e => setSummaryThreshold(Number(e.target.value) || 30)} />
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">条消息</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between mt-2 mb-1">
+                <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">记忆列表 ({curMem.length})</span>
+                <div className="flex gap-2">
+                  <button onClick={handleManualSummary} className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-full text-[10px] font-bold active:scale-95 transition-all flex items-center gap-1"><Sparkles size={12} />手动总结</button>
+                  <button onClick={() => setEditingMemory({ title: '', content: '' })} className="px-3 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800 rounded-full text-[10px] font-bold active:scale-95 transition-all flex items-center gap-1"><Plus size={12} />新建</button>
+                </div>
+              </div>
+              {autoSummaryStatus && <div className="text-xs text-zinc-500 dark:text-zinc-400 py-1">{autoSummaryStatus}</div>}
+              {curMem.length === 0 ? (
+                <div className="py-12 text-center text-zinc-400 dark:text-zinc-500 text-xs">暂无记忆</div>
+              ) : (
+                curMem.map(mem => (
+                  <div key={mem.id} className={`p-4 rounded-xl border transition-colors ${mem.isPinned ? 'bg-yellow-50/50 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-800' : 'bg-zinc-50 dark:bg-zinc-700 border-zinc-100 dark:border-zinc-600'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">{mem.title}</span>
+                      <div className="flex gap-1">
+                        <button onClick={() => handleTogglePin(mem.id)} className={`p-1.5 rounded-full transition-colors ${mem.isPinned ? 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30' : 'text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-600'}`}><Bookmark size={12} fill={mem.isPinned ? 'currentColor' : 'none'} /></button>
+                        <button onClick={() => setEditingMemory({ id: mem.id, title: mem.title, content: mem.content })} className="p-1.5 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-full transition-colors"><Pencil size={12} /></button>
+                        <button onClick={() => handleDeleteMemory(mem.id)} className="p-1.5 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-full transition-colors"><Delete size={12} /></button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed line-clamp-3">{mem.content}</p>
+                    {mem.keywords && mem.keywords.length > 0 && <div className="flex gap-1 mt-2 flex-wrap">{mem.keywords.map((k: string, ki: number) => <span key={ki} className="px-2 py-0.5 bg-zinc-200/50 dark:bg-zinc-600/50 text-zinc-500 dark:text-zinc-400 rounded-full text-[10px]">{k}</span>)}</div>}
+                  </div>
+                ))
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Memory edit modal */}
+        {editingMemory && (
+          <div className="absolute inset-0 z-[65] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setEditingMemory(null)}>
+            <div className="bg-white dark:bg-zinc-800 rounded-[24px] w-full max-w-[340px] flex flex-col overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700">
+                <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">{editingMemory.id ? '编辑记忆' : '新建记忆'}</span>
+                <button onClick={() => setEditingMemory(null)} className="text-zinc-400 dark:text-zinc-500 p-1"><Delete size={18} /></button>
+              </div>
+              <div className="p-5 flex flex-col gap-4">
+                <input type="text" placeholder="标题" className="w-full bg-zinc-50 dark:bg-zinc-700 p-3 rounded-xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-300 dark:focus:border-zinc-500 transition-colors" value={editingMemory.title} onChange={e => setEditingMemory(prev => prev ? { ...prev, title: e.target.value } : null)} />
+                <textarea rows={6} placeholder="记忆内容..." className="w-full bg-zinc-50 dark:bg-zinc-700 rounded-xl p-3 text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-300 dark:focus:border-zinc-500 transition-colors resize-none leading-relaxed" value={editingMemory.content} onChange={e => setEditingMemory(prev => prev ? { ...prev, content: e.target.value } : null)} />
+                <div className="flex gap-3">
+                  <button onClick={() => setEditingMemory(null)} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">取消</button>
+                  <button onClick={handleSaveMemory} className="flex-1 py-3 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800 rounded-xl text-sm font-bold shadow-md hover:bg-zinc-700 dark:hover:bg-zinc-300 active:scale-95 transition-all flex justify-center items-center gap-2"><Check size={16} />保存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+    </div>
+  );
+}

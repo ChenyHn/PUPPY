@@ -61,3 +61,37 @@ export interface MemoryEntry {
   createdAt: number;
   isPinned: boolean;
 }
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  groupId?: string;
+  quote?: { content: string; sender: string };
+  timestamp: number;
+  isMergedForward?: boolean;
+  originalMessages?: {
+    content: string;
+    sender: string;
+    timestamp: number;
+  }[];
+}
+
+export interface ChatSettings {
+  remark: string;
+  background: string;
+  isBlocked: boolean;
+  isPinned: boolean;
+  isAutoSummaryEnabled?: boolean;
+  autoSummaryThreshold?: number;
+  lastSummaryMessageIndex?: number;
+}
+
+export interface FavoriteItem {
+  id: string;
+  messageId: string;
+  contactId: string;
+  content: string;
+  sender: 'user' | 'assistant';
+  timestamp: number;
+}

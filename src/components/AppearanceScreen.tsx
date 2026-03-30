@@ -119,7 +119,7 @@ export const AppearanceScreen = ({
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="bg-emerald-50 text-emerald-600 text-[10px] font-bold py-2 px-4 rounded-xl text-center"
+              className="bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900 text-[10px] font-bold py-2 px-4 rounded-xl text-center shadow-sm"
             >
               {success}
             </motion.div>
