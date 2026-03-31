@@ -60,10 +60,10 @@ export function FavoritesScreen(props: FavoritesScreenProps) {
   };
 
   return (
-    <div className="absolute inset-0 bg-zinc-50 dark:bg-zinc-900 flex flex-col z-[70]">
+    <div className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-[70]">
       {/* Header */}
-      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-700">
-        <button onClick={onBack} className="text-zinc-400 dark:text-zinc-300 active:text-zinc-600 transition-colors">
+      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800">
+        <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
           <ArrowLeft size={20} strokeWidth={1.5} />
         </button>
         <h2 className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100">我的收藏</h2>
@@ -73,24 +73,24 @@ export function FavoritesScreen(props: FavoritesScreenProps) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {sortedFavorites.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-zinc-400 dark:text-zinc-500 gap-4">
-            <Star size={48} strokeWidth={1} />
-            <p className="text-xs font-bold tracking-widest uppercase">暂无收藏</p>
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">长按聊天消息可以收藏</p>
-          </div>
+              <div className="flex flex-col items-center justify-center py-32 text-zinc-400 dark:text-zinc-500 gap-4">
+                <Star size={48} strokeWidth={1} />
+                <p className="text-xs font-bold tracking-widest uppercase text-zinc-500 dark:text-zinc-400">暂无收藏</p>
+                <p className="text-[10px] text-zinc-400 dark:text-zinc-500">长按聊天消息可以收藏</p>
+              </div>
         ) : (
           <div className="flex flex-col">
             {sortedFavorites.map((item) => (
               <div
                 key={item.id}
                 onClick={() => handleItemClick(item)}
-                className="flex items-start gap-3 px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 active:bg-zinc-100 dark:active:bg-zinc-800 transition-colors cursor-pointer bg-white dark:bg-zinc-900"
+                className="flex items-start gap-3 px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer bg-white dark:bg-[#1c1c1e]"
               >
                 {/* Sender icon */}
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
                   item.sender === 'user' 
-                    ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' 
-                    : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-300'
+                    ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900' 
+                    : 'bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400'
                 }`}>
                   {item.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
                 </div>
@@ -99,11 +99,11 @@ export function FavoritesScreen(props: FavoritesScreenProps) {
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
                   {/* Top row: sender & contact */}
                   <div className="flex items-center gap-2">
-                    <span className="text-[12px] font-bold text-zinc-700 dark:text-zinc-200">
+                    <span className="text-[12px] font-bold text-zinc-700 dark:text-zinc-100">
                       {item.sender === 'user' ? '我' : 'AI'}
                     </span>
                     <span className="text-[10px] text-zinc-400 dark:text-zinc-500">→</span>
-                    <span className="text-[12px] text-zinc-500 dark:text-zinc-400 truncate">
+                  <span className="text-[12px] text-zinc-500 dark:text-zinc-400 truncate font-medium">
                       {getContactName(item.contactId)}
                     </span>
                   </div>
@@ -122,7 +122,7 @@ export function FavoritesScreen(props: FavoritesScreenProps) {
                 {/* Remove button */}
                 <button
                   onClick={(e) => handleRemoveFavorite(item.id, e)}
-                  className="p-2 text-zinc-300 dark:text-zinc-600 hover:text-red-400 dark:hover:text-red-400 active:text-red-500 transition-colors flex-shrink-0 mt-0.5"
+                  className="p-2 text-zinc-300 dark:text-zinc-600 hover:text-red-400 dark:hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
                   title="取消收藏"
                 >
                   <Trash2 size={16} />

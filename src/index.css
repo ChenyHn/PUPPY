@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Global dark mode body styles */
+.dark body,
+.dark .dark-bg-root {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); box-shadow: 0 0 0 0 rgba(0,0,0,0.05); }
+  50% { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+  100% { transform: translateY(0px); box-shadow: 0 0 0 0 rgba(0,0,0,0.05); }
+}

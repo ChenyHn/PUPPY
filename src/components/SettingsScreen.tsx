@@ -173,20 +173,20 @@ export const SettingsScreen = ({
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      className="absolute inset-0 bg-zinc-50 flex flex-col z-50"
+      className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50"
     >
-      <StatusBar time={time} className="bg-white/80 backdrop-blur-md z-10" />
+      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
       
-      <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
+      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="text-zinc-400 active:text-zinc-600 min-w-[44px] min-h-[44px] flex items-center justify-center -ml-2">
+          <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 min-w-[44px] min-h-[44px] flex items-center justify-center -ml-2 transition-colors">
             <ArrowLeft size={24} strokeWidth={1.5} />
           </button>
-          <h2 className="text-xl font-bold text-zinc-700">设置</h2>
+          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-100">设置</h2>
         </div>
         <button 
           onClick={handleSave}
-          className="flex items-center gap-1.5 px-4 h-[44px] bg-zinc-800 text-white rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
+          className="flex items-center gap-1.5 px-4 h-[44px] bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
         >
           <Check size={14} />
           保存
@@ -213,39 +213,39 @@ export const SettingsScreen = ({
 
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 relative">
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">API 基础地址 (Base URL)</span>
-          <GlassCard className="p-4" opacity="0.8" blur="10px">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">API 基础地址 (Base URL)</span>
+          <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <Globe2 size={18} className="text-zinc-400 flex-shrink-0" />
+              <Globe2 size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
               <input 
                 type="url" 
                 placeholder="https://your-proxy.com/v1"
-                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300 min-h-[44px]"
+                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 min-h-[44px]"
                 value={tempConfig.baseUrl}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, baseUrl: e.target.value }))}
               />
             </div>
-            <p className="text-[9px] text-zinc-400 mt-2 px-1">
+            <p className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-2 px-1">
               填写中转站提供的地址，如 https://api.example.com/v1。请求将发送到 Base URL/chat/completions
             </p>
           </GlassCard>
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">API 密钥 (API Key)</span>
-          <GlassCard className="p-4" opacity="0.8" blur="10px">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">API 密钥 (API Key)</span>
+          <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <ShieldCheck size={18} className="text-zinc-400 flex-shrink-0" />
+              <ShieldCheck size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
               <input 
                 type={showKey ? "text" : "password"} 
                 placeholder="sk-..."
-                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300 min-h-[44px]"
+                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 min-h-[44px]"
                 value={tempConfig.apiKey}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, apiKey: e.target.value }))}
               />
               <button 
                 onClick={() => setShowKey(!showKey)} 
-                className="text-zinc-300 active:text-zinc-500 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-500 dark:hover:text-zinc-400 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors"
               >
                 <ShieldCheck size={18} />
               </button>
@@ -255,19 +255,19 @@ export const SettingsScreen = ({
 
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-center px-1">
-            <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase">模型选择</span>
+            <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase">模型选择</span>
             <button 
               onClick={handleFetchModels}
               disabled={isAiLoading}
-              className="text-[10px] font-bold text-zinc-500 hover:text-zinc-800 flex items-center gap-1 active:scale-95 transition-all min-h-[44px] min-w-[44px] justify-center disabled:opacity-50"
+              className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 flex items-center gap-1 active:scale-95 transition-all min-h-[44px] min-w-[44px] justify-center disabled:opacity-50"
             >
               <RefreshCw size={12} className={isAiLoading ? "animate-spin" : ""} />
               {isAiLoading ? '获取中...' : '获取模型列表'}
             </button>
           </div>
-          <GlassCard className="p-4" opacity="0.8" blur="10px">
+          <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
             <select 
-              className="w-full h-[44px] bg-transparent border-none outline-none text-sm text-zinc-700 appearance-none cursor-pointer"
+              className="w-full h-[44px] bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-100 appearance-none cursor-pointer"
               value={tempConfig.selectedModel || ''}
               onChange={(e) => setTempConfig((prev: any) => ({ ...prev, selectedModel: e.target.value }))}
             >
@@ -281,10 +281,10 @@ export const SettingsScreen = ({
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">Temperature (创造性)</span>
-          <GlassCard className="p-4" opacity="0.8" blur="10px">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">Temperature (创造性)</span>
+          <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <Sparkles size={18} className="text-zinc-400 flex-shrink-0" />
+              <Sparkles size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
               <input 
                 type="range" 
                 min="0" 
@@ -294,17 +294,17 @@ export const SettingsScreen = ({
                 value={tempConfig.temperature ?? 0.7}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
               />
-              <span className="text-sm font-bold text-zinc-600 w-10 text-right">{(tempConfig.temperature ?? 0.7).toFixed(1)}</span>
+              <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400 w-10 text-right">{(tempConfig.temperature ?? 0.7).toFixed(1)}</span>
             </div>
-            <p className="text-[9px] text-zinc-400 mt-2 px-1">值越高回复越有创造性，值越低回复越稳定。推荐 0.7</p>
+            <p className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-2 px-1">值越高回复越有创造性，值越低回复越稳定。推荐 0.7</p>
           </GlassCard>
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">上下文消息条数</span>
-          <GlassCard className="p-4" opacity="0.8" blur="10px">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">上下文消息条数</span>
+          <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <MessageSquare size={18} className="text-zinc-400 flex-shrink-0" />
+              <MessageSquare size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
               <input 
                 type="range" 
                 min="1" 
@@ -314,17 +314,17 @@ export const SettingsScreen = ({
                 value={tempConfig.contextMessageCount ?? 10}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, contextMessageCount: parseInt(e.target.value) }))}
               />
-              <span className="text-sm font-bold text-zinc-600 w-10 text-right">{tempConfig.contextMessageCount ?? 10}</span>
+              <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400 w-10 text-right">{tempConfig.contextMessageCount ?? 10}</span>
             </div>
-            <p className="text-[9px] text-zinc-400 mt-2 px-1">每次调用API时读取的最近消息条数（系统消息不计入）。值越小越省Token，值越大上下文越完整。推荐 10</p>
+            <p className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-2 px-1">每次调用API时读取的最近消息条数（系统消息不计入）。值越小越省Token，值越大上下文越完整。推荐 10</p>
           </GlassCard>
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">Max Tokens (最大回复长度)</span>
-          <GlassCard className="p-4" opacity="0.8" blur="10px">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">Max Tokens (最大回复长度)</span>
+          <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
             <div className="flex items-center gap-3">
-              <Type size={18} className="text-zinc-400 flex-shrink-0" />
+              <Type size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
               <input 
                 type="number" 
                 inputMode="numeric"
@@ -332,12 +332,12 @@ export const SettingsScreen = ({
                 max="8192" 
                 step="100"
                 placeholder="2048"
-                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 placeholder:text-zinc-300 min-h-[44px]"
+                className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 min-h-[44px]"
                 value={tempConfig.maxTokens ?? 2048}
                 onChange={(e) => setTempConfig((prev: any) => ({ ...prev, maxTokens: parseInt(e.target.value) || 2048 }))}
               />
             </div>
-            <p className="text-[9px] text-zinc-400 mt-2 px-1">控制AI单次回复的最大长度。推荐 2048</p>
+            <p className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-2 px-1">控制AI单次回复的最大长度。推荐 2048</p>
           </GlassCard>
         </div>
 
@@ -345,7 +345,7 @@ export const SettingsScreen = ({
           <button 
             onClick={handleTestConnection}
             disabled={isAiLoading}
-            className="flex items-center justify-center gap-2 w-full max-w-[200px] h-[44px] bg-zinc-100 text-zinc-700 rounded-full text-sm font-bold active:bg-zinc-200 transition-colors disabled:opacity-50"
+            className="flex items-center justify-center gap-2 w-full max-w-[200px] h-[44px] bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-full text-sm font-bold active:bg-zinc-200 dark:active:bg-zinc-700 transition-colors disabled:opacity-50"
           >
             {isAiLoading ? <RefreshCw size={16} className="animate-spin" /> : <Wifi size={16} />}
             测试连接
@@ -353,7 +353,7 @@ export const SettingsScreen = ({
         </div>
 
         <div className="mt-auto pt-6">
-          <p className="text-[10px] text-center text-zinc-300 leading-relaxed">
+          <p className="text-[10px] text-center text-zinc-300 dark:text-zinc-600 leading-relaxed">
             配置完成后，点击右上角"保存"。未配置API时将使用模拟回复。
           </p>
         </div>

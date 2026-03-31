@@ -106,4 +106,10 @@ export interface IconStyleConfig {
   shadowIntensity: number;
   iconLightColor: string;
   iconDarkColor: string;
+  shadowColorMode?: 'auto' | 'custom';
+  shadowLightColor?: string;
+  shadowDarkColor?: string;
+  colorMode?: 'auto' | 'custom';
+  customBgColor?: string;
+  customIconColor?: string;
 }

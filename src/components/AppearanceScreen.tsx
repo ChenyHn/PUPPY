@@ -1,7 +1,179 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Check, Smartphone, Lock, Image as ImageIcon, Globe2, Plus, Sparkles, MessageCircle, Music, FileText, BookOpen, Settings, Palette, Phone, Globe, RotateCcw, CloudSun, Layers, Type, Shield, ShieldCheck, Layout, Grid3x3 } from 'lucide-react';
+import { ArrowLeft, Check, Smartphone, Lock, Image as ImageIcon, Globe2, Plus, Sparkles, MessageCircle, Music, FileText, BookOpen, Settings, Palette, Phone, Globe, RotateCcw, CloudSun, Layers, Type, Shield, ShieldCheck, Layout, Grid3x3, MoreHorizontal, Info, ChevronRight, Sun, Moon } from 'lucide-react';
 import { StatusBar, GlassCard } from './Shared';
+
+interface CardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  icon: React.ReactNode;
+  column: 'left' | 'right';
+  theme: 'light' | 'dark';
+  onClick: () => void;
+}
+
+const AdaptiveCardWall = ({ items }: { items: CardItem[] }) => {
+  const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
+
+  useEffect(() => {
+    const handleResize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
+
+  const { leftItems, rightItems } = useMemo(() => {
+    return {
+      leftItems: items.filter(i => i.column === 'left'),
+      rightItems: items.filter(i => i.column === 'right')
+    };
+  }, [items]);
+
+  const animDelays = useMemo(() => {
+    return items.reduce((acc, item) => {
+      acc[item.id] = Math.random() * 1.5;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [items]);
+
+  const layout = useMemo(() => {
+    const headerHeight = 80; // 假设顶部状态栏+导航栏等高度
+    const bottomSafeArea = 16; // 较小的底部安全区，让卡片组更扁
+    const topBarHeight = 76; // 顶部隐私防护横条高度
+    const gap = 10; // 更紧凑的间距，改为10
+    const topOffset = 24; // 顶部留白，整体下移
+
+    let rawHeight = viewportHeight - headerHeight - topOffset - topBarHeight - gap - bottomSafeArea;
+    
+    // 限制最大高度：不超过屏幕高度的 0.52，避免太长（进一步压缩）
+    rawHeight = Math.min(rawHeight, viewportHeight * 0.52);
+    // 限制最小高度：保证卡片可读
+    rawHeight = Math.max(rawHeight, 340);
+
+    const wallHeight = rawHeight;
+    const leftAvailable = wallHeight - gap;
+    const rightAvailable = wallHeight - 2 * gap;
+
+    // 左列比例（上:下 = 0.62 : 0.38）
+    const leftTopH = leftAvailable * 0.62;
+    const leftBottomH = leftAvailable * 0.38;
+
+    // 右列比例（上:中:下 = 0.42 : 0.28 : 0.10）—— 下（关于）刻意压扁
+    let rightBottomH = rightAvailable * 0.10;
+
+    // 对关于卡片额外 clamp，防止过高或过扁溢出文字
+    const minAbout = 45;
+    const maxAbout = 65;
+    rightBottomH = Math.min(Math.max(rightBottomH, minAbout), maxAbout);
+
+    // 根据关于卡片的高度，重新严格按比例分配上方两张卡的高度，确保左右列完美对齐
+    const rightRemain = rightAvailable - rightBottomH;
+    const sumRightTopMid = 0.42 + 0.28;
+    const rightTopH = rightRemain * (0.42 / sumRightTopMid);
+    const rightMidH = rightRemain * (0.28 / sumRightTopMid);
+
+    const leftHeights = [leftTopH, leftBottomH];
+    const rightHeights = [rightTopH, rightMidH, rightBottomH];
+
+    const left = leftItems.map((item, i) => ({
+      ...item,
+      height: leftHeights[i] || 100,
+      top: i === 0 ? 0 : leftHeights[0] + gap
+    }));
+
+    const right = rightItems.map((item, i) => {
+      let top = 0;
+      if (i === 1) top = rightHeights[0] + gap;
+      if (i === 2) top = rightHeights[0] + rightHeights[1] + 2 * gap;
+      return {
+        ...item,
+        height: rightHeights[i] || 100,
+        top
+      };
+    });
+
+    return { left, right, containerHeight: wallHeight };
+
+  }, [viewportHeight, leftItems, rightItems]);
+
+  const renderCard = (item: any) => {
+    const isDark = item.theme === 'dark';
+    const isAbout = item.id === 'about';
+    const delay = animDelays[item.id];
+    
+    return (
+      <motion.div
+        key={item.id}
+        layout
+        onClick={item.onClick}
+        whileHover={{ scale: 1.02, transition: { duration: 0.15 } }}
+        whileTap={{ scale: 0.97, transition: { duration: 0.15 } }}
+        style={{
+          position: 'absolute',
+          top: item.top,
+          height: item.height,
+          left: 0,
+          right: 0,
+          animationDelay: `${delay}s`
+        }}
+      className={`animate-float relative cursor-pointer overflow-hidden box-border ${
+        isDark 
+          ? 'bg-black rounded-[24px]' 
+          : 'bg-white dark:bg-[#1c1c1e] border border-gray-100 dark:border-zinc-800 shadow-sm rounded-[24px]'
+      } ${
+        isAbout 
+          ? 'flex flex-row justify-between items-center px-4 py-2' 
+          : 'flex flex-col justify-end items-start p-4'
+      }`}
+    >
+      {isAbout ? (
+        <>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="shrink-0 flex items-center justify-center text-white">
+              {React.cloneElement(item.icon, { size: 18, strokeWidth: 1.5 })}
+            </div>
+            <span className="font-[500] tracking-[-0.015em] leading-[1.2] truncate text-sm text-white">
+              {item.title}
+            </span>
+          </div>
+          <ChevronRight size={16} className="text-white shrink-0 ml-2" />
+        </>
+      ) : (
+        <>
+          <div className={`absolute top-4 left-4 shrink-0 flex items-center justify-center ${isDark ? 'text-white' : 'text-gray-800 dark:text-zinc-100'}`}>
+            {React.cloneElement(item.icon, { size: 22, strokeWidth: 1.5 })}
+          </div>
+          
+          <div className="flex flex-col items-start text-left gap-1 min-w-0 flex-1 w-full justify-end">
+            <span className={`font-[500] tracking-[-0.015em] leading-[1.2] truncate w-full text-[15px] ${isDark ? 'text-white' : 'text-gray-800 dark:text-zinc-100'}`}>
+              {item.title}
+            </span>
+          </div>
+          
+          <ChevronRight size={20} className={`absolute bottom-4 right-4 ${isDark ? 'text-white' : 'text-gray-400 dark:text-white'}`} />
+        </>
+      )}
+      </motion.div>
+    );
+  };
+
+  return (
+    <div className="flex w-full relative items-center justify-center">
+      <div className="flex gap-[10px] w-full relative" style={{ height: layout.containerHeight }}>
+        <div className="flex-1 relative h-full">
+          {layout.left.map(renderCard)}
+        </div>
+        <div className="flex-1 relative h-full">
+          {layout.right.map(renderCard)}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const AppearanceScreen = ({ 
   onBack, 
@@ -23,9 +195,15 @@ export const AppearanceScreen = ({
   frostIntensity,
   setFrostIntensity,
   componentBgOpacity,
-  setComponentBgOpacity
+  setComponentBgOpacity,
+  themeMode,
+  setThemeMode,
+  baseFontSize,
+  setBaseFontSize,
+  baseFontColor,
+  setBaseFontColor
 }: any) => {
-  const [activeView, setActiveView] = useState<'home' | 'privacy' | 'frost' | 'font' | 'icons' | 'more'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'privacy' | 'frost' | 'font' | 'icons' | 'more' | 'about'>('home');
   const [success, setSuccess] = useState('');
 
   const [tempSettings, setTempSettings] = useState({
@@ -36,13 +214,17 @@ export const AppearanceScreen = ({
     iconStyleConfig: { ...iconStyleConfig },
     iconFrostIntensity,
     frostIntensity,
-    componentBgOpacity: componentBgOpacity ?? 0.3
+    componentBgOpacity: componentBgOpacity ?? 0.2,
+    baseFontSize: baseFontSize ?? 16,
+    baseFontColor: baseFontColor ?? ''
   });
 
   const handleSave = () => {
     setIsLockScreenEnabled(tempSettings.isLockScreenEnabled);
     setIsPasswordEnabled(tempSettings.isPasswordEnabled);
     setFontLink(tempSettings.fontLink);
+    setBaseFontSize(tempSettings.baseFontSize);
+    setBaseFontColor(tempSettings.baseFontColor);
     setCustomIcons(tempSettings.customIcons);
     setIconStyleConfig(tempSettings.iconStyleConfig);
     setIconFrostIntensity(tempSettings.iconFrostIntensity);
@@ -111,33 +293,62 @@ export const AppearanceScreen = ({
   const previewDarkOpacity = tempSettings.componentBgOpacity;
   const previewNoiseOpacity = (tempSettings.frostIntensity / 100) * 0.15;
 
-  const views = [
-    { 
-      id: 'privacy', name: '隐私防护', icon: ShieldCheck, 
-      desc: '锁屏与密码保护\n安全壁纸管理',
-      style: { marginTop: '0', marginBottom: '-16px', zIndex: 10, padding: '24px 20px', alignItems: 'flex-start' }
+  const resPx = (px: number) => `min(${px}px, ${px / 3.75}vw)`;
+
+  const getViewName = (id: string) => {
+    const names: Record<string, string> = {
+      privacy: '隐私防护',
+      frost: '组件外观',
+      icons: '图标定制',
+      font: '字体与大小',
+      more: '更多设置',
+      about: '关于小手机'
+    };
+    return names[id] || '外观';
+  };
+
+  const wallItems = useMemo<CardItem[]>(() => [
+    {
+      id: 'frost',
+      title: '组件外观',
+      icon: <Palette size={32} strokeWidth={1.2} />,
+      column: 'left',
+      theme: 'light',
+      onClick: () => setActiveView('frost')
     },
-    { 
-      id: 'font', name: '字体与大小', icon: Type, 
-      desc: '全局自定义字体',
-      style: { marginTop: '24px', marginBottom: '-8px', zIndex: 11, padding: '20px 16px', alignItems: 'flex-start' }
+    {
+      id: 'icons',
+      title: '图标定制',
+      icon: <ImageIcon size={32} strokeWidth={1.2} />,
+      column: 'left',
+      theme: 'light',
+      onClick: () => setActiveView('icons')
     },
-    { 
-      id: 'icons', name: '图标定制', icon: Palette, 
-      desc: '圆角、大小调整\n阴影与主题色',
-      style: { marginTop: '8px', marginBottom: '-24px', zIndex: 12, padding: '24px 20px', alignItems: 'flex-start' }
+    {
+      id: 'font',
+      title: '字体设置',
+      icon: <Type size={24} strokeWidth={1.2} />,
+      column: 'right',
+      theme: 'light',
+      onClick: () => setActiveView('font')
     },
-    { 
-      id: 'frost', name: '组件外观', icon: Layout, 
-      desc: '组件磨砂与透明度\n深度定制',
-      style: { marginTop: '16px', marginBottom: '-12px', zIndex: 13, padding: '24px 16px', alignItems: 'flex-start' }
+    {
+      id: 'more',
+      title: '更多设置',
+      icon: <Settings size={24} strokeWidth={1.2} />,
+      column: 'right',
+      theme: 'light',
+      onClick: () => setActiveView('more')
     },
-    { 
-      id: 'more', name: '更多', icon: Grid3x3, 
-      desc: null,
-      style: { marginTop: '24px', marginBottom: '0', zIndex: 14, padding: '20px 20px', alignItems: 'flex-start' }
-    },
-  ];
+    {
+      id: 'about',
+      title: '关于小手机',
+      icon: <Info size={24} strokeWidth={1.2} />,
+      column: 'right',
+      theme: 'dark',
+      onClick: () => setActiveView('about')
+    }
+  ], []);
 
   return (
     <motion.div 
@@ -146,17 +357,17 @@ export const AppearanceScreen = ({
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      className="absolute inset-0 bg-zinc-50 dark:bg-zinc-900 flex flex-col z-50"
+      className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50"
     >
-      <StatusBar time={time} className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-10" />
+      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
       
-      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 transition-colors">
+      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800 transition-colors">
         <div className="flex items-center gap-4">
-          <button onClick={() => activeView === 'home' ? onBack() : setActiveView('home')} className="text-zinc-400 active:text-zinc-600 dark:active:text-zinc-200 p-1 -ml-1">
+          <button onClick={() => activeView === 'home' ? onBack() : setActiveView('home')} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 p-1 -ml-1 transition-colors">
             <ArrowLeft size={24} strokeWidth={1.5} />
           </button>
-          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-200">
-            {activeView === 'home' ? '外观' : views.find(v => v.id === activeView)?.name}
+          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-100">
+            {activeView === 'home' ? '外观' : getViewName(activeView)}
           </h2>
         </div>
         <button 
@@ -191,73 +402,54 @@ export const AppearanceScreen = ({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.2 }}
-              className="relative grid grid-cols-2 gap-x-3 pb-20 items-start"
-              style={{ gridAutoRows: 'minmax(auto, auto)' }}
+              className="w-full relative pb-10 flex flex-col flex-1 min-h-full"
             >
-              {/* Background Decorative Elements */}
-              <div className="absolute top-[40px] right-[5%] w-32 h-32 bg-blue-400/10 dark:bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="absolute top-[200px] left-[5%] w-40 h-40 bg-purple-400/10 dark:bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute bottom-[40px] right-[15%] w-24 h-24 bg-pink-400/10 dark:bg-pink-500/10 rounded-full blur-xl pointer-events-none" />
-              
-              <svg className="absolute top-[60px] left-[45%] w-6 h-6 text-zinc-300/40 dark:text-zinc-600/40 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"/><path d="M2 12h20"/></svg>
-              <svg className="absolute top-[280px] right-[10%] w-8 h-8 text-zinc-300/30 dark:text-zinc-600/30 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/></svg>
-
-              {views.map((view, index) => (
+              <div className="flex flex-col w-full gap-[10px] flex-1 justify-center pt-6">
+                
+                {/* 顶部满宽卡片1：隐私防护 (附带主题切换) */}
                 <motion.div
-                  key={view.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
-                  className="w-full relative"
-                  style={{ 
-                    marginTop: view.style.marginTop, 
-                    marginBottom: view.style.marginBottom,
-                    zIndex: view.style.zIndex
-                  }}
+                  className="animate-float flex flex-row items-center justify-between px-5 py-4 bg-[#1c1c1e] dark:bg-black rounded-[26px] w-full shrink-0 min-h-[76px] border border-transparent dark:border-zinc-800"
                 >
-                  <GlassCard
-                    opacity={tempSettings.componentBgOpacity.toString()}
-                    blur={`${(tempSettings.frostIntensity / 100) * 40}px`}
-                    className="cursor-pointer overflow-hidden transition-all duration-300 hover:scale-[0.98] active:scale-[0.96] rounded-[28px] border border-white/20 dark:border-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.05)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.2)] hover:shadow-[0_12px_32px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)] w-full h-full backdrop-blur-xl"
+                  <div 
+                    className="flex items-center gap-[12px] cursor-pointer"
+                    onClick={() => setActiveView('privacy')}
                   >
-                    <div 
-                      onClick={() => setActiveView(view.id as any)}
-                      className="w-full h-full flex flex-col box-border"
-                      style={{
-                        padding: view.style.padding,
-                        alignItems: view.style.alignItems,
-                        textAlign: view.style.alignItems === 'center' ? 'center' : 'left',
-                      }}
-                    >
-                      <view.icon size={28} strokeWidth={1.2} className="text-zinc-700 dark:text-zinc-300 mb-3" />
-                      
-                      <span className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100 leading-tight mb-1.5 tracking-wide">
-                        {view.name}
-                      </span>
-                      
-                      {view.desc && (
-                        <span className="text-[12px] font-normal text-zinc-500 dark:text-zinc-400 leading-[1.4] whitespace-pre-wrap opacity-90">
-                          {view.desc}
-                        </span>
-                      )}
-
-                      {/* Decorative elements */}
-                      {view.id === 'icons' && (
-                        <div className="flex gap-1.5 mt-3 opacity-90">
-                          <div className="w-2.5 h-2.5 rounded-full bg-blue-400 shadow-sm" />
-                          <div className="w-2.5 h-2.5 rounded-full bg-purple-400 shadow-sm" />
-                          <div className="w-2.5 h-2.5 rounded-full bg-pink-400 shadow-sm" />
-                        </div>
-                      )}
-                      {view.id === 'frost' && (
-                        <div className="w-full h-1 bg-zinc-200/60 dark:bg-zinc-700/60 rounded-full mt-3 overflow-hidden flex backdrop-blur-md">
-                          <div className="w-3/5 h-full bg-zinc-400 dark:bg-zinc-500 rounded-full" />
-                        </div>
-                      )}
+                    <ShieldCheck size={22} strokeWidth={1.5} className="text-white" />
+                    <div className="flex flex-col">
+                      <span className="font-[500] tracking-[-0.015em] leading-[1.2] text-[15px] text-white">隐私防护</span>
+                      <span className="text-[10px] text-white/50 tracking-[0.02em] mt-0.5">仅本地存储</span>
                     </div>
-                  </GlassCard>
+                  </div>
+                  
+                  {/* Theme Switcher */}
+                  <div className="flex items-center bg-white/10 rounded-full p-1 border border-white/5" onClick={(e) => e.stopPropagation()}>
+                    <button 
+                      onClick={() => setThemeMode('light')}
+                      className={`p-1.5 rounded-full transition-all ${themeMode === 'light' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/10 dark:text-zinc-400 dark:hover:text-white'}`}
+                      title="浅色模式"
+                    >
+                      <Sun size={14} strokeWidth={2} />
+                    </button>
+                    <button 
+                      onClick={() => setThemeMode('system')}
+                      className={`p-1.5 rounded-full transition-all ${themeMode === 'system' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/10 dark:text-zinc-400 dark:hover:text-white'}`}
+                      title="跟随系统"
+                    >
+                      <Smartphone size={14} strokeWidth={2} />
+                    </button>
+                    <button 
+                      onClick={() => setThemeMode('dark')}
+                      className={`p-1.5 rounded-full transition-all ${themeMode === 'dark' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/10 dark:text-zinc-400 dark:hover:text-white'}`}
+                      title="深色模式"
+                    >
+                      <Moon size={14} strokeWidth={2} />
+                    </button>
+                  </div>
                 </motion.div>
-              ))}
+
+                {/* 下方双列比例自适应卡片墙 */}
+                <AdaptiveCardWall items={wallItems} />
+              </div>
             </motion.div>
           )}
 
@@ -272,38 +464,38 @@ export const AppearanceScreen = ({
             className="flex flex-col gap-4"
           >
             <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">隐私防护</span>
-            <GlassCard className="p-4" opacity="0.8" blur="10px">
+            <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
               <div className="flex flex-col gap-4">
                 <div className="flex flex-row justify-between items-center">
                   <div className="flex items-center gap-3 min-w-0">
                     <Smartphone size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
-                    <span className="text-sm text-zinc-700 dark:text-zinc-200 whitespace-nowrap">启用锁屏界面</span>
+                    <span className="text-sm text-zinc-700 dark:text-zinc-100 whitespace-nowrap">启用锁屏界面</span>
                   </div>
                   <button 
                     onClick={() => setTempSettings(prev => ({ ...prev, isLockScreenEnabled: !prev.isLockScreenEnabled }))}
-                    className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${tempSettings.isLockScreenEnabled ? 'bg-zinc-600 dark:bg-zinc-400' : 'bg-zinc-200 dark:bg-zinc-700'}`}
+                    className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${tempSettings.isLockScreenEnabled ? 'bg-zinc-800 dark:bg-zinc-300' : 'bg-zinc-200 dark:bg-zinc-700'}`}
                   >
-                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${tempSettings.isLockScreenEnabled ? 'left-6' : 'left-1'}`} />
+                    <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-[#1c1c1e] rounded-full transition-all ${tempSettings.isLockScreenEnabled ? 'left-6' : 'left-1'}`} />
                   </button>
                 </div>
-                <div className="h-px bg-zinc-100 dark:bg-zinc-700 w-full" />
+                <div className="h-px bg-zinc-100 dark:bg-zinc-800 w-full" />
                 <div className="flex flex-row justify-between items-center">
                   <div className="flex items-center gap-3 min-w-0">
                     <Lock size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
-                    <span className="text-sm text-zinc-700 dark:text-zinc-200 whitespace-nowrap">启用锁屏密码</span>
+                    <span className="text-sm text-zinc-700 dark:text-zinc-100 whitespace-nowrap">启用锁屏密码</span>
                   </div>
                   <button 
                     onClick={() => setTempSettings(prev => ({ ...prev, isPasswordEnabled: !prev.isPasswordEnabled }))}
-                    className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${tempSettings.isPasswordEnabled ? 'bg-zinc-600 dark:bg-zinc-400' : 'bg-zinc-200 dark:bg-zinc-700'}`}
+                    className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${tempSettings.isPasswordEnabled ? 'bg-zinc-800 dark:bg-zinc-300' : 'bg-zinc-200 dark:bg-zinc-700'}`}
                   >
-                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${tempSettings.isPasswordEnabled ? 'left-6' : 'left-1'}`} />
+                    <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-[#1c1c1e] rounded-full transition-all ${tempSettings.isPasswordEnabled ? 'left-6' : 'left-1'}`} />
                   </button>
                 </div>
-                <div className="h-px bg-zinc-100 dark:bg-zinc-700 w-full" />
+                <div className="h-px bg-zinc-100 dark:bg-zinc-800 w-full" />
                 <div className="flex flex-row justify-between items-center">
                   <div className="flex items-center gap-3 min-w-0">
                     <ImageIcon size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
-                    <span className="text-sm text-zinc-700 dark:text-zinc-200 whitespace-nowrap">壁纸管理</span>
+                    <span className="text-sm text-zinc-700 dark:text-zinc-100 whitespace-nowrap">壁纸管理</span>
                   </div>
                   <button 
                     onClick={() => {
@@ -312,7 +504,7 @@ export const AppearanceScreen = ({
                         localStorage.removeItem('aiphone_wallpaper');
                       }
                     }}
-                    className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 active:text-zinc-800 dark:active:text-zinc-200 flex-shrink-0"
+                    className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 flex-shrink-0 transition-colors"
                   >
                     {wallpaper ? '重置壁纸' : '桌面空白处修改'}
                   </button>
@@ -338,11 +530,11 @@ export const AppearanceScreen = ({
               </div>
 
               {/* 磨砂强度和背景透明度滑块 */}
-              <GlassCard className="p-4" opacity="0.8" blur="10px">
+              <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
                 <div className="flex flex-col gap-5">
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-row justify-between items-center">
-                      <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">磨砂强度</span>
+                      <span className="text-sm font-bold text-zinc-700 dark:text-zinc-100">磨砂强度</span>
                       <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">{tempSettings.frostIntensity}%</span>
                     </div>
                     <input 
@@ -359,7 +551,7 @@ export const AppearanceScreen = ({
 
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-row justify-between items-center">
-                      <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">背景透明度</span>
+                      <span className="text-sm font-bold text-zinc-700 dark:text-zinc-100">背景透明度</span>
                       <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">{Math.round(tempSettings.componentBgOpacity * 100)}%</span>
                     </div>
                     <input 
@@ -375,7 +567,7 @@ export const AppearanceScreen = ({
                   </div>
                   
                   <button 
-                    onClick={() => setTempSettings(prev => ({ ...prev, frostIntensity: 60, componentBgOpacity: 0.3 }))}
+                    onClick={() => setTempSettings(prev => ({ ...prev, frostIntensity: 60, componentBgOpacity: 0.2 }))}
                     className="flex items-center justify-center gap-1.5 w-full py-2.5 bg-zinc-100 dark:bg-zinc-800/50 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 active:scale-95 transition-all mt-1"
                   >
                     <RotateCcw size={14} />
@@ -460,14 +652,56 @@ export const AppearanceScreen = ({
             className="flex flex-col gap-6"
           >
             <div className="flex flex-col gap-2">
+              <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">全局基础字体大小</span>
+              <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-[12px] font-bold text-zinc-500">A</span>
+                    <input 
+                      type="range" min="12" max="24" step="1"
+                      value={tempSettings.baseFontSize}
+                      onChange={(e) => setTempSettings(prev => ({ ...prev, baseFontSize: Number(e.target.value) }))}
+                      className="flex-1 accent-zinc-800 dark:accent-zinc-300"
+                    />
+                    <span className="text-[24px] font-bold text-zinc-500">A</span>
+                  </div>
+                  <div className="text-center text-[10px] text-zinc-400">{tempSettings.baseFontSize}px</div>
+                </div>
+              </GlassCard>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">全局文本颜色</span>
+              <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="color" 
+                      value={tempSettings.baseFontColor || '#000000'}
+                      onChange={(e) => setTempSettings(prev => ({ ...prev, baseFontColor: e.target.value }))}
+                      className="w-8 h-8 rounded border-0 p-0 cursor-pointer bg-transparent"
+                    />
+                    <span className="text-sm text-zinc-700 dark:text-zinc-100">{tempSettings.baseFontColor ? '已自定义' : '跟随深浅模式'}</span>
+                  </div>
+                  <button 
+                    onClick={() => setTempSettings(prev => ({ ...prev, baseFontColor: '' }))}
+                    className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-[10px] font-bold text-zinc-600 dark:text-zinc-300 active:scale-95 transition-all"
+                  >
+                    恢复默认
+                  </button>
+                </div>
+              </GlassCard>
+            </div>
+
+            <div className="flex flex-col gap-2">
               <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">字体加载链接</span>
-              <GlassCard className="p-4" opacity="0.8" blur="10px">
+              <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
                 <div className="flex items-center gap-3">
                   <Globe2 size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
                   <input 
                     type="text" 
                     placeholder="https://fonts.googleapis.com/css2?family=..."
-                    className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-200 placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+                    className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
                     value={tempSettings.fontLink}
                     onChange={(e) => setTempSettings(prev => ({ ...prev, fontLink: e.target.value }))}
                   />
@@ -491,30 +725,6 @@ export const AppearanceScreen = ({
             <div className="flex flex-col gap-4">
               <div className="flex flex-row justify-between items-center px-1">
                 <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase">图标样式定制</span>
-                <button 
-                  onClick={() => setTempSettings(prev => ({
-                    ...prev,
-                    iconFrostIntensity: 60,
-                  iconStyleConfig: {
-                      isEnabled: true,
-                      borderRadius: 20,
-                      iconSize: 60,
-                      bgOpacity: 0.3,
-                      bgLightColor: '#ffffff',
-                      bgDarkColor: '#18181b',
-                      shadowIntensity: 0.05,
-                      shadowColorMode: 'auto',
-                      shadowLightColor: '#000000',
-                      shadowDarkColor: '#555555',
-                      iconLightColor: '#27272a',
-                      iconDarkColor: '#f4f4f5'
-                    }
-                  }))}
-                  className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 dark:text-zinc-500 active:text-zinc-700 dark:active:text-zinc-200 transition-colors"
-                >
-                  <RotateCcw size={12} />
-                  恢复默认
-                </button>
               </div>
 
               <div className="flex flex-col items-center justify-center p-8 rounded-[24px] relative overflow-hidden border border-zinc-200/50 dark:border-zinc-700/50">
@@ -737,6 +947,31 @@ export const AppearanceScreen = ({
                       </div>
                     </div>
                   )}
+                  
+                  <button 
+                    onClick={() => setTempSettings(prev => ({
+                      ...prev,
+                      iconFrostIntensity: 60,
+                    iconStyleConfig: {
+                        isEnabled: true,
+                        borderRadius: 20,
+                        iconSize: 60,
+                        bgOpacity: 0.3,
+                        bgLightColor: '#ffffff',
+                        bgDarkColor: '#18181b',
+                        shadowIntensity: 0.05,
+                        shadowColorMode: 'auto',
+                        shadowLightColor: '#000000',
+                        shadowDarkColor: '#555555',
+                        iconLightColor: '#27272a',
+                        iconDarkColor: '#f4f4f5'
+                      }
+                    }))}
+                    className="flex items-center justify-center gap-1.5 w-full py-2.5 bg-zinc-100 dark:bg-zinc-800/50 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 active:scale-95 transition-all mt-2 border border-zinc-200 dark:border-zinc-700"
+                  >
+                    <RotateCcw size={14} />
+                    恢复系统默认设置
+                  </button>
                 </div>
               </GlassCard>
             </div>
@@ -798,6 +1033,22 @@ export const AppearanceScreen = ({
           >
             <Sparkles size={48} strokeWidth={1} />
             <p className="mt-4 text-xs font-bold tracking-widest uppercase">更多功能敬请期待</p>
+          </motion.div>
+        )}
+
+        {/* 关于与反馈 Tab */}
+        {activeView === 'about' && (
+          <motion.div
+            key="about"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.2 }}
+            className="flex flex-col items-center justify-center py-20 text-zinc-300 dark:text-zinc-600"
+          >
+            <Sparkles size={48} strokeWidth={1} />
+            <p className="mt-4 text-xs font-bold tracking-widest uppercase">PUPPY OS v1.0</p>
+            <p className="mt-2 text-[10px] text-zinc-400 dark:text-zinc-500">已是最新版本</p>
           </motion.div>
         )}
         </AnimatePresence>

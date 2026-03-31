@@ -71,6 +71,9 @@ import { WorldBookListScreen } from './components/WorldBookListScreen';
 import { WorldBookEditScreen } from './components/WorldBookEditScreen';
 import { AiChatScreen } from './components/AiChatScreen';
 import { FavoritesScreen } from './components/FavoritesScreen';
+import { AddFriendModal } from './components/AddFriendModal';
+import { ProfileEditorModal, type CurrentUser } from './components/ProfileEditorModal';
+import { WalletActionsModal, type WalletData } from './components/WalletActionsModal';
 
 import type { ChatMessage } from './types';
 
@@ -154,7 +157,7 @@ const GlassCard = ({ children, className = "", blur, opacity, darkOpacity, ...pr
 };
 
 const StatusBar = ({ className = "", time }: { className?: string, time: string }) => (
-  <div className={`flex justify-between items-center px-8 py-3 font-semibold text-[12px] text-zinc-800 backdrop-blur-md ${className}`}>
+  <div className={`flex justify-between items-center px-8 py-3 font-semibold text-[12px] text-zinc-800 dark:text-zinc-200 backdrop-blur-md ${className}`}>
     <span>{time}</span>
     <div className="flex items-center gap-2">
       <Signal size={14} strokeWidth={2} />
@@ -200,8 +203,8 @@ const AppIcon = ({
   const shadowLightColor = iconStyleConfig?.isEnabled ? (iconStyleConfig.shadowLightColor || '#4a4a4a') : '#4a4a4a';
   const shadowDarkColor = iconStyleConfig?.isEnabled ? (iconStyleConfig.shadowDarkColor || '#888888') : '#888888';
   
-  // Determine shadow color based on mode
-  const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  // Determine shadow color based on mode (check class-based dark mode)
+  const isDarkMode = document.documentElement.classList.contains('dark');
   let shadowColorHex: string;
   if (shadowColorMode === 'auto') {
     shadowColorHex = isDarkMode ? '#555555' : '#000000';
@@ -407,8 +410,8 @@ const ReorderableGrid = ({
 };
 
 const ChatListItem = ({ name, msg, time, unread = 0, avatar }: any) => (
-  <div className="flex items-center gap-4 p-4 active:bg-zinc-50 transition-colors cursor-pointer">
-    <div className="w-[56px] h-[56px] rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400 flex-shrink-0 overflow-hidden border border-zinc-100">
+  <div className="flex items-center gap-4 p-4 hover:bg-neutral-100 dark:hover:bg-zinc-800/50 active:bg-neutral-200 dark:active:bg-zinc-800 transition-colors cursor-pointer border-b border-neutral-200 dark:border-zinc-800 last:border-b-0">
+    <div className="w-[56px] h-[56px] rounded-full bg-neutral-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 dark:text-zinc-500 flex-shrink-0 overflow-hidden">
       {avatar ? (
         <img src={avatar} alt={name} className="w-full h-full object-cover" />
       ) : (
@@ -417,20 +420,53 @@ const ChatListItem = ({ name, msg, time, unread = 0, avatar }: any) => (
     </div>
     <div className="flex-1 min-w-0">
       <div className="flex justify-between items-center mb-0.5">
-        <span className="font-bold text-zinc-900 text-[14px]">{name}</span>
-        <span className="text-[10px] text-zinc-400 font-medium">{time}</span>
+        <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px]">{name}</span>
+        <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">{time}</span>
       </div>
-      <p className="text-[12px] text-zinc-500 truncate font-medium">{msg}</p>
+      <p className="text-[12px] text-zinc-500 dark:text-zinc-400 truncate font-medium">{msg}</p>
     </div>
     {unread > 0 && (
-      <div className="w-5 h-5 bg-zinc-800 rounded-full flex items-center justify-center">
-        <span className="text-[10px] text-white font-bold">{unread}</span>
+      <div className="w-5 h-5 bg-zinc-800 dark:bg-zinc-200 rounded-full flex items-center justify-center">
+        <span className="text-[10px] text-white dark:text-zinc-800 font-bold">{unread}</span>
       </div>
     )}
   </div>
 );
 
 export default function App() {
+  const [themeMode, setThemeMode] = useState<'system'|'light'|'dark'>(() => {
+    return (localStorage.getItem('aiphone_theme_mode') as any) || 'system';
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const applyTheme = (mode: string) => {
+      if (mode === 'dark') {
+        root.classList.add('dark');
+      } else if (mode === 'light') {
+        root.classList.remove('dark');
+      } else {
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (isDark) {
+          root.classList.add('dark');
+        } else {
+          root.classList.remove('dark');
+        }
+      }
+    };
+    
+    applyTheme(themeMode);
+    localStorage.setItem('aiphone_theme_mode', themeMode);
+
+    // 监听系统变化
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => { 
+      if (themeMode === 'system') applyTheme('system'); 
+    };
+    media.addEventListener('change', handler);
+    return () => media.removeEventListener('change', handler);
+  }, [themeMode]);
+
   const [screen, setScreen] = useState<Screen>('splash');
   const [chatTab, setChatTab] = useState<ChatTab>('messages');
   const [password, setPassword] = useState<string | null>(() => localStorage.getItem('aiphone_password'));
@@ -487,10 +523,54 @@ export default function App() {
   // Chat State
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isAddingFriend, setIsAddingFriend] = useState(false);
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [showContactsMenu, setShowContactsMenu] = useState(false);
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
 
   // Home Screen Customization State
   const [avatar, setAvatar] = useState<string | null>(() => localStorage.getItem('aiphone_avatar'));
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(() => {
+    const saved = localStorage.getItem('aiphone_current_user');
+    if (saved) return JSON.parse(saved);
+    return {
+      avatar: localStorage.getItem('aiphone_avatar') || null,
+      name: 'AI User',
+      chatId: 'aiphone_001',
+      gender: '',
+      age: '',
+      occupation: '',
+      location: '',
+      personality: '',
+      background: ''
+    };
+  });
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_current_user', JSON.stringify(currentUser));
+  }, [currentUser]);
+
+  // Wallet State
+  const [wallet, setWallet] = useState<WalletData>(() => {
+    const saved = localStorage.getItem('aiphone_wallet');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        balance: parsed.balance || 0,
+        transactions: parsed.transactions || []
+      };
+    }
+    return {
+      balance: 8888.00,
+      transactions: []
+    };
+  });
+  const [showWalletModal, setShowWalletModal] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_wallet', JSON.stringify(wallet));
+  }, [wallet]);
+
   const [wallpaper, setWallpaper] = useState<string | null>(() => localStorage.getItem('aiphone_wallpaper'));
   const [motto, setMotto] = useState(() => localStorage.getItem('aiphone_motto') || '生活明朗，万物可爱');
   const [fontLink, setFontLink] = useState(() => localStorage.getItem('aiphone_font_link') || '');
@@ -534,6 +614,14 @@ export default function App() {
   const [componentBgOpacity, setComponentBgOpacity] = useState<number>(() => {
     const saved = localStorage.getItem('componentBgOpacity');
     return saved !== null ? Number(saved) : 0.3;
+  });
+  
+  const [baseFontSize, setBaseFontSize] = useState<number>(() => {
+    const saved = localStorage.getItem('aiphone_font_size');
+    return saved !== null ? Number(saved) : 16;
+  });
+  const [baseFontColor, setBaseFontColor] = useState<string>(() => {
+    return localStorage.getItem('aiphone_font_color') || '';
   });
 
   // 监听 localStorage 变化以实现实时响应
@@ -631,6 +719,22 @@ export default function App() {
   }, [iconFrostIntensity]);
 
   useEffect(() => {
+    localStorage.setItem('aiphone_font_size', baseFontSize.toString());
+    document.documentElement.style.setProperty('--base-font-size', `${baseFontSize}px`);
+  }, [baseFontSize]);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_font_color', baseFontColor);
+    if (baseFontColor) {
+      document.documentElement.style.setProperty('--base-font-color', baseFontColor);
+      document.documentElement.classList.add('custom-font-color');
+    } else {
+      document.documentElement.style.removeProperty('--base-font-color');
+      document.documentElement.classList.remove('custom-font-color');
+    }
+  }, [baseFontColor]);
+
+  useEffect(() => {
     localStorage.setItem('aiphone_home_app_order', JSON.stringify(homeApps.map(a => a.id)));
   }, [homeApps]);
 
@@ -693,6 +797,7 @@ export default function App() {
       try {
         const compressed = await compressImage(file, 800);
         setAvatar(compressed);
+        setCurrentUser(prev => ({ ...prev, avatar: compressed }));
       } catch (err) {
         console.error('Failed to process avatar:', err);
         alert('图片处理失败，请重试');
@@ -877,13 +982,13 @@ export default function App() {
 
   return (
     <div 
-      className="relative w-full h-full bg-zinc-50 flex items-center justify-center overflow-hidden font-sans"
+    className="relative w-full h-full bg-zinc-50 dark:bg-black flex items-center justify-center overflow-hidden font-sans"
       style={{ 
         fontFamily: 'var(--custom-font-family, inherit)'
       }}
     >
       {/* Mobile Frame */}
-      <div className={`relative w-full h-full max-w-[390px] max-h-[844px] sm:h-[844px] sm:rounded-[44px] sm:border-[12px] sm:border-white sm:shadow-[0_20px_60px_rgba(0,0,0,0.05)] overflow-hidden ${wallpaper ? 'bg-black' : 'bg-zinc-100'}`}>
+      <div id="phone-container" className={`relative w-full h-full max-w-[390px] max-h-[844px] sm:h-[844px] sm:rounded-[44px] sm:border-[12px] sm:border-white dark:sm:border-zinc-800 sm:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:sm:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}>
         
         <AnimatePresence mode="wait">
           {/* 1. Splash Screen */}
@@ -928,7 +1033,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ y: "-100%", opacity: 0 }}
               transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100'}`}
+              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}
               onClick={() => {
                 if (!isPasswordEnabled) {
                   setScreen('home');
@@ -949,13 +1054,13 @@ export default function App() {
                   }}
                 />
               ) : (
-                <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 dark:from-black dark:via-zinc-900 dark:to-black pointer-events-none transition-colors" />
               )}
-              <StatusBar time={time} className={`z-10 ${wallpaper ? '' : 'bg-white/10'}`} />
+              <StatusBar time={time} className={`z-10 ${wallpaper ? 'text-white' : 'bg-white/10 dark:bg-black/10 text-zinc-800 dark:text-zinc-200'}`} />
               
               <div className="flex-1 flex flex-col items-center justify-start pt-24 relative z-10">
-                <span className="text-[84px] font-thin tracking-tighter text-zinc-700 leading-none">{time}</span>
-                <span className="text-sm font-medium mt-4 text-zinc-500 tracking-[0.2em] uppercase">{date}</span>
+                <span className={`text-[84px] font-thin tracking-tighter leading-none ${wallpaper ? 'text-white' : 'text-zinc-700 dark:text-zinc-200'}`}>{time}</span>
+                <span className={`text-sm font-medium mt-4 tracking-[0.2em] uppercase ${wallpaper ? 'text-white/80' : 'text-zinc-500 dark:text-zinc-400'}`}>{date}</span>
               </div>
 
               <div className="pb-14 flex justify-center z-10">
@@ -964,8 +1069,8 @@ export default function App() {
                   transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                   className="flex flex-col items-center gap-3"
                 >
-                  <div className="w-14 h-1 bg-zinc-200 rounded-full" />
-                  <span className="text-[9px] text-zinc-400 font-bold tracking-[0.3em] uppercase">Slide to Unlock</span>
+                  <div className={`w-14 h-1 rounded-full ${wallpaper ? 'bg-white/50' : 'bg-zinc-200 dark:bg-zinc-700'}`} />
+                  <span className={`text-[9px] font-bold tracking-[0.3em] uppercase ${wallpaper ? 'text-white/60' : 'text-zinc-400 dark:text-zinc-500'}`}>Slide to Unlock</span>
                 </motion.div>
               </div>
             </motion.div>
@@ -978,19 +1083,19 @@ export default function App() {
               initial={{ opacity: 0, scale: 1.02 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-white flex flex-col items-center justify-center"
+              className="absolute inset-0 bg-white dark:bg-black flex flex-col items-center justify-center"
             >
-              <div className="absolute top-0 left-0 w-full h-full bg-zinc-50/50" />
+              <div className="absolute top-0 left-0 w-full h-full bg-zinc-50/50 dark:bg-black/50" />
               
               <GlassCard className="w-full max-w-[350px] flex flex-col items-center p-12" blur="40px" opacity="0.6">
                 <div className="flex flex-col items-center mb-10">
-                  <div className="text-zinc-600 mb-6">
+                  <div className="text-zinc-600 dark:text-zinc-300 mb-6">
                     {screen === 'password-setup' ? <Lock size={40} strokeWidth={1} /> : <Unlock size={40} strokeWidth={1} />}
                   </div>
-                  <h2 className="text-xl font-light text-zinc-600 tracking-widest mb-2">
+                  <h2 className="text-xl font-light text-zinc-600 dark:text-zinc-200 tracking-widest mb-2">
                     {screen === 'password-setup' ? (setupStep === 'first' ? '设置密码' : '确认密码') : '输入密码'}
                   </h2>
-                  <p className="text-[10px] text-zinc-400 font-bold tracking-widest uppercase">
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-bold tracking-widest uppercase">
                     {screen === 'password-setup' ? 'Security Configuration' : 'Identity Verification'}
                   </p>
                 </div>
@@ -1001,14 +1106,14 @@ export default function App() {
                       key={i} 
                       className={`w-2.5 h-2.5 rounded-full border transition-all duration-400 ${
                         i < input.length 
-                          ? 'bg-zinc-500 border-zinc-500 scale-125 shadow-sm' 
-                          : 'border-zinc-200 bg-transparent'
-                      } ${error ? 'border-red-400 bg-red-400 animate-shake' : ''}`} 
+                          ? 'bg-zinc-500 dark:bg-zinc-400 border-zinc-500 dark:border-zinc-400 scale-125 shadow-sm' 
+                          : 'border-zinc-200 dark:border-zinc-700 bg-transparent'
+                      } ${error ? 'border-red-400 dark:border-red-500 bg-red-400 dark:bg-red-500 animate-shake' : ''}`} 
                     />
                   ))}
                 </div>
 
-                <div className="h-6 text-[9px] font-bold text-red-400 mb-6 tracking-[0.2em] uppercase">{error}</div>
+                <div className="h-6 text-[9px] font-bold text-red-400 dark:text-red-500 mb-6 tracking-[0.2em] uppercase">{error}</div>
 
                 <div className="grid grid-cols-3 gap-4">
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0].map((num, i) => (
@@ -1016,10 +1121,10 @@ export default function App() {
                       <button 
                         key={i}
                         onClick={() => handleNumpad(num.toString())}
-                        className="w-[74px] h-[74px] rounded-full border border-white bg-white/80 backdrop-blur-2xl flex flex-col items-center justify-center text-zinc-600 text-2xl font-light active:bg-zinc-100 active:scale-90 transition-all shadow-[0_4px_12px_rgba(0,0,0,0.02)]"
+                        className="w-[74px] h-[74px] rounded-full border border-white dark:border-zinc-700 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-2xl flex flex-col items-center justify-center text-zinc-600 dark:text-zinc-200 text-2xl font-light active:bg-zinc-100 dark:active:bg-zinc-700 active:scale-90 transition-all shadow-[0_4px_12px_rgba(0,0,0,0.02)]"
                       >
                         {num}
-                        <span className="text-[7px] tracking-[0.3em] text-zinc-300 font-bold uppercase mt-1">
+                        <span className="text-[7px] tracking-[0.3em] text-zinc-300 dark:text-zinc-500 font-bold uppercase mt-1">
                           {num === 2 ? 'ABC' : num === 3 ? 'DEF' : num === 4 ? 'GHI' : num === 5 ? 'JKL' : num === 6 ? 'MNO' : num === 7 ? 'PQRS' : num === 8 ? 'TUV' : num === 9 ? 'WXYZ' : ''}
                         </span>
                       </button>
@@ -1027,7 +1132,7 @@ export default function App() {
                   ))}
                   <button 
                     onClick={handleDelete}
-                    className="w-[74px] h-[74px] flex items-center justify-center text-zinc-400 active:text-zinc-800 active:scale-75 transition-all"
+                    className="w-[74px] h-[74px] flex items-center justify-center text-zinc-400 dark:text-zinc-500 active:text-zinc-800 dark:active:text-zinc-300 active:scale-75 transition-all"
                   >
                     <Delete size={20} strokeWidth={1} />
                   </button>
@@ -1042,22 +1147,25 @@ export default function App() {
               key="home"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100'}`}
+              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-zinc-900'}`}
               onContextMenu={(e) => e.preventDefault()}
             >
               {wallpaper ? (
-                <img 
-                  src={wallpaper} 
-                  alt="wallpaper" 
-                  className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none" 
-                  onError={(e) => { 
-                    (e.target as HTMLImageElement).style.display = 'none'; 
-                    setWallpaper(null);
-                    alert('图片加载失败，已恢复默认背景');
-                  }}
-                />
+                <>
+                  <img 
+                    src={wallpaper} 
+                    alt="wallpaper" 
+                    className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none" 
+                    onError={(e) => { 
+                      (e.target as HTMLImageElement).style.display = 'none'; 
+                      setWallpaper(null);
+                      alert('图片加载失败，已恢复默认背景');
+                    }}
+                  />
+                  {/* 用户自定义壁纸不再叠加深浅模式遮罩 */}
+                </>
               ) : (
-                <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 dark:from-zinc-900 dark:via-zinc-800 dark:to-zinc-900 pointer-events-none transition-colors duration-300" />
               )}
               
               <input 
@@ -1068,7 +1176,7 @@ export default function App() {
                 onChange={handleWallpaperChange} 
               />
 
-              <StatusBar time={time} className={`z-10 ${wallpaper ? '' : 'backdrop-blur-xl bg-white/20'}`} />
+              <StatusBar time={time} className={`z-10 ${wallpaper ? 'text-white' : 'backdrop-blur-xl bg-white/20 dark:bg-black/20 text-zinc-800 dark:text-zinc-200'}`} />
               
               <div 
                 className="flex-1 flex flex-col relative z-10"
@@ -1163,8 +1271,8 @@ export default function App() {
 
                 {/* Page Indicator */}
                 <div className="flex justify-center gap-2.5 py-4">
-                  <div className="w-8 h-1 bg-zinc-300 rounded-full" />
-                  <div className="w-1.5 h-1 bg-zinc-100 rounded-full" />
+                  <div className="w-8 h-1 bg-zinc-300 dark:bg-zinc-600 rounded-full" />
+                  <div className="w-1.5 h-1 bg-zinc-100 dark:bg-zinc-700 rounded-full" />
                 </div>
 
                 {/* Dock */}
@@ -1199,7 +1307,7 @@ export default function App() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 20 }}
                       onClick={() => setIsEditingLayout(false)}
-                      className="absolute bottom-24 left-1/2 -translate-x-1/2 px-6 py-2 bg-white/80 backdrop-blur-xl rounded-full text-xs font-bold text-zinc-500 shadow-lg border border-white active:scale-95 transition-all z-50"
+                      className="absolute bottom-24 left-1/2 -translate-x-1/2 px-6 py-2 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-full text-xs font-bold text-zinc-500 dark:text-zinc-300 shadow-lg border border-white dark:border-zinc-700 active:scale-95 transition-all z-50"
                     >
                       完成
                     </motion.button>
@@ -1207,7 +1315,7 @@ export default function App() {
                 </AnimatePresence>
 
                 {/* Home Indicator */}
-                <div className="w-32 h-1 bg-zinc-200 rounded-full mx-auto my-4" />
+                <div className="w-32 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full mx-auto my-4" />
               </div>
             </motion.div>
           )}
@@ -1220,83 +1328,60 @@ export default function App() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-              className="absolute inset-0 bg-white flex flex-col z-50"
+              className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50"
             >
-              <StatusBar time={time} className="bg-white/80 backdrop-blur-md z-10" />
+              <StatusBar time={time} className="bg-white/80 dark:bg-black/80 text-black dark:text-zinc-200 backdrop-blur-md z-10" />
               
               {/* Top Nav */}
-              <div className="px-6 py-4 flex justify-between items-center border-b border-zinc-100 bg-white">
+              <div className="px-6 py-4 flex justify-between items-center bg-white dark:bg-black border-none">
                 <div className="w-10">
-                  {isAddingFriend ? (
-                    <button onClick={() => setIsAddingFriend(false)} className="text-zinc-400 active:text-zinc-600">
-                      <ArrowLeft size={20} strokeWidth={1.5} />
-                    </button>
-                  ) : (
-                    <button onClick={() => setScreen('home')} className="p-1.5 bg-zinc-50 rounded-full text-zinc-400 active:text-zinc-600">
-                      <LogOut size={18} strokeWidth={1.5} />
-                    </button>
-                  )}
+                  <button onClick={() => setScreen('home')} className="p-1.5 bg-white dark:bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 active:text-zinc-800 dark:active:text-white transition-colors shadow-sm">
+                    <LogOut size={18} strokeWidth={1.5} />
+                  </button>
                 </div>
-                <h2 className="text-[16px] font-bold text-zinc-800 flex-1 text-center">
-                  {isAddingFriend ? '添加好友' : (
+                <h2 className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100 flex-1 text-center">
+                  {chatTab === 'messages' && '消息'}
+                  {chatTab === 'contacts' && '通讯录'}
+                  {chatTab === 'moments' && '朋友圈'}
+                  {chatTab === 'me' && '个人中心'}
+                </h2>
+                <div className="flex gap-4 items-center w-10 justify-end relative">
+                  {chatTab === 'messages' && <Plus size={20} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors cursor-pointer" strokeWidth={1.5} />}
+                  {chatTab === 'contacts' && (
                     <>
-                      {chatTab === 'messages' && '消息'}
-                      {chatTab === 'contacts' && '通讯录'}
-                      {chatTab === 'moments' && '朋友圈'}
-                      {chatTab === 'me' && '个人中心'}
+                      <button onClick={() => setShowContactsMenu(prev => !prev)}>
+                        <Plus size={20} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors cursor-pointer" strokeWidth={1.5} />
+                      </button>
+                      {showContactsMenu && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowContactsMenu(false)} />
+                          <div className="absolute right-0 top-full mt-2 w-36 bg-white dark:bg-gray-800 rounded-xl shadow-lg z-50 overflow-hidden">
+                            <button 
+                              className="w-full px-4 py-3 text-sm text-gray-400 dark:text-gray-500 text-left cursor-not-allowed"
+                              disabled
+                            >
+                              发起群聊
+                            </button>
+                            <div className="h-px bg-gray-100 dark:bg-gray-700" />
+                            <button 
+                              className="w-full px-4 py-3 text-sm text-gray-800 dark:text-gray-200 text-left hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors"
+                              onClick={() => {
+                                setShowContactsMenu(false);
+                                setShowAddFriendModal(true);
+                              }}
+                            >
+                              添加好友
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
-                </h2>
-                <div className="flex gap-4 items-center w-10 justify-end">
-                  {!isAddingFriend && chatTab === 'messages' && <Plus size={20} className="text-zinc-400" strokeWidth={1.5} />}
                 </div>
               </div>
 
               {/* Content Area */}
-              <div className="flex-1 overflow-y-auto bg-white/20 backdrop-blur-2xl">
-                {isAddingFriend ? (
-                  <div className="flex flex-col p-4 gap-4">
-                    <div className="px-2 py-1 text-[10px] font-bold text-zinc-500 tracking-widest uppercase">从电话簿添加</div>
-                    {phonePersonas.length === 0 ? (
-                      <div className="py-20 flex flex-col items-center justify-center text-zinc-400 gap-4">
-                        <Phone size={48} strokeWidth={1} />
-                        <p className="text-xs font-bold tracking-widest uppercase">电话簿为空</p>
-                      </div>
-                    ) : (
-                      phonePersonas.map(persona => {
-                        const isAdded = contacts.some(c => c.id === persona.id);
-                        return (
-                          <GlassCard key={persona.id} className="flex items-center gap-4 p-4" opacity="0.4" blur="10px">
-                            <div className="w-[48px] h-[48px] rounded-full bg-white/50 flex items-center justify-center text-zinc-400 overflow-hidden flex-shrink-0 border border-white/40">
-                              {persona.avatar ? (
-                                <img src={persona.avatar} alt={persona.chatName} className="w-full h-full object-cover" />
-                              ) : (
-                                <User size={24} />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <span className="block text-[14px] font-bold text-zinc-800 truncate">{persona.chatName}</span>
-                              <span className="block text-[10px] text-zinc-500 truncate">ID: {persona.chatId}</span>
-                            </div>
-                            <button 
-                              disabled={isAdded}
-                              onClick={() => {
-                                if (!isAdded) {
-                                  setContacts(prev => [...prev, persona]);
-                                  setIsAddingFriend(false);
-                                }
-                              }}
-                              className={`px-4 py-1.5 rounded-full text-[10px] font-bold transition-all ${isAdded ? 'bg-zinc-200 text-zinc-500' : 'bg-zinc-800 text-white active:scale-95 shadow-lg'}`}
-                            >
-                              {isAdded ? '已添加' : '发送好友申请'}
-                            </button>
-                          </GlassCard>
-                        );
-                      })
-                    )}
-                  </div>
-                ) : (
-                  <>
+              <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-black/50 backdrop-blur-2xl">
                     {chatTab === 'messages' && (
                       <div className="flex flex-col">
                         {contacts.length === 0 ? (
@@ -1331,7 +1416,7 @@ export default function App() {
                                     <div key="ai_assistant" onClick={() => {
                                       setActiveChatContact(null);
                                       setScreen('ai-chat');
-                                    }} className={aiSettings.isPinned ? 'bg-zinc-50/80' : ''}>
+                                    }} className={aiSettings.isPinned ? 'bg-zinc-50/80 dark:bg-zinc-900/50' : ''}>
                                       <ChatListItem 
                                         name={aiSettings.remark || "AI 助手"} 
                                         msg={chatMessages.length > 0 ? chatMessages[chatMessages.length-1].content : "你好！有什么我可以帮你的吗？"} 
@@ -1350,7 +1435,7 @@ export default function App() {
                                     <div key={contact.id} onClick={() => {
                                       setActiveChatContact(contact);
                                       setScreen('ai-chat');
-                                    }} className={contactSettings.isPinned ? 'bg-zinc-50/80' : ''}>
+                                    }} className={contactSettings.isPinned ? 'bg-zinc-50/80 dark:bg-zinc-900/50' : ''}>
                                       <ChatListItem name={displayName} msg={lastMsg} time="09:15" avatar={contact.avatar} />
                                     </div>
                                   );
@@ -1363,45 +1448,52 @@ export default function App() {
                     )}
 
                     {chatTab === 'contacts' && (
-                      <div className="flex flex-col gap-1 p-4">
-                        <button 
-                          onClick={() => setIsAddingFriend(true)}
-                          className="flex items-center gap-4 p-4 bg-white/40 backdrop-blur-md rounded-2xl active:bg-white/60 transition-colors mb-4 border border-white/40 shadow-sm"
-                        >
-                          <div className="w-10 h-10 rounded-full bg-white/60 flex items-center justify-center text-zinc-600 border border-white/40"><Plus size={20} /></div>
-                          <span className="text-sm font-bold text-zinc-800">添加好友</span>
-                        </button>
+                      <div className="flex flex-col bg-neutral-50 dark:bg-black min-h-full">
+                        {/* Section Header */}
+                        <div className="px-5 pt-3 pb-1">
+                          <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 tracking-wider uppercase">联系人</span>
+                        </div>
 
-                        <div className="px-2 py-1 text-[10px] font-bold text-zinc-500 tracking-widest uppercase">所有联系人</div>
-                        {contacts.length === 0 ? (
-                          <div className="py-20 flex flex-col items-center justify-center text-zinc-400 gap-4">
-                            <Users size={48} strokeWidth={1} />
-                            <p className="text-xs font-bold tracking-widest uppercase">暂无好友</p>
-                          </div>
-                        ) : (
-                          contacts.map(contact => (
-                            <div 
-                              key={contact.id} 
-                              onClick={() => {
-                                setActiveChatContact(contact);
-                                setScreen('ai-chat');
-                              }}
-                              className="flex items-center gap-4 p-4 hover:bg-white/40 rounded-2xl transition-colors cursor-pointer"
-                            >
-                              <div className="w-[48px] h-[48px] rounded-full bg-white/60 flex items-center justify-center text-zinc-400 overflow-hidden flex-shrink-0 border border-white/40">
-                                {contact.avatar ? (
-                                  <img src={contact.avatar} alt={contact.chatName} className="w-full h-full object-cover" />
-                                ) : (
-                                  <User size={24} />
-                                )}
+                        <div className="px-4 py-2 flex flex-col gap-3">
+                          {/* Contact List */}
+                          {contacts.length === 0 ? (
+                            <div className="py-20 flex flex-col items-center justify-center gap-4">
+                              <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                                <Users size={36} strokeWidth={1} className="text-gray-300 dark:text-gray-600" />
                               </div>
-                              <div className="flex flex-col">
-                                <span className="text-[14px] font-bold text-zinc-800">{contact.chatName}</span>
-                                <span className="text-[10px] text-zinc-500">ID: {contact.chatId}</span>
+                              <div className="text-center">
+                                <p className="text-sm font-semibold text-gray-400 dark:text-gray-500">暂无好友</p>
+                                <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">点击上方添加好友开始聊天</p>
                               </div>
                             </div>
-                          ))
-                        )}
+                          ) : (
+                            [...contacts].sort((a, b) => a.chatName.localeCompare(b.chatName, 'zh-Hans-CN')).map(contact => (
+                              <div 
+                                key={contact.id} 
+                                onClick={() => {
+                                  setActiveChatContact(contact);
+                                  setScreen('ai-chat');
+                                }}
+                                className="bg-white dark:bg-gray-800 shadow-[0_1px_3px_rgba(0,0,0,0.04)] rounded-2xl p-4 cursor-pointer active:scale-[0.98] transition-all"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden shrink-0">
+                                    {contact.avatar ? (
+                                      <img className="w-full h-full rounded-full object-cover" src={contact.avatar} alt={contact.chatName} />
+                                    ) : (
+                                      <User size={24} className="text-gray-400 dark:text-gray-500" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <span className="block text-[15px] font-medium text-gray-900 dark:text-gray-100 truncate">{contact.chatName}</span>
+                                    <span className="block text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{contact.bio || contact.chatId}</span>
+                                  </div>
+                                  <ChevronRight size={16} className="text-gray-300 dark:text-gray-600 shrink-0" />
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -1429,17 +1521,17 @@ export default function App() {
                                   {contact.avatar ? <img src={contact.avatar} className="w-full h-full object-cover" /> : <User size={20} />}
                                 </div>
                                 <div className="flex-1">
-                                  <h4 className="font-bold text-zinc-800 mb-1" style={{ fontSize: '14px' }}>{contact.chatName}</h4>
-                                  <p className="text-xs text-zinc-600 leading-relaxed mb-3">极致纯白，通透如冰。这就是我们追求的未来感设计语言。#纯白 #毛玻璃 #UI设计</p>
+                                  <h4 className="font-bold text-zinc-800 dark:text-zinc-100 mb-1" style={{ fontSize: '14px' }}>{contact.chatName}</h4>
+                                  <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed mb-3">极致纯白，通透如冰。这就是我们追求的未来感设计语言。#纯白 #毛玻璃 #UI设计</p>
                                   <div className="grid grid-cols-3 gap-2 mb-3">
                                     <div className="aspect-square bg-white/20 backdrop-blur-sm rounded-lg border border-white/20" />
                                     <div className="aspect-square bg-white/10 backdrop-blur-sm rounded-lg border border-white/10" />
                                   </div>
                                   <div className="flex justify-between items-center">
-                                    <span className="text-[10px] text-zinc-400">2小时前</span>
+                                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500">2小时前</span>
                                     <div className="flex gap-4">
-                                      <Heart size={18} className="text-zinc-400 hover:text-red-400 transition-colors cursor-pointer" />
-                                      <MessageSquare size={18} className="text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer" />
+                                      <Heart size={18} className="text-zinc-400 dark:text-zinc-500 hover:text-red-400 transition-colors cursor-pointer" />
+                                      <MessageSquare size={18} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors cursor-pointer" />
                                     </div>
                                   </div>
                                 </div>
@@ -1451,97 +1543,101 @@ export default function App() {
                     )}
 
                     {chatTab === 'me' && (
-                      <div className="flex flex-col gap-6 p-6">
-                        <div className="flex items-center gap-5">
-                          <div className="w-[80px] h-[80px] rounded-full bg-white/40 backdrop-blur-md border border-white/60 flex items-center justify-center text-zinc-200 flex-shrink-0 overflow-hidden shadow-sm">
-                            {avatar ? <img src={avatar} className="w-full h-full object-cover" /> : <CircleUserRound size={48} strokeWidth={1} />}
+                      <div className="flex flex-col gap-6 p-6 bg-white dark:bg-black min-h-full">
+                        <div 
+                          className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer"
+                          onClick={() => setShowProfileModal(true)}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-[64px] h-[64px] rounded-full bg-white/60 dark:bg-zinc-700/60 backdrop-blur-md border border-white/60 dark:border-zinc-600 flex items-center justify-center text-zinc-400 dark:text-zinc-500 flex-shrink-0 overflow-hidden shadow-sm">
+                              {currentUser.avatar ? <img src={currentUser.avatar} className="w-full h-full object-cover" /> : <CircleUserRound size={32} strokeWidth={1} />}
+                            </div>
+                            <div className="flex flex-col justify-center">
+                              <h3 className="font-bold text-zinc-800 dark:text-zinc-100" style={{ fontSize: '18px' }}>{currentUser.name}</h3>
+                              <p className="text-zinc-500 dark:text-zinc-400 mt-1 uppercase tracking-widest" style={{ fontSize: '10px' }}>ID: {currentUser.chatId}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="font-bold text-zinc-800" style={{ fontSize: '20px' }}>AI User</h3>
-                            <p className="text-zinc-500 mt-1 uppercase tracking-widest" style={{ fontSize: '10px' }}>ID: aiphone_001</p>
-                          </div>
+                          <ChevronRight size={20} className="text-zinc-400 dark:text-zinc-500" />
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between p-4 bg-white/40 backdrop-blur-md rounded-2xl active:bg-white/60 transition-colors border border-white/40 shadow-sm" onClick={() => {}}>
+                          <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer" onClick={() => setShowWalletModal(true)}>
                             <div className="flex items-center gap-4">
-                              <Wallet size={20} className="text-zinc-600" strokeWidth={1.5} />
-                              <span className="text-sm font-bold text-zinc-700">钱包</span>
+                              <Wallet size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
+                              <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">钱包</span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-zinc-500">¥ 8,888.00</span>
-                              <ChevronRight size={16} className="text-zinc-400" />
+                              <span className="text-xs text-zinc-500 dark:text-zinc-400">¥ {wallet.balance.toFixed(2)}</span>
+                              <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
                             </div>
                           </div>
-                          <div className="flex items-center justify-between p-4 bg-white/40 backdrop-blur-md rounded-2xl active:bg-white/60 transition-colors border border-white/40 shadow-sm">
+                          <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none">
                             <div className="flex items-center gap-4">
-                              <CreditCard size={20} className="text-zinc-600" strokeWidth={1.5} />
-                              <span className="text-sm font-bold text-zinc-700">卡包</span>
+                              <CreditCard size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
+                              <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">卡包</span>
                             </div>
-                            <ChevronRight size={16} className="text-zinc-400" />
+                            <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
                           </div>
                           <div 
-                            className="flex items-center justify-between p-4 bg-white/40 backdrop-blur-md rounded-2xl active:bg-white/60 transition-colors border border-white/40 shadow-sm cursor-pointer"
+                            className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer"
                             onClick={() => setShowFavoritesScreen(true)}
                           >
                             <div className="flex items-center gap-4">
-                              <Star size={20} className="text-zinc-600" strokeWidth={1.5} />
-                              <span className="text-sm font-bold text-zinc-700">我的收藏</span>
+                              <Star size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
+                              <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">我的收藏</span>
                             </div>
                             <div className="flex items-center gap-2">
                               {favorites.length > 0 && (
-                                <span className="text-xs text-zinc-500">{favorites.length} 条</span>
+                                <span className="text-xs text-zinc-500 dark:text-zinc-400">{favorites.length} 条</span>
                               )}
-                              <ChevronRight size={16} className="text-zinc-400" />
+                              <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
                             </div>
                           </div>
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between p-4 bg-white/40 backdrop-blur-md rounded-2xl active:bg-white/60 transition-colors border border-white/40 shadow-sm">
+                          <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none">
                             <div className="flex items-center gap-4">
-                              <ShieldCheck size={20} className="text-zinc-600" strokeWidth={1.5} />
-                              <span className="text-sm font-bold text-zinc-700">支付安全</span>
+                              <ShieldCheck size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
+                              <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">支付安全</span>
                             </div>
-                            <ChevronRight size={16} className="text-zinc-400" />
+                            <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
                           </div>
-                          <div className="flex items-center justify-between p-4 bg-white/40 backdrop-blur-md rounded-2xl active:bg-white/60 transition-colors border border-white/40 shadow-sm">
+                          <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none">
                             <div className="flex items-center gap-4">
-                              <Settings size={20} className="text-zinc-600" strokeWidth={1.5} />
-                              <span className="text-sm font-bold text-zinc-700">设置</span>
+                              <Settings size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
+                              <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">设置</span>
                             </div>
-                            <ChevronRight size={16} className="text-zinc-400" />
+                            <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
                           </div>
                         </div>
 
                         <button 
                           onClick={() => setScreen('home')}
-                          className="mt-4 p-4 bg-white/40 backdrop-blur-md rounded-2xl text-zinc-500 font-bold text-sm active:bg-white/60 transition-colors flex items-center justify-center gap-2 border border-white/40 shadow-sm"
+                          className="mt-4 p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl text-zinc-500 dark:text-zinc-400 font-bold text-sm active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors flex items-center justify-center gap-2 border border-white/40 dark:border-zinc-700 shadow-none"
                         >
                           <LogOut size={18} />
                           退出应用
                         </button>
                       </div>
                     )}
-                  </>
-                )}
               </div>
 
               {/* Bottom Tab Bar */}
-              <div className="bg-white/80 backdrop-blur-xl border-t border-zinc-100 px-4 pb-8 pt-2 flex justify-around">
-                <button onClick={() => setChatTab('messages')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'messages' ? 'text-zinc-600' : 'text-zinc-300'}`}>
+              <div className="bg-white/80 dark:bg-black/80 backdrop-blur-xl border-t border-zinc-100 dark:border-zinc-800 px-4 pb-8 pt-2 flex justify-around">
+                <button onClick={() => setChatTab('messages')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'messages' ? 'text-zinc-600 dark:text-zinc-200' : 'text-zinc-300 dark:text-zinc-500 hover:text-zinc-400 dark:hover:text-zinc-400'}`}>
                   <MessageSquare size={24} strokeWidth={chatTab === 'messages' ? 2 : 1.5} />
                   <span className="text-[10px] font-bold">消息</span>
                 </button>
-                <button onClick={() => setChatTab('contacts')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'contacts' ? 'text-zinc-600' : 'text-zinc-300'}`}>
+                <button onClick={() => setChatTab('contacts')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'contacts' ? 'text-zinc-600 dark:text-zinc-200' : 'text-zinc-300 dark:text-zinc-500 hover:text-zinc-400 dark:hover:text-zinc-400'}`}>
                   <Users size={24} strokeWidth={chatTab === 'contacts' ? 2 : 1.5} />
                   <span className="text-[10px] font-bold">通讯录</span>
                 </button>
-                <button onClick={() => setChatTab('moments')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'moments' ? 'text-zinc-600' : 'text-zinc-300'}`}>
+                <button onClick={() => setChatTab('moments')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'moments' ? 'text-zinc-600 dark:text-zinc-200' : 'text-zinc-300 dark:text-zinc-500 hover:text-zinc-400 dark:hover:text-zinc-400'}`}>
                   <Camera size={24} strokeWidth={chatTab === 'moments' ? 2 : 1.5} />
                   <span className="text-[10px] font-bold">朋友圈</span>
                 </button>
-                <button onClick={() => setChatTab('me')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'me' ? 'text-zinc-600' : 'text-zinc-300'}`}>
+                <button onClick={() => setChatTab('me')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'me' ? 'text-zinc-600 dark:text-zinc-200' : 'text-zinc-300 dark:text-zinc-500 hover:text-zinc-400 dark:hover:text-zinc-400'}`}>
                   <User size={24} strokeWidth={chatTab === 'me' ? 2 : 1.5} />
                   <span className="text-[10px] font-bold">我</span>
                 </button>
@@ -1582,6 +1678,12 @@ export default function App() {
               setFrostIntensity={setFrostIntensity}
               componentBgOpacity={componentBgOpacity}
               setComponentBgOpacity={setComponentBgOpacity}
+              themeMode={themeMode}
+              setThemeMode={setThemeMode}
+              baseFontSize={baseFontSize}
+              setBaseFontSize={setBaseFontSize}
+              baseFontColor={baseFontColor}
+              setBaseFontColor={setBaseFontColor}
             />
           )}
 
@@ -1704,6 +1806,27 @@ export default function App() {
           />
         )}
 
+        {/* Add Friend Modal */}
+        <AddFriendModal
+          isOpen={showAddFriendModal}
+          onClose={() => setShowAddFriendModal(false)}
+          phonePersonas={phonePersonas}
+          contacts={contacts}
+          apiConfig={apiConfig}
+          onAddContact={(persona) => {
+            setContacts(prev => {
+              if (prev.some(c => c.id === persona.id)) return prev;
+              return [...prev, persona];
+            });
+          }}
+          onAddNewPersona={(persona) => {
+            setPhonePersonas(prev => {
+              if (prev.some(p => p.id === persona.id)) return prev;
+              return [...prev, persona];
+            });
+          }}
+        />
+
         {/* Favorites Screen */}
         {showFavoritesScreen && (
           <FavoritesScreen
@@ -1729,9 +1852,43 @@ export default function App() {
             }}
           />
         )}
+
+        {/* Profile Editor Modal */}
+        <ProfileEditorModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+          currentUser={currentUser}
+          onSave={(user) => {
+            setCurrentUser(user);
+            if (user.avatar !== avatar) {
+              setAvatar(user.avatar);
+            }
+          }}
+        />
+
+        {/* Wallet Actions Modal */}
+        <WalletActionsModal
+          isOpen={showWalletModal}
+          onClose={() => setShowWalletModal(false)}
+          wallet={wallet}
+          setWallet={setWallet}
+          phonePersonas={phonePersonas}
+          apiConfig={apiConfig}
+        />
       </div>
 
+      {/* 预留自定义 CSS 接口 */}
+      <style id="aiphone-custom-css">
+        {localStorage.getItem('aiphone_custom_css') || ''}
+      </style>
+
       <style>{`
+        html {
+          font-size: var(--base-font-size, 16px) !important;
+        }
+        html.custom-font-color * {
+          color: var(--base-font-color) !important;
+        }
         :root {
           --custom-font-family: inherit;
           --frost-intensity: ${frostIntensity};

@@ -54,20 +54,20 @@ export const PersonaScreen = ({ onBack, time, onSavePersona, initialPersona }: a
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      className="absolute inset-0 bg-zinc-50 flex flex-col z-50"
+      className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50"
     >
-      <StatusBar time={time} className="bg-white/80 backdrop-blur-md z-10" />
+      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 dark:text-zinc-200 backdrop-blur-md z-10" />
       
-      <div className="px-6 py-4 flex items-center justify-between bg-white border-b border-zinc-100">
+      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="text-zinc-400 active:text-zinc-600">
+          <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
             <ArrowLeft size={24} strokeWidth={1.5} />
           </button>
-          <h2 className="text-xl font-bold text-zinc-700">人设修改</h2>
+          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-100">人设修改</h2>
         </div>
         <button 
           onClick={handleSave}
-          className="flex items-center gap-1.5 px-4 py-1.5 bg-zinc-800 text-white rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
+          className="flex items-center gap-1.5 px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm"
         >
           <Check size={14} />
           保存人设
@@ -78,38 +78,38 @@ export const PersonaScreen = ({ onBack, time, onSavePersona, initialPersona }: a
         <div className="flex flex-col items-center gap-4">
           <label className="cursor-pointer group relative">
             <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
-            <div className="w-[96px] h-[96px] rounded-[32px] bg-white border border-zinc-100 flex items-center justify-center text-zinc-300 overflow-hidden shadow-sm">
+            <div className="w-[96px] h-[96px] rounded-[32px] bg-white dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 flex items-center justify-center text-zinc-300 dark:text-zinc-500 overflow-hidden shadow-sm transition-colors">
               {persona.avatar ? (
                 <img src={persona.avatar} alt="avatar" className="w-full h-full object-cover" />
               ) : (
                 <CircleUserRound size={48} strokeWidth={1} />
               )}
             </div>
-            <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-zinc-800 text-white rounded-full flex items-center justify-center shadow-lg">
+            <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full flex items-center justify-center shadow-lg transition-colors">
               <Camera size={16} />
             </div>
           </label>
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase">点击修改头像</span>
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase">点击修改头像</span>
         </div>
 
         <div className="flex flex-col gap-4">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1">基本信息</span>
-          <GlassCard className="p-4 flex flex-col gap-4" opacity="0.8" blur="10px">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">基本信息</span>
+          <div className="p-4 flex flex-col gap-4 bg-transparent">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 px-1">姓名</label>
+              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">姓名</label>
               <input 
                 type="text" 
                 placeholder="真实姓名"
-                className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none border border-transparent focus:border-zinc-200 transition-all"
+                className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
                 value={persona.name}
                 onChange={(e) => setPersona(prev => ({ ...prev, name: e.target.value }))}
               />
             </div>
             <div className="flex gap-4">
               <div className="flex-1 flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 px-1">性别</label>
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">性别</label>
                 <select 
-                  className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none border border-transparent focus:border-zinc-200 transition-all appearance-none"
+                  className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-all appearance-none"
                   value={persona.gender}
                   onChange={(e) => setPersona(prev => ({ ...prev, gender: e.target.value }))}
                 >
@@ -119,77 +119,77 @@ export const PersonaScreen = ({ onBack, time, onSavePersona, initialPersona }: a
                 </select>
               </div>
               <div className="flex-1 flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 px-1">年龄</label>
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">年龄</label>
                 <input 
                   type="text" 
                   placeholder="24"
-                  className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none border border-transparent focus:border-zinc-200 transition-all"
+                  className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
                   value={persona.age}
                   onChange={(e) => setPersona(prev => ({ ...prev, age: e.target.value }))}
                 />
               </div>
             </div>
-          </GlassCard>
+          </div>
 
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1 mt-2">聊天账号</span>
-          <GlassCard className="p-4 flex flex-col gap-4" opacity="0.8" blur="10px">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1 mt-2">聊天账号</span>
+          <div className="p-4 flex flex-col gap-4 bg-transparent">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 px-1">聊天名 (必填)</label>
+              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">聊天名 (必填)</label>
               <input 
                 type="text" 
                 placeholder="例如：设计灵感"
-                className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none border border-transparent focus:border-zinc-200 transition-all"
+                className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
                 value={persona.chatName}
                 onChange={(e) => setPersona(prev => ({ ...prev, chatName: e.target.value }))}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 px-1">账号ID (必填)</label>
+              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">账号ID (必填)</label>
               <input 
                 type="text" 
                 placeholder="例如：aiphone_002"
-                className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none border border-transparent focus:border-zinc-200 transition-all"
+                className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
                 value={persona.chatId}
                 onChange={(e) => setPersona(prev => ({ ...prev, chatId: e.target.value }))}
               />
             </div>
-          </GlassCard>
+          </div>
 
-          <span className="text-[10px] font-bold text-zinc-400 tracking-widest uppercase px-1 mt-2">详细人设</span>
-          <GlassCard className="p-4 flex flex-col gap-4" opacity="0.8" blur="10px">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1 mt-2">详细人设</span>
+          <div className="p-4 flex flex-col gap-4 bg-transparent">
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 px-1">身高 (cm)</label>
-                <input type="text" placeholder="180" className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none" value={persona.height} onChange={(e) => setPersona(prev => ({ ...prev, height: e.target.value }))} />
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">身高 (cm)</label>
+                <input type="text" placeholder="180" className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-colors" value={persona.height} onChange={(e) => setPersona(prev => ({ ...prev, height: e.target.value }))} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 px-1">体重 (kg)</label>
-                <input type="text" placeholder="70" className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none" value={persona.weight} onChange={(e) => setPersona(prev => ({ ...prev, weight: e.target.value }))} />
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">体重 (kg)</label>
+                <input type="text" placeholder="70" className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-colors" value={persona.weight} onChange={(e) => setPersona(prev => ({ ...prev, weight: e.target.value }))} />
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 px-1">职业</label>
-              <input type="text" placeholder="UI 设计师" className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none" value={persona.occupation} onChange={(e) => setPersona(prev => ({ ...prev, occupation: e.target.value }))} />
+              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">职业</label>
+              <input type="text" placeholder="UI 设计师" className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-colors" value={persona.occupation} onChange={(e) => setPersona(prev => ({ ...prev, occupation: e.target.value }))} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 px-1">所在地</label>
-              <input type="text" placeholder="上海" className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none" value={persona.location} onChange={(e) => setPersona(prev => ({ ...prev, location: e.target.value }))} />
+              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">所在地</label>
+              <input type="text" placeholder="上海" className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-colors" value={persona.location} onChange={(e) => setPersona(prev => ({ ...prev, location: e.target.value }))} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 px-1">性格</label>
-              <input type="text" placeholder="温柔、内向" className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none" value={persona.personality} onChange={(e) => setPersona(prev => ({ ...prev, personality: e.target.value }))} />
+              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">性格</label>
+              <input type="text" placeholder="温柔、内向" className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-colors" value={persona.personality} onChange={(e) => setPersona(prev => ({ ...prev, personality: e.target.value }))} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 px-1">具体人设</label>
+              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">具体人设</label>
               <textarea 
                 rows={4}
                 placeholder="输入详细的人物背景和设定..."
-                className="w-full bg-zinc-50/50 p-3 rounded-xl text-sm text-zinc-700 outline-none border border-transparent focus:border-zinc-200 transition-all resize-none"
+                className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-200 dark:focus:border-zinc-600 transition-all resize-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
                 value={persona.bio}
                 onChange={(e) => setPersona(prev => ({ ...prev, bio: e.target.value }))}
               />
             </div>
-          </GlassCard>
+          </div>
         </div>
       </div>
     </motion.div>

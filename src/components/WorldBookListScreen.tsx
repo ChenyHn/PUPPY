@@ -13,7 +13,7 @@ const FolderPlus = ({ size = 24, className = "" }) => (
 );
 
 const WorldBookCard = ({ wb, toggleActive, onEdit, deleteWorldBook }: any) => (
-  <GlassCard className={`p-4 flex flex-col gap-3 dark:bg-zinc-800/50 transition-colors border ${wb.isActive && wb.scope === 'global' ? 'border-zinc-800 dark:border-zinc-400 shadow-[0_0_15px_rgba(39,39,42,0.1)]' : 'border-zinc-200/50 dark:border-zinc-700/50'}`} opacity="0.8" blur="10px">
+  <GlassCard className={`p-4 flex flex-col gap-3 transition-colors border dark:!bg-[#1c1c1e] ${wb.isActive && wb.scope === 'global' ? 'border-zinc-800 dark:!border-zinc-400 shadow-[0_0_15px_rgba(39,39,42,0.1)]' : 'border-zinc-200/50 dark:!border-zinc-800'}`} opacity="0.8" blur="10px">
     <div className="flex justify-between items-start">
       <div className="flex-1 min-w-0 pr-4">
         <div className="flex items-center gap-2">
@@ -137,16 +137,16 @@ export const WorldBookListScreen = ({ onBack, time, worldBooks, setWorldBooks, f
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      className="absolute inset-0 bg-zinc-50 dark:bg-zinc-900 flex flex-col z-50 transition-colors"
+      className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50 transition-colors"
     >
-      <StatusBar time={time} className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-10 dark:text-zinc-200" />
+      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
       
-      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 transition-colors">
+      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800 transition-colors">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 active:text-zinc-600 dark:active:text-zinc-300">
+          <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
             <ArrowLeft size={24} strokeWidth={1.5} />
           </button>
-          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-200">世界书</h2>
+          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-100">世界书</h2>
         </div>
         <div className="flex gap-2">
           <button 
@@ -155,27 +155,27 @@ export const WorldBookListScreen = ({ onBack, time, worldBooks, setWorldBooks, f
               setNewFolderName('');
               setIsCreatingFolder(true);
             }}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 shadow-sm active:scale-95 transition-all"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-100 dark:bg-[#2c2c2e] text-zinc-600 dark:text-zinc-300 shadow-sm active:scale-95 transition-all"
           >
             <FolderPlus size={16} />
           </button>
           <button 
             onClick={onAdd}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-800 dark:bg-zinc-700 text-white shadow-sm active:scale-95 transition-all"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 shadow-sm active:scale-95 transition-all"
           >
             <Plus size={20} />
           </button>
         </div>
       </div>
 
-      <div className="px-6 py-3 bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 flex flex-col gap-3 z-10 transition-colors">
+      <div className="px-6 py-3 bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800 flex flex-col gap-3 z-10 transition-colors">
         {/* Search Bar */}
         <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-full px-4 py-2">
-          <Search size={16} className="text-zinc-400" />
+          <Search size={16} className="text-zinc-400 dark:text-zinc-500" />
           <input 
             type="text" 
             placeholder="搜索世界书..."
-            className="flex-1 bg-transparent border-none outline-none text-xs text-zinc-700 dark:text-zinc-200 placeholder:text-zinc-400"
+            className="flex-1 bg-transparent border-none outline-none text-xs text-zinc-700 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -215,13 +215,13 @@ export const WorldBookListScreen = ({ onBack, time, worldBooks, setWorldBooks, f
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <GlassCard className="p-4 flex gap-2 items-center mb-4 dark:border-zinc-700 dark:bg-zinc-800/50" opacity="0.8" blur="10px">
+              <GlassCard className="p-4 flex gap-2 items-center mb-4 dark:!border-zinc-800 dark:!bg-[#1c1c1e]" opacity="0.8" blur="10px">
                 <FolderOpen size={18} className="text-zinc-500" />
                 <input 
                   autoFocus
                   type="text" 
                   placeholder="输入文件夹名称..."
-                  className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-200"
+                  className="flex-1 bg-transparent border-none outline-none text-sm text-zinc-700 dark:text-zinc-100"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
@@ -263,8 +263,8 @@ export const WorldBookListScreen = ({ onBack, time, worldBooks, setWorldBooks, f
                       <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400">{folder.name} ({booksInFolder.length})</span>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => { setEditingFolderId(folder.id); setNewFolderName(folder.name); setIsCreatingFolder(true); }} className="text-zinc-400 hover:text-zinc-600"><Pencil size={12} /></button>
-                      <button onClick={() => handleDeleteFolder(folder.id)} className="text-red-300 hover:text-red-500"><Delete size={12} /></button>
+                      <button onClick={() => { setEditingFolderId(folder.id); setNewFolderName(folder.name); setIsCreatingFolder(true); }} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><Pencil size={12} /></button>
+                      <button onClick={() => handleDeleteFolder(folder.id)} className="text-red-300 hover:text-red-500 transition-colors"><Delete size={12} /></button>
                     </div>
                   </div>
                   
@@ -277,7 +277,7 @@ export const WorldBookListScreen = ({ onBack, time, worldBooks, setWorldBooks, f
                         className="flex flex-col gap-4 overflow-hidden"
                       >
                         {booksInFolder.length === 0 ? (
-                          <div className="text-[10px] text-zinc-400 text-center py-2">空文件夹</div>
+                          <div className="text-[10px] text-zinc-400 dark:text-zinc-500 text-center py-2">空文件夹</div>
                         ) : (
                           booksInFolder.map((wb: any) => (
                             <WorldBookCard key={wb.id} wb={wb} toggleActive={toggleActive} onEdit={onEdit} deleteWorldBook={deleteWorldBook} />
@@ -306,7 +306,7 @@ export const WorldBookListScreen = ({ onBack, time, worldBooks, setWorldBooks, f
             
             {/* Empty Search Result */}
             {filteredBooks.length === 0 && worldBooks.length > 0 && (
-              <div className="text-center text-zinc-400 text-sm py-10">
+              <div className="text-center text-zinc-400 dark:text-zinc-500 text-sm py-10">
                 没有找到匹配的世界书
               </div>
             )}

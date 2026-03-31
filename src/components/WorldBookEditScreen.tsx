@@ -73,16 +73,16 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      className="absolute inset-0 bg-zinc-50 dark:bg-zinc-900 flex flex-col z-50 transition-colors"
+      className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50 transition-colors"
     >
-      <StatusBar time={time} className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-10 dark:text-zinc-200" />
+      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
       
-      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 transition-colors">
+      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800 transition-colors">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 active:text-zinc-600 dark:active:text-zinc-300">
+          <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
             <ArrowLeft size={24} strokeWidth={1.5} />
           </button>
-          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-200">{initialData ? '编辑世界书' : '创建世界书'}</h2>
+          <h2 className="text-xl font-bold text-zinc-700 dark:text-zinc-100">{initialData ? '编辑世界书' : '创建世界书'}</h2>
         </div>
         <button 
           onClick={handleSave}
@@ -94,13 +94,13 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-        <GlassCard className="p-4 flex flex-col gap-4 dark:border-zinc-700 dark:bg-zinc-800/50" opacity="0.8" blur="10px">
+        <GlassCard className="p-4 flex flex-col gap-4 dark:!border-zinc-800 dark:!bg-[#1c1c1e]" opacity="0.8" blur="10px">
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">标题 (必填)</label>
             <input 
               type="text" 
               placeholder="例如：修仙世界观"
-              className="w-full bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-200 outline-none border border-transparent focus:border-zinc-300 transition-all placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+              className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-300 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
@@ -108,15 +108,15 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
 
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">生效范围</label>
-            <div className="flex bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl">
+            <div className="flex bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-xl">
               <button
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 shadow-sm' : 'text-zinc-400 dark:text-zinc-500'}`}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scope === 'global' ? 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-100 shadow-sm' : 'text-zinc-400 dark:text-zinc-500'}`}
                 onClick={() => setScope('global')}
               >
                 全局生效
               </button>
               <button
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scope === 'local' ? 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 shadow-sm' : 'text-zinc-400 dark:text-zinc-500'}`}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scope === 'local' ? 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-100 shadow-sm' : 'text-zinc-400 dark:text-zinc-500'}`}
                 onClick={() => setScope('local')}
               >
                 局部生效
@@ -127,10 +127,10 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
             </p>
           </div>
 
-          <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-100 dark:border-zinc-700/50">
+          <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-100 dark:border-zinc-800">
             <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">所属文件夹</label>
             <select 
-              className="w-full bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-200 outline-none border border-transparent appearance-none"
+              className="w-full bg-zinc-50/50 dark:bg-zinc-800/50 p-3 rounded-xl text-sm text-zinc-700 dark:text-zinc-100 outline-none border border-transparent appearance-none"
               value={folderId}
               onChange={(e) => setFolderId(e.target.value)}
             >
@@ -141,19 +141,19 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
             </select>
           </div>
 
-          <div className="flex justify-between items-center px-1 py-2 border-t border-zinc-100 dark:border-zinc-700/50">
-            <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">是否激活</span>
+          <div className="flex justify-between items-center px-1 py-2 border-t border-zinc-100 dark:border-zinc-800">
+            <span className="text-sm font-bold text-zinc-700 dark:text-zinc-100">是否激活</span>
             <button 
               onClick={() => setIsActive(!isActive)}
               className={`w-10 h-5 rounded-full transition-colors relative ${isActive ? 'bg-zinc-800 dark:bg-zinc-200' : 'bg-zinc-200 dark:bg-zinc-700'}`}
             >
-              <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-zinc-900 rounded-full transition-all ${isActive ? 'left-6' : 'left-1'}`} />
+              <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-[#1c1c1e] rounded-full transition-all ${isActive ? 'left-6' : 'left-1'}`} />
             </button>
           </div>
         </GlassCard>
 
         {scope === 'local' && (
-          <GlassCard className="p-4 flex flex-col gap-3 dark:border-zinc-700 dark:bg-zinc-800/50" opacity="0.8" blur="10px">
+          <GlassCard className="p-4 flex flex-col gap-3 dark:!border-zinc-800 dark:!bg-[#1c1c1e]" opacity="0.8" blur="10px">
             <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 px-1">选择绑定角色</label>
             {phonePersonas.length === 0 ? (
               <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center py-4">暂无角色，请先在电话簿中添加。</p>
@@ -163,15 +163,15 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
                   <div 
                     key={p.id} 
                     onClick={() => togglePersona(p.id)}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-700/50 cursor-pointer transition-colors"
+                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
                   >
                     <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${boundPersonas.includes(p.id) ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'border-zinc-300 dark:border-zinc-600'}`}>
-                      {boundPersonas.includes(p.id) && <Check size={12} className="text-white dark:text-zinc-900" />}
+                      {boundPersonas.includes(p.id) && <Check size={12} className="text-white dark:text-[#1c1c1e]" />}
                     </div>
                     <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex-shrink-0">
                       {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover" /> : <User size={16} className="m-2 text-zinc-400" />}
                     </div>
-                    <span className="text-sm text-zinc-700 dark:text-zinc-300 font-medium truncate">{p.chatName || p.name}</span>
+                    <span className="text-sm text-zinc-700 dark:text-zinc-100 font-medium truncate">{p.chatName || p.name}</span>
                   </div>
                 ))}
               </div>
@@ -179,8 +179,8 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
           </GlassCard>
         )}
 
-        <GlassCard className="p-4 flex flex-col gap-2 flex-1 min-h-[400px] dark:border-zinc-700 dark:bg-zinc-800/50" opacity="0.8" blur="10px">
-          <div className="flex justify-between items-center px-1 pb-2 border-b border-zinc-100 dark:border-zinc-700/50">
+        <GlassCard className="p-4 flex flex-col gap-2 flex-1 min-h-[400px] dark:!border-zinc-800 dark:!bg-[#1c1c1e]" opacity="0.8" blur="10px">
+          <div className="flex justify-between items-center px-1 pb-2 border-b border-zinc-100 dark:border-zinc-800">
             <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">世界观内容 (纯文本)</label>
             <div className="flex gap-2">
               <input 
@@ -193,7 +193,7 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
               <button 
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isImporting}
-                className="flex items-center gap-1 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-full text-[10px] font-bold active:scale-95 transition-all disabled:opacity-50"
+                className="flex items-center gap-1 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800/50 text-zinc-600 dark:text-zinc-300 rounded-full text-[10px] font-bold active:scale-95 transition-all disabled:opacity-50"
               >
                 <FileUp size={12} />
                 {isImporting ? '导入中...' : '导入文件'}
@@ -203,7 +203,7 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
           <p className="text-[9px] text-zinc-400 dark:text-zinc-500 px-1">建议保持内容精简，过长会消耗大量 Token 且影响对话响应速度。支持导入 .txt 和 .docx 文件提取纯文本。</p>
           <textarea 
             placeholder="在此输入或粘贴世界书内容..."
-            className="w-full h-full flex-1 bg-transparent p-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none resize-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600 leading-relaxed"
+            className="w-full h-full flex-1 bg-transparent p-2 text-sm text-zinc-700 dark:text-zinc-100 outline-none resize-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 leading-relaxed"
             value={content}
             onChange={(e) => setContent(e.target.value)}
           />

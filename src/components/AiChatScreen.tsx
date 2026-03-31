@@ -3,7 +3,7 @@ import {
   Delete,
   SlidersHorizontal,
   RefreshCw,
-  Send,
+  ArrowUp,
   Check,
   Pencil,
   Plus,
@@ -20,6 +20,17 @@ import {
   Forward,
   Trash2,
   User,
+  Smile,
+  Mic,
+  Image as ImageIcon,
+  Camera,
+  Phone,
+  MapPin,
+  Wallet,
+  Gift,
+  Banknote,
+  Contact,
+  Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Persona, ApiConfig, WorldBook, Screen, ChatMessage, ChatSettings, MemoryEntry, FavoriteItem } from '../types';
@@ -130,6 +141,9 @@ export function AiChatScreen(props: AiChatScreenProps) {
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [editingMessageContent, setEditingMessageContent] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+
+  // Plus panel state
+  const [showFunctionPanel, setShowFunctionPanel] = useState(false);
 
   // Multi-select mode state
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -676,16 +690,16 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
   // --- Render ---
   return (
-    <div className="absolute inset-0 bg-white dark:bg-zinc-900 flex flex-col z-50">
+    <div className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50">
       {/* Header */}
       {isMultiSelectMode ? (
-        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-700">
+        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-gray-900 border-b border-neutral-200 dark:border-zinc-800">
           <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">已选择 {selectedMessageIds.size} 条消息</span>
-          <button onClick={exitMultiSelectMode} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm">完成</button>
+          <button onClick={exitMultiSelectMode} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm">完成</button>
         </div>
       ) : (
-        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-700">
-          <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-zinc-400 dark:text-zinc-300">← 返回</button>
+        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-gray-900 border-b border-neutral-200 dark:border-zinc-800">
+          <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">← 返回</button>
           <h2 className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100">{displayChatName}</h2>
           <button onClick={() => setIsChatSettingsOpen(true)} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 active:text-zinc-700 dark:active:text-zinc-300 transition-colors"><SlidersHorizontal size={20} strokeWidth={1.5} /></button>
         </div>
@@ -694,7 +708,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
       {/* Messages */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden p-6 flex flex-col gap-4 bg-zinc-50 dark:bg-zinc-900 relative" 
+        className={`flex-1 overflow-y-auto overflow-x-hidden px-6 pt-6 pb-[120px] flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.background ? 'bg-neutral-50 dark:bg-black' : ''}`} 
         onScroll={(e) => { 
           if (contextMenu.isVisible) closeCtx(); 
           handleScroll(e);
@@ -738,7 +752,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
             <div
               onContextMenu={(e) => handleContextMenu(e, globalIndex, msg)}
               onClick={() => { if (isMultiSelectMode) toggleMessageSelection(msg.id); else if (msg.isMergedForward) setMergedMessageDetails(msg.originalMessages!); }}
-              className={`max-w-[80%] p-4 rounded-2xl text-sm relative transition-transform duration-200 select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-black text-white rounded-tr-none' : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-zinc-700 dark:!text-zinc-200 shadow-none' : ''} ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-200 ring-offset-1' : ''} ${isMultiSelectMode || msg.isMergedForward ? 'cursor-pointer' : ''}`}
+              className={`max-w-[80%] p-4 rounded-2xl text-sm relative transition-transform duration-200 select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-zinc-800 text-white rounded-tr-none dark:bg-zinc-800 dark:text-zinc-100' : 'bg-white dark:bg-[#1c1c1e] text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-[#1c1c1e] dark:!text-zinc-200 shadow-none' : ''} ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black' : ''} ${isMultiSelectMode || msg.isMergedForward ? 'cursor-pointer' : ''}`}
             >
               {msg.isMergedForward ? (
                  <div className="flex flex-col gap-1">
@@ -750,14 +764,14 @@ export function AiChatScreen(props: AiChatScreenProps) {
                  </div>
               ) : (
                 <>
-                  {msg.quote && (<div className={`p-2 rounded-lg text-xs border-l-[3px] flex flex-col gap-0.5 ${msg.role === 'user' ? 'bg-white/10 border-white/30 text-white/80' : 'bg-zinc-100 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-500 text-zinc-500 dark:text-zinc-400'}`}><span className="font-bold">{msg.quote.sender}</span><span className="line-clamp-3 break-words whitespace-pre-wrap">{msg.quote.content}</span></div>)}
+                  {msg.quote && (<div className={`p-2 rounded-lg text-xs border-l-[3px] flex flex-col gap-0.5 ${msg.role === 'user' ? 'bg-white/10 border-white/30 text-white/80' : 'bg-zinc-100 dark:bg-[#2c2c2e] border-zinc-300 dark:border-zinc-500 text-zinc-500 dark:text-zinc-400'}`}><span className="font-bold">{msg.quote.sender}</span><span className="line-clamp-3 break-words whitespace-pre-wrap">{msg.quote.content}</span></div>)}
                   <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                 </>
               )}
             </div>
           </div>
         );})}
-        {isAiLoading && <div className="flex justify-start"><div className="bg-white dark:bg-zinc-800 p-4 rounded-2xl flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 打字中...</div></div>}
+        {isAiLoading && <div className="flex justify-start"><div className="bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 打字中...</div></div>}
         {currentMessages.length === 0 && <div className="text-center text-zinc-400 dark:text-zinc-500 py-20">暂无消息，开始聊天吧</div>}
         <div ref={messagesEndRef} />
       </div>
@@ -830,7 +844,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Multi-select bottom toolbar */}
       {isMultiSelectMode && (
-        <div className="p-3 bg-white dark:bg-zinc-800 border-t border-zinc-100 dark:border-zinc-700 pb-8 flex items-center justify-around gap-2">
+        <div className="absolute bottom-6 left-4 right-4 p-3 bg-white/95 dark:bg-gray-900/95 rounded-[28px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] flex items-center justify-around gap-2 z-30 border border-black/5 dark:border-white/10 backdrop-blur-2xl">
           <button onClick={handleForwardClick} className="flex-1 flex flex-col items-center gap-1 py-2 text-zinc-700 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-zinc-100 active:scale-95 transition-all">
             <Forward size={20} />
             <span className="text-[10px] font-bold">转发</span>
@@ -843,7 +857,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
             <Trash2 size={20} />
             <span className="text-[10px] font-bold">删除</span>
           </button>
-          <button onClick={exitMultiSelectMode} className="flex-1 flex flex-col items-center gap-1 py-2 text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 active:scale-95 transition-all">
+          <button onClick={exitMultiSelectMode} className="flex-1 flex flex-col items-center gap-1 py-2 text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 active:scale-95 transition-all">
             <X size={20} />
             <span className="text-[10px] font-bold">取消</span>
           </button>
@@ -852,24 +866,123 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Normal Input Area (hidden in multi-select mode) */}
       {!isMultiSelectMode && (
-        <div className="p-4 bg-white dark:bg-zinc-800 border-t border-zinc-100 dark:border-zinc-700 pb-8 flex flex-col gap-3">
+        <div className="absolute bottom-6 left-4 right-4 p-3 bg-white/95 dark:bg-gray-900/95 rounded-[28px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] flex flex-col gap-3 z-30 border border-black/5 dark:border-white/10 backdrop-blur-2xl">
+          
+          {/* Function Panel */}
+          <AnimatePresence>
+            {showFunctionPanel && !currentChatSettings.isBlocked && (
+              <>
+                <motion.div 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  exit={{ opacity: 0 }} 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setShowFunctionPanel(false)} 
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute bottom-full left-0 right-0 mb-3 bg-white/95 dark:bg-gray-900/95 rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] p-4 z-20 border border-black/5 dark:border-white/10 backdrop-blur-2xl"
+                >
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      { icon: ImageIcon, label: '相册', log: '相册功能待实现' },
+                      { icon: Camera, label: '拍摄', log: '拍摄功能待实现' },
+                      { icon: Phone, label: '语音/视频', log: '语音/视频功能待实现' },
+                      { icon: MapPin, label: '位置', log: '位置功能待实现' },
+                      { icon: Wallet, label: '红包', log: '红包功能待实现' },
+                      { icon: Gift, label: '礼物', log: '礼物功能待实现' },
+                      { icon: Banknote, label: '转账', log: '转账功能待实现' },
+                      { icon: Contact, label: '发送名片', log: '发送名片功能待实现' },
+                    ].map((item, idx) => (
+                      <button 
+                        key={idx} 
+                        onClick={() => console.log(item.log)}
+                        className="flex flex-col items-center gap-2 group"
+                      >
+                        <div className="w-[52px] h-[52px] bg-gray-50 dark:bg-gray-800 rounded-[18px] flex items-center justify-center text-gray-600 dark:text-gray-200 group-active:scale-95 transition-transform">
+                          <item.icon size={24} strokeWidth={1.5} />
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+
           {currentChatSettings.isBlocked ? (
-            <div className="flex items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-700 rounded-2xl text-zinc-400 dark:text-zinc-500 text-sm border border-zinc-100 dark:border-zinc-600">您已被拉黑</div>
+            <div className="flex items-center justify-center p-4 bg-gray-100 dark:bg-gray-800 rounded-2xl text-zinc-400 dark:text-zinc-500 text-sm border border-neutral-200 dark:border-zinc-700">您已被拉黑</div>
           ) : (
             <>
               {quoteToReply && (
-                <div className="flex items-center justify-between px-3 py-2 bg-zinc-50 dark:bg-zinc-700 rounded-xl border border-zinc-100 dark:border-zinc-600 text-xs shadow-sm">
-                  <div className="flex flex-col flex-1 min-w-0 pr-2 border-l-2 border-zinc-300 dark:border-zinc-500 pl-2">
-                    <span className="font-bold text-zinc-600 dark:text-zinc-300">{quoteToReply.sender}</span>
-                    <span className="text-zinc-500 dark:text-zinc-400 truncate">{quoteToReply.content}</span>
+                <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 text-xs shadow-sm">
+                  <div className="flex flex-col flex-1 min-w-0 pr-2 border-l-2 border-gray-300 dark:border-gray-600 pl-2">
+                    <span className="font-bold text-gray-600 dark:text-gray-300">{quoteToReply.sender}</span>
+                    <span className="text-gray-500 dark:text-gray-400 truncate">{quoteToReply.content}</span>
                   </div>
-                  <button onClick={() => setQuoteToReply(null)} className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"><Delete size={14} /></button>
+                  <button onClick={() => setQuoteToReply(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"><Delete size={14} /></button>
                 </div>
               )}
-              <div className="flex items-end gap-2">
-                <textarea ref={chatInputRef} placeholder="输入消息..." className="flex-1 bg-zinc-50 dark:bg-zinc-700 p-3.5 rounded-2xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-zinc-200 dark:border-zinc-600 focus:border-zinc-400 dark:focus:border-zinc-400 transition-colors resize-none overflow-y-auto leading-tight" style={{ height: '48px', minHeight: '48px', maxHeight: '120px' }} value={chatInput} onChange={(e) => { setChatInput(e.target.value); e.target.style.height = '48px'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addUserMessage(); } }} />
-                <button onClick={() => generateAiReply()} disabled={isAiLoading || currentMessages.length === 0} className="w-12 h-12 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-2xl flex items-center justify-center disabled:opacity-50 hover:bg-zinc-200 dark:hover:bg-zinc-600 active:bg-zinc-300 active:scale-95 transition-all flex-shrink-0" title="生成AI回复"><Bot size={20} /></button>
-                <button onClick={addUserMessage} disabled={!chatInput.trim()} className="w-12 h-12 bg-[#1E1E1E] text-white rounded-2xl flex items-center justify-center disabled:opacity-50 active:bg-[#333333] hover:bg-[#2c2c2c] active:scale-95 transition-all dark:bg-zinc-300 dark:text-zinc-900 dark:hover:bg-zinc-400 dark:active:bg-zinc-500 flex-shrink-0 shadow-sm"><Send size={18} /></button>
+              <div className="flex items-end gap-1 sm:gap-2 relative z-20 w-full">
+                <button 
+                  onClick={() => setShowFunctionPanel(!showFunctionPanel)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0 self-end mb-1"
+                >
+                  <Plus size={24} strokeWidth={1.5} />
+                </button>
+                
+                <div className="flex-1 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-end relative overflow-hidden min-w-0">
+                  <textarea 
+                    rows={1}
+                    ref={chatInputRef} 
+                    placeholder="输入消息..." 
+                    className="flex-1 bg-transparent py-3 pl-3 pr-10 text-sm text-zinc-800 dark:text-zinc-100 outline-none resize-none overflow-hidden leading-tight w-full" 
+                    style={{ height: '40px', minHeight: '40px', maxHeight: '120px' }} 
+                    value={chatInput} 
+                    onChange={(e) => { setChatInput(e.target.value); e.target.style.height = '40px'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }} 
+                    onKeyDown={(e) => { 
+                      if (e.key === 'Enter' && !e.shiftKey) { 
+                        e.preventDefault(); 
+                        if (chatInput.trim()) { addUserMessage(); } else { generateAiReply(); }
+                      } 
+                    }} 
+                  />
+                  <button 
+                    onClick={() => console.log('语音输入待实现')}
+                    className="absolute right-1.5 bottom-1 w-8 h-8 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors z-10 bg-transparent"
+                  >
+                    <Mic size={20} strokeWidth={1.5} />
+                  </button>
+                </div>
+                
+                <button 
+                  onClick={() => console.log('表情包功能待实现')}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0 self-end mb-1"
+                >
+                  <Smile size={24} strokeWidth={1.5} />
+                </button>
+                
+                <button 
+                  onClick={() => {
+                    if (chatInput.trim()) {
+                      addUserMessage();
+                    } else {
+                      generateAiReply();
+                    }
+                  }} 
+                  disabled={isAiLoading && !chatInput.trim()} 
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 self-end mb-1 shadow-sm ${
+                    chatInput.trim() 
+                      ? 'bg-[#1E1E1E] text-white active:bg-[#333333] dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-white dark:active:bg-zinc-300'
+                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-95'
+                  }`}
+                  title={chatInput.trim() ? "发送" : "请求AI回复"}
+                >
+                  {chatInput.trim() ? <ArrowUp size={18} strokeWidth={2.5} /> : <Zap size={16} strokeWidth={2} />}
+                </button>
               </div>
             </>
           )}
@@ -1164,25 +1277,25 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
   const presetColors = ['#f4f4f5', '#fee2e2', '#fef3c7', '#dcfce7', '#e0e7ff', '#f3e8ff', '#fce7f3', '#18181b', '#3f3f46'];
 
   return (
-    <div className="absolute inset-0 z-[60] bg-white dark:bg-zinc-900 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-      <div className="px-6 py-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700 bg-white dark:bg-zinc-800">
-        <button onClick={onClose} className="text-zinc-400 dark:text-zinc-300 hover:text-zinc-600 dark:hover:text-zinc-100 transition-colors">← 返回</button>
+    <div className="absolute inset-0 z-[60] bg-neutral-50 dark:bg-black flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="px-6 py-4 flex items-center justify-between border-b border-neutral-200 dark:border-zinc-800 bg-neutral-50 dark:bg-[#1c1c1e]">
+        <button onClick={onClose} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">← 返回</button>
         <span className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100">{displayChatName} 设置</span>
-        <button onClick={handleSave} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm flex items-center gap-1"><Check size={14} />保存</button>
+        <button onClick={handleSave} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm flex items-center gap-1"><Check size={14} />保存</button>
       </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-zinc-100 dark:border-zinc-700">
-          <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${activeTab === 'general' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-100' : 'text-zinc-400 border-transparent'}`}>通用设置</button>
-          <button onClick={() => setActiveTab('memory')} className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${activeTab === 'memory' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-100' : 'text-zinc-400 border-transparent'}`}>记忆管理</button>
+        <div className="flex border-b border-neutral-200 dark:border-zinc-800 bg-neutral-50 dark:bg-[#1c1c1e]">
+          <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${activeTab === 'general' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-100' : 'text-zinc-400 dark:text-zinc-600 border-transparent'}`}>通用设置</button>
+          <button onClick={() => setActiveTab('memory')} className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${activeTab === 'memory' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-100' : 'text-zinc-400 dark:text-zinc-600 border-transparent'}`}>记忆管理</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 bg-neutral-50 dark:bg-black">
           {activeTab === 'general' && (
             <>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">备注名</label>
-                <input type="text" placeholder="设置备注名..." className="w-full bg-zinc-50 dark:bg-zinc-700 p-3 rounded-xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-transparent focus:border-zinc-300 dark:focus:border-zinc-500 transition-colors" value={remark} onChange={e => setRemark(e.target.value)} />
+                <input type="text" placeholder="设置备注名..." className="w-full bg-white dark:bg-[#1c1c1e] p-3 rounded-xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-neutral-200 focus:border-neutral-400 dark:focus:border-zinc-600 transition-colors" value={remark} onChange={e => setRemark(e.target.value)} />
               </div>
               
               <div className="flex flex-col gap-3 py-2">
@@ -1219,28 +1332,28 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
 
               <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800 mt-2">
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">置顶聊天</span>
-                <button onClick={() => setPinned(!pinned)} className={`w-10 h-5 rounded-full transition-colors relative border ${pinned ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${pinned ? 'left-[22px] bg-white dark:bg-zinc-800' : 'left-0.5 bg-white'}`} /></button>
+                <button onClick={() => setPinned(!pinned)} className={`w-10 h-5 rounded-full transition-colors relative border ${pinned ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${pinned ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
               </div>
               <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">拉黑</span>
-                <button onClick={() => setBlocked(!blocked)} className={`w-10 h-5 rounded-full transition-colors relative border ${blocked ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${blocked ? 'left-[22px] bg-white dark:bg-zinc-800' : 'left-0.5 bg-white'}`} /></button>
+                <button onClick={() => setBlocked(!blocked)} className={`w-10 h-5 rounded-full transition-colors relative border ${blocked ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${blocked ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
               </div>
-              <button onClick={handleClearChat} className="mt-4 py-3 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-4 border-none">清空聊天记录</button>
+              <button onClick={handleClearChat} className="mt-4 py-3 bg-red-50 dark:bg-[#1c1c1e] text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-4 border-none">清空聊天记录</button>
             </>
           )}
 
           {activeTab === 'memory' && (
             <>
-              <div className="bg-zinc-50 dark:bg-zinc-700/50 p-4 rounded-2xl mb-2 border border-zinc-100 dark:border-zinc-700">
+              <div className="bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl mb-2 border border-neutral-200 dark:border-zinc-800">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">自动总结记忆</span>
-                  <button onClick={() => setAutoSummary(!autoSummary)} className={`w-10 h-5 rounded-full transition-colors relative border ${autoSummary ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${autoSummary ? 'left-[22px] bg-white dark:bg-zinc-800' : 'left-0.5 bg-white'}`} /></button>
+                  <button onClick={() => setAutoSummary(!autoSummary)} className={`w-10 h-5 rounded-full transition-colors relative border ${autoSummary ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${autoSummary ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
                 </div>
                 {autoSummary && (
-                  <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-600">
+                  <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                     <label className="text-xs text-zinc-500 dark:text-zinc-400">每积累多少条新消息后自动总结：</label>
                     <div className="flex items-center gap-3">
-                      <input type="number" min="5" max="100" className="w-20 bg-white dark:bg-zinc-800 p-2 rounded-lg text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-zinc-200 dark:border-zinc-600 focus:border-zinc-400 dark:focus:border-zinc-400 transition-colors text-center" value={summaryThreshold} onChange={e => setSummaryThreshold(Number(e.target.value) || 30)} />
+                      <input type="number" min="5" max="100" className="w-20 bg-white dark:bg-black p-2 rounded-lg text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-zinc-200 dark:border-zinc-700 focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors text-center" value={summaryThreshold} onChange={e => setSummaryThreshold(Number(e.target.value) || 30)} />
                       <span className="text-xs text-zinc-500 dark:text-zinc-400">条消息</span>
                     </div>
                   </div>
@@ -1259,17 +1372,17 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                 <div className="py-12 text-center text-zinc-400 dark:text-zinc-500 text-xs">暂无记忆</div>
               ) : (
                 curMem.map(mem => (
-                  <div key={mem.id} className={`p-4 rounded-xl border transition-colors ${mem.isPinned ? 'bg-yellow-50/50 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-800' : 'bg-zinc-50 dark:bg-zinc-700 border-zinc-100 dark:border-zinc-600'}`}>
+                  <div key={mem.id} className={`p-4 rounded-xl border transition-colors ${mem.isPinned ? 'bg-yellow-50/50 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-800' : 'bg-white dark:bg-[#1c1c1e] border-neutral-200 dark:border-zinc-800'}`}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">{mem.title}</span>
                       <div className="flex gap-1">
-                        <button onClick={() => handleTogglePin(mem.id)} className={`p-1.5 rounded-full transition-colors ${mem.isPinned ? 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30' : 'text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-600'}`}><Bookmark size={12} fill={mem.isPinned ? 'currentColor' : 'none'} /></button>
-                        <button onClick={() => setEditingMemory({ id: mem.id, title: mem.title, content: mem.content })} className="p-1.5 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-full transition-colors"><Pencil size={12} /></button>
+                        <button onClick={() => handleTogglePin(mem.id)} className={`p-1.5 rounded-full transition-colors ${mem.isPinned ? 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30' : 'text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}><Bookmark size={12} fill={mem.isPinned ? 'currentColor' : 'none'} /></button>
+                        <button onClick={() => setEditingMemory({ id: mem.id, title: mem.title, content: mem.content })} className="p-1.5 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-full transition-colors"><Pencil size={12} /></button>
                         <button onClick={() => handleDeleteMemory(mem.id)} className="p-1.5 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-full transition-colors"><Delete size={12} /></button>
                       </div>
                     </div>
                     <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed line-clamp-3">{mem.content}</p>
-                    {mem.keywords && mem.keywords.length > 0 && <div className="flex gap-1 mt-2 flex-wrap">{mem.keywords.map((k: string, ki: number) => <span key={ki} className="px-2 py-0.5 bg-zinc-200/50 dark:bg-zinc-600/50 text-zinc-500 dark:text-zinc-400 rounded-full text-[10px]">{k}</span>)}</div>}
+                    {mem.keywords && mem.keywords.length > 0 && <div className="flex gap-1 mt-2 flex-wrap">{mem.keywords.map((k: string, ki: number) => <span key={ki} className="px-2 py-0.5 bg-zinc-200/50 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 rounded-full text-[10px]">{k}</span>)}</div>}
                   </div>
                 ))
               )}
