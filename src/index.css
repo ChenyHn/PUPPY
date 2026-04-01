@@ -20,3 +20,16 @@
   50% { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
   100% { transform: translateY(0px); box-shadow: 0 0 0 0 rgba(0,0,0,0.05); }
 }
+
+/* NPC Game - Top card with gradient transparency at bottom */
+.top-card {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 75%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0%, black 75%, transparent 100%);
+}
+
+.dark .top-card {
+  background: rgba(0, 0, 0, 0.4);
+}

@@ -74,11 +74,12 @@ import { FavoritesScreen } from './components/FavoritesScreen';
 import { AddFriendModal } from './components/AddFriendModal';
 import { ProfileEditorModal, type CurrentUser } from './components/ProfileEditorModal';
 import { WalletActionsModal, type WalletData } from './components/WalletActionsModal';
+import { HeartbeatNPC } from './screens/HeartbeatNPC';
 
 import type { ChatMessage } from './types';
 
 // --- Types ---
-type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-favorites';
+type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-favorites' | 'app-heartbeat-npc';
 
 interface FavoriteItem {
   id: string;
@@ -296,6 +297,7 @@ const DEFAULT_HOME_APPS: HomeAppItem[] = [
   { id: 'world', icon: BookOpen, label: '世界书', screen: 'app-world' },
   { id: 'settings', icon: Settings, label: '设置', screen: 'app-settings' },
   { id: 'appearance', icon: Palette, label: '外观', screen: 'app-appearance' },
+  { id: 'heartbeat-npc', icon: Heart, label: '心动NPC', screen: 'app-heartbeat-npc' },
 ];
 
 const DEFAULT_DOCK_APPS: HomeAppItem[] = [
@@ -1865,6 +1867,14 @@ export default function App() {
             }
           }}
         />
+
+        {/* Heartbeat NPC Screen */}
+        {screen === 'app-heartbeat-npc' && (
+          <HeartbeatNPC 
+            apiConfig={apiConfig}
+            setScreen={setScreen}
+          />
+        )}
 
         {/* Wallet Actions Modal */}
         <WalletActionsModal
