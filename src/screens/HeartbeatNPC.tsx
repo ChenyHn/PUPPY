@@ -7,6 +7,7 @@ import { npcGameService } from '../utils/npcGameService';
 import { NPCSetupModal } from '../components/NPCSetupModal';
 import { NPCEvent } from '../components/NPCEvent';
 import { NPCLoadSaveModal } from '../components/NPCLoadSaveModal';
+import { NPCSaveNameModal } from '../components/NPCSaveNameModal';
 
 interface HeartbeatNPCProps {
   apiConfig: ApiConfig;
@@ -44,8 +45,10 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
   // 存档相关状态
   const [showLoadModal, setShowLoadModal] = useState(false);
-  const [showConfirmSaveModal, setShowConfirmSaveModal] = useState(false);
+  const [showSaveNameModal, setShowSaveNameModal] = useState(false);
   const [showSaveToast, setShowSaveToast] = useState(false);
+  const [currentSaveSlotId, setCurrentSaveSlotId] = useState<string | null>(null);
+  const [currentSaveName, setCurrentSaveName] = useState<string>('');
 
   const eventContainerRef = useRef<HTMLDivElement>(null);
   const quickActionsRef = useRef<HTMLDivElement>(null);
@@ -83,13 +86,13 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showQuickActions]);
 
-  // 每次新事件生成后，异步加载 AI 预设选项
-  const loadPresetOptions = useCallback(async (state: NPCGameState) => {
+  // 每次新事件生成后，异步加载 AI 预设选项（传入 recentEvents 以保持上下文）
+  const loadPresetOptions = useCallback(async (state: NPCGameState, currentEventList?: GameEvent[]) => {
     if (!state || state.isGameOver) return;
     setIsLoadingPresets(true);
     try {
       const eventType = state.currentEvent?.type === 'daily' ? 'daily' : 'interaction';
-      const options = await npcGameService.generatePresetOptions(apiConfig, state, eventType);
+      const options = await npcGameService.generatePresetOptions(apiConfig, state, eventType, currentEventList);
       setPresetOptions(options);
     } catch (e) {
       console.error('Failed to load preset options:', e);
@@ -166,14 +169,27 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
   // 加载存档
   const handleLoadGame = (saveId: string) => {
+    const saves = npcGameService.getAllSaves();
+    const targetSave = saves.find(s => s.id === saveId);
     const loadedState = npcGameService.loadFromSlot(saveId);
     if (loadedState) {
       setGameState(loadedState);
+      setCurrentSaveSlotId(saveId);
+      setCurrentSaveName(targetSave?.name || '');
       setShowLoadModal(false);
-      if (loadedState.currentEvent) {
+      if (loadedState.events && loadedState.events.length > 0) {
+        // 新存档：恢复完整事件列表
+        const restoredEvents = loadedState.events;
+        setCurrentEvent(restoredEvents[restoredEvents.length - 1]);
+        setEventList(restoredEvents);
+        loadPresetOptions(loadedState, restoredEvents);
+      } else if (loadedState.currentEvent) {
+        // 旧存档兼容：只有单个 currentEvent，没有 events 数组
+        console.warn('旧存档格式：仅包含最后一个事件，历史记录可能不完整。');
         setCurrentEvent(loadedState.currentEvent);
-        setEventList([loadedState.currentEvent]);
-        loadPresetOptions(loadedState);
+        const loadedEventList = [loadedState.currentEvent];
+        setEventList(loadedEventList);
+        loadPresetOptions(loadedState, loadedEventList);
       } else if (!loadedState.isGameOver) {
         generateInitialEvent(loadedState);
       }
@@ -191,10 +207,19 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     if (saved && !saved.isGameOver) {
       setGameState(saved);
       setShowLoadModal(false);
-      if (saved.currentEvent) {
+      if (saved.events && saved.events.length > 0) {
+        // 新存档：恢复完整事件列表
+        const restoredEvents = saved.events;
+        setCurrentEvent(restoredEvents[restoredEvents.length - 1]);
+        setEventList(restoredEvents);
+        loadPresetOptions(saved, restoredEvents);
+      } else if (saved.currentEvent) {
+        // 旧存档兼容：只有单个 currentEvent
+        console.warn('旧存档格式：仅包含最后一个事件，历史记录可能不完整。');
         setCurrentEvent(saved.currentEvent);
-        setEventList([saved.currentEvent]);
-        loadPresetOptions(saved);
+        const resumedEventList = [saved.currentEvent];
+        setEventList(resumedEventList);
+        loadPresetOptions(saved, resumedEventList);
       } else {
         generateInitialEvent(saved);
       }
@@ -204,12 +229,28 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     }
   };
 
-  const handleSaveGame = () => {
-    if (gameState) {
-      const stateToSave = { ...gameState, currentEvent };
-      npcGameService.saveToSlot(stateToSave);
+  const handleOverwriteSave = (name: string) => {
+    if (gameState && currentSaveSlotId) {
+      const stateToSave = { ...gameState, currentEvent, events: eventList };
+      npcGameService.overwriteSaveSlot(currentSaveSlotId, stateToSave, name);
       npcGameService.saveGame(stateToSave);
-      setShowConfirmSaveModal(false);
+      setCurrentSaveName(name);
+      setShowSaveNameModal(false);
+      setShowSaveToast(true);
+      setTimeout(() => setShowSaveToast(false), 2000);
+    }
+  };
+
+  const handleSaveAsNew = (name: string) => {
+    if (gameState) {
+      const stateToSave = { ...gameState, currentEvent, events: eventList };
+      const newId = npcGameService.saveAsNewSlot(stateToSave, name);
+      npcGameService.saveGame(stateToSave);
+      if (newId) {
+        setCurrentSaveSlotId(newId);
+        setCurrentSaveName(name);
+      }
+      setShowSaveNameModal(false);
       setShowSaveToast(true);
       setTimeout(() => setShowSaveToast(false), 2000);
     }
@@ -220,14 +261,16 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     setIsGenerating(true);
     setError('');
     try {
-      const event = await npcGameService.generateNextEvent(apiConfig, state);
+      // 初始事件没有历史，传空数组
+      const event = await npcGameService.generateNextEvent(apiConfig, state, undefined, undefined, undefined, []);
       setCurrentEvent(event);
-      setEventList(prev => [...prev, event]);
-      const newState = { ...state, currentEvent: event };
+      const newEventList = [event];
+      setEventList(newEventList);
+      const newState = { ...state, currentEvent: event, events: newEventList };
       setGameState(newState);
       npcGameService.saveGame(newState);
-      // 生成预设选项
-      loadPresetOptions(newState);
+      // 生成预设选项，传入当前事件列表
+      loadPresetOptions(newState, newEventList);
     } catch (e: any) {
       setError(e.message || '生成剧情失败，请重试');
     } finally {
@@ -238,7 +281,9 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   const handleGameStart = (newState: NPCGameState) => {
     setGameState(newState);
     setShowSetup(false);
-    npcGameService.saveToSlot(newState);
+    // 新游戏不自动保存到存档，用户可手动保存
+    setCurrentSaveSlotId(null);
+    setCurrentSaveName('');
     generateInitialEvent(newState);
   };
 
@@ -271,9 +316,17 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       newState.user.affection = Math.min(100, Math.max(0, newState.user.affection + customAffectionDelta));
     }
 
+    // 存储更丰富的事件历史（包含实际对话内容，供 AI 参考）
     if (currentEvent) {
-      const historyText = `[${currentEvent.type}] 玩家自定义行动：${customInput || '(无输入)'}`;
+      const charLine = currentEvent.charAction ? ` | Char说：${currentEvent.charAction.substring(0, 30)}` : '';
+      const userLine = customInput ? ` | User做/说：${customInput.substring(0, 30)}` : '';
+      const narrationLine = currentEvent.description ? ` | 旁白：${currentEvent.description.substring(0, 40)}` : '';
+      const historyText = `[${currentEvent.type}]${narrationLine}${userLine}${charLine}`;
       newState.eventHistory.push(historyText);
+      // 限制历史记录长度，避免过大
+      if (newState.eventHistory.length > 20) {
+        newState.eventHistory = newState.eventHistory.slice(-15);
+      }
       newState.lastEventType = currentEvent.type;
     }
 
@@ -283,11 +336,26 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     const isOver = await checkGameOver(newState);
     if (isOver) return;
 
+    // 立即显示用户的发言/行动（临时事件），让用户看到自己的输入
+    let currentList = [...eventList];
+    if (customInput) {
+      const userBubbleEvent: GameEvent = {
+        id: `user_${Date.now()}`,
+        type: currentEvent?.type || 'daily',
+        description: '',
+        userDialogue: customInput,
+      };
+      currentList = [...currentList, userBubbleEvent];
+      setEventList(currentList);
+    }
+
     setIsGenerating(true);
     setError('');
     setPresetOptions([]);
     try {
-      const nextEvent = await npcGameService.generateNextEvent(apiConfig, newState, undefined, undefined, customInput);
+      // 传入当前事件列表（不含临时用户气泡）作为对话历史
+      const eventsForHistory = eventList; // 使用添加用户气泡前的列表
+      const nextEvent = await npcGameService.generateNextEvent(apiConfig, newState, undefined, undefined, customInput, eventsForHistory);
 
       if (nextEvent.shouldReload && customAffectionDelta !== undefined && customAffectionDelta < 0) {
         // 触发读档，回滚之前的好感度扣除
@@ -297,7 +365,6 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
       if (customInput && nextEvent.result) {
         const resultDelta = nextEvent.result;
-        newState.user.affection = Math.min(100, Math.max(0, newState.user.affection + (resultDelta.affectionDelta || 0)));
         newState.user.darkening = Math.min(100, Math.max(0, newState.user.darkening + (resultDelta.darkeningDelta || 0)));
         if (resultDelta.customStatsDelta && newState.user.customStats) {
           Object.keys(resultDelta.customStatsDelta).forEach(key => {
@@ -309,14 +376,34 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       }
 
       newState.currentEvent = nextEvent;
+      
+      // 构建最新的完整事件列表并同步保存到 state
+      const updatedList = eventList.filter(e => !e.id.startsWith('user_'));
+      updatedList.push(nextEvent);
+      newState.events = updatedList;
+      
       setGameState({ ...newState });
       npcGameService.saveGame(newState);
       setCurrentEvent(nextEvent);
-      setEventList(prev => [...prev, nextEvent]);
+      
+      // 如果之前添加了用户气泡，替换掉临时气泡并加上完整的 AI 事件
+      if (customInput) {
+        // 移除临时用户气泡（最后一个以 user_ 开头的），替换为完整事件
+        setEventList(prev => {
+          const withoutBubble = prev.filter(e => !e.id.startsWith('user_'));
+          return [...withoutBubble, nextEvent];
+        });
+      } else {
+        setEventList(prev => [...prev, nextEvent]);
+      }
 
-      // 生成新的预设选项
-      loadPresetOptions(newState);
+      // 生成新的预设选项，传入包含新事件的列表
+      loadPresetOptions(newState, updatedList);
     } catch (e: any) {
+      // 如果出错，移除临时用户气泡
+      if (customInput) {
+        setEventList(prev => prev.filter(e => !e.id.startsWith('user_')));
+      }
       setError(e.message || '生成下一步失败');
     } finally {
       setIsGenerating(false);
@@ -358,7 +445,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
   // 好感度控件增减
   const adjustAffectionDelta = (amount: number) => {
-    setAffectionDelta(prev => Math.max(-10, Math.min(10, prev + amount)));
+    setAffectionDelta(prev => Math.max(-5, Math.min(5, prev + amount)));
   };
 
   // 显示存档选择模态框
@@ -387,9 +474,8 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
   // 构建所有数值列表
   const allStats: { name: string; value: number; color: string }[] = [
-    { name: '好感', value: gameState.user.affection, color: gameState.user.affection > 0 ? 'text-pink-400' : gameState.user.affection < 0 ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-700 dark:text-zinc-200' },
-    { name: '黑化', value: gameState.user.darkening, color: 'text-zinc-700 dark:text-zinc-200' },
-    ...(gameState.statsSchema?.map(stat => ({
+    { name: '好感度', value: gameState.user.affection, color: gameState.user.affection > 0 ? 'text-pink-400' : gameState.user.affection < 0 ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-700 dark:text-zinc-200' },
+    ...(gameState.statsSchema?.filter(stat => !stat.name.includes('好感')).map(stat => ({
       name: stat.name,
       value: gameState.user.customStats?.[stat.name] ?? stat.initialValue,
       color: 'text-zinc-700 dark:text-zinc-200',
@@ -462,7 +548,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
                 )}
                 {!showGameOver && (
                   <button
-                    onClick={() => setShowConfirmSaveModal(true)}
+                    onClick={() => setShowSaveNameModal(true)}
                     className="p-1 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 hover:bg-white/30 dark:hover:bg-white/10 transition-colors"
                     title="保存进度"
                   >
@@ -536,40 +622,17 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         )}
       </AnimatePresence>
 
-      {/* ====== 确认保存弹窗 ====== */}
+      {/* ====== 保存命名模态框 ====== */}
       <AnimatePresence>
-        {showConfirmSaveModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl rounded-2xl p-6 shadow-xl max-w-xs w-full flex flex-col gap-6"
-            >
-              <div className="text-center flex flex-col gap-2">
-                <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">保存进度</h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">要将当前游戏状态记录到存档中吗？</p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowConfirmSaveModal(false)}
-                  className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-medium active:scale-95 transition-all"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleSaveGame}
-                  className="flex-1 py-3 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-xl font-bold active:scale-95 transition-all"
-                >
-                  确认保存
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
+        {showSaveNameModal && (
+          <NPCSaveNameModal
+            onClose={() => setShowSaveNameModal(false)}
+            onOverwrite={handleOverwriteSave}
+            onSaveAsNew={handleSaveAsNew}
+            defaultName={currentSaveName || npcGameService.getNextAutoSaveName()}
+            canOverwrite={!!currentSaveSlotId}
+            currentSaveSlotId={currentSaveSlotId}
+          />
         )}
       </AnimatePresence>
 
@@ -695,7 +758,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
                 type="text"
                 value={customInputText}
                 onChange={(e) => setCustomInputText(e.target.value)}
-                placeholder={currentEvent?.type === 'daily' ? "推进剧情..." : "输入自定义行动..."}
+                placeholder={currentEvent?.type === 'daily' ? "我(NPC)的行动..." : "我(NPC)的反应..."}
                 disabled={isGenerating || !currentEvent}
                 className="flex-1 min-w-0 bg-transparent rounded-2xl px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border-none disabled:opacity-40"
               />
@@ -706,7 +769,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
                   <button
                     type="button"
                     onClick={() => adjustAffectionDelta(-1)}
-                    disabled={affectionDelta <= -10 || isGenerating || !currentEvent}
+                    disabled={affectionDelta <= -5 || isGenerating || !currentEvent}
                     className="p-1 rounded-xl text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 disabled:opacity-30 transition-colors active:scale-90"
                   >
                     <Minus size={12} />
@@ -721,7 +784,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
                   <button
                     type="button"
                     onClick={() => adjustAffectionDelta(1)}
-                    disabled={affectionDelta >= 10 || isGenerating || !currentEvent}
+                    disabled={affectionDelta >= 5 || isGenerating || !currentEvent}
                     className="p-1 rounded-xl text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 disabled:opacity-30 transition-colors active:scale-90"
                   >
                     <Plus size={12} />

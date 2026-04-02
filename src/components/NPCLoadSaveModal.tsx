@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Trash2, Clock, Map, Heart } from 'lucide-react';
+import { X, Trash2, Clock, Map, Heart, FileText } from 'lucide-react';
 import { NPCGameSaveSlot } from '../utils/npcGameService';
 import { npcGameService } from '../utils/npcGameService';
 
@@ -13,6 +13,7 @@ interface NPCLoadSaveModalProps {
 
 export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurrent }: NPCLoadSaveModalProps) {
   const [saves, setSaves] = useState<NPCGameSaveSlot[]>([]);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSaves();
@@ -24,14 +25,23 @@ export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurre
 
   const handleDeleteSave = (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); // 防止触发整行点击
-    if (window.confirm('确定要删除这个存档吗？')) {
-      npcGameService.deleteSaveSlot(id);
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirmId) {
+      npcGameService.deleteSaveSlot(deleteConfirmId);
       loadSaves();
+      setDeleteConfirmId(null);
       // 如果删除后没有存档了，自动进入新游戏
       if (npcGameService.getAllSaves().length === 0) {
         onNewGame();
       }
     }
+  };
+
+  const cancelDelete = () => {
+    setDeleteConfirmId(null);
   };
 
   const formatDate = (timestamp: number) => {
@@ -45,22 +55,22 @@ export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurre
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex flex-col bg-white/30 dark:bg-black/40 backdrop-blur-xl">
+    <div className="absolute inset-0 z-50 flex flex-col bg-gray-100 dark:bg-black">
       {/* Header */}
-      <div className="relative flex items-center justify-center p-4 border-b border-zinc-200/50 dark:border-zinc-800/50 bg-white/50 dark:bg-zinc-900/50">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">选择存档</h2>
+      <div className="relative flex items-center justify-center p-4">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">选择存档</h2>
         <button
           onClick={onClose}
-          className="absolute right-4 p-2 rounded-full bg-zinc-100/80 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+          className="absolute right-4 p-2 rounded-full bg-gray-200/50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
         >
           <X size={20} />
         </button>
       </div>
 
       {/* Save List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 pb-28 flex flex-col gap-3">
         {saves.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-zinc-500 dark:text-zinc-400">
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-600">
             <Clock size={48} className="mb-4 opacity-20" />
             <p>暂无存档记录</p>
           </div>
@@ -70,34 +80,48 @@ export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurre
               key={save.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative group bg-white/70 dark:bg-zinc-800/70 backdrop-blur-md rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-white dark:hover:bg-zinc-800 transition-colors shadow-sm"
+              className="relative group bg-white dark:bg-gray-800 rounded-sm p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-t border-b border-dashed border-gray-300 dark:border-gray-600"
               onClick={() => onLoadGame(save.id)}
             >
-              <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+              {/* 左侧半圆缺口 */}
+              <div className="absolute top-1/2 -left-[6px] -translate-y-1/2 w-[12px] h-[24px] bg-gray-100 dark:bg-black rounded-r-full z-10 pointer-events-none" />
+              {/* 右侧半圆缺口 */}
+              <div className="absolute top-1/2 -right-[6px] -translate-y-1/2 w-[12px] h-[24px] bg-gray-100 dark:bg-black rounded-l-full z-10 pointer-events-none" />
+              {/* 左上角打孔 */}
+              <div className="absolute top-[12px] left-[12px] w-[10px] h-[10px] bg-gray-100 dark:bg-black rounded-full z-10 pointer-events-none" />
+
+              <div className="flex-1 min-w-0 flex flex-col gap-1.5 relative z-20 pl-4">
+                {/* 存档名称 */}
+                <div className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
+                  <FileText size={14} className="text-gray-400 dark:text-gray-500 shrink-0" />
+                  <span className="truncate">{save.name || '未命名存档'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                   <Clock size={12} />
                   <span>{formatDate(save.timestamp)}</span>
                 </div>
-                <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                  <Map size={14} className="text-zinc-400" />
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 truncate">
+                  <Map size={12} className="text-gray-400 dark:text-gray-500" />
                   <span className="truncate">{save.state.background || '未知世界'}</span>
                 </div>
-                <div className="flex items-center gap-4 mt-1">
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded-md">
-                    <Heart size={12} className={save.state.user.affection > 50 ? 'text-rose-500' : 'text-zinc-400'} />
+                <div className="flex items-center gap-3 mt-1">
+                  <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/50 px-2 py-1 rounded">
+                    <Heart size={12} className={save.state.user.affection > 50 ? 'text-rose-500' : 'text-gray-400'} />
                     <span>好感度: {save.state.user.affection}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded-md">
-                    <span className="w-3 h-3 rounded-full bg-purple-500/20 flex items-center justify-center text-[8px] font-bold text-purple-700 dark:text-purple-300">黑</span>
-                    <span>黑化值: {save.state.user.darkening}</span>
-                  </div>
+                  {save.state.statsSchema && save.state.statsSchema.filter(s => !s.name.includes('好感')).length > 0 && (
+                    <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/50 px-2 py-1 rounded">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500/20 flex items-center justify-center text-[8px] font-bold text-blue-700 dark:text-blue-300">特</span>
+                      <span>{save.state.statsSchema.filter(s => !s.name.includes('好感'))[0].name}: {save.state.user.customStats?.[save.state.statsSchema.filter(s => !s.name.includes('好感'))[0].name] ?? 0}</span>
+                    </div>
+                  )}
                 </div>
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 relative z-20">
                 <button
                   onClick={(e) => handleDeleteSave(e, save.id)}
-                  className="p-2.5 rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                  className="p-2.5 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
                   title="删除存档"
                 >
                   <Trash2 size={18} />
@@ -108,23 +132,57 @@ export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurre
         )}
       </div>
 
-      {/* Footer */}
-      <div className="p-4 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl border-t border-zinc-200/50 dark:border-zinc-800/50 pb-safe flex flex-col gap-3">
-        {onResumeCurrent && (
+      {/* Floating Footer */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 pb-safe pointer-events-none">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-md rounded-2xl p-2 flex flex-row justify-around gap-3 pointer-events-auto">
+          {onResumeCurrent && (
+            <button
+              onClick={onResumeCurrent}
+              className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl font-bold active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <span>继续游戏</span>
+            </button>
+          )}
           <button
-            onClick={onResumeCurrent}
-            className="w-full py-3.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-2xl font-bold active:scale-95 transition-all shadow-md flex items-center justify-center gap-2"
+            onClick={onNewGame}
+            className="flex-1 py-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl font-bold active:scale-95 transition-all flex items-center justify-center gap-2"
           >
-            <span>继续当前游戏</span>
+            <span>开始新游戏</span>
           </button>
-        )}
-        <button
-          onClick={onNewGame}
-          className={`w-full py-3.5 rounded-2xl font-bold active:scale-95 transition-all flex items-center justify-center gap-2 ${onResumeCurrent ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300' : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-md'}`}
-        >
-          <span>开始新游戏</span>
-        </button>
+        </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmId && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm">
+            <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-[280px] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center shadow-none"
+          >
+            <div className="w-12 h-12 bg-red-100 dark:bg-red-500/20 rounded-full flex items-center justify-center mb-4 text-red-500">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">删除存档</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">确定要删除此存档吗？此操作不可撤销。</p>
+            
+            <div className="flex w-full gap-3">
+              <button
+                onClick={cancelDelete}
+                className="flex-1 py-3 rounded-xl bg-gray-200 dark:bg-zinc-800 text-gray-700 dark:text-gray-300 font-bold active:scale-95 transition-all"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold active:scale-95 transition-all"
+              >
+                确认
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

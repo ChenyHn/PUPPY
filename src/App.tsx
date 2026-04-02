@@ -962,6 +962,9 @@ export default function App() {
 
   const [showFavoritesScreen, setShowFavoritesScreen] = useState(false);
 
+  // Determine if we're past the auth flow
+  const isPostAuth = !['splash', 'lock', 'password-setup', 'password-unlock'].includes(screen);
+
 
 
 
@@ -1142,14 +1145,12 @@ export default function App() {
               </GlassCard>
             </motion.div>
           )}
+        </AnimatePresence>
 
-          {/* 5. Home Screen */}
-          {screen === 'home' && (
-            <motion.div 
-              key="home"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-zinc-900'}`}
+        {/* ===== Layer 2: Home Screen (always rendered when past auth) ===== */}
+        {isPostAuth && (
+          <div 
+            className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-zinc-900'}`}
               onContextMenu={(e) => e.preventDefault()}
             >
               {wallpaper ? (
@@ -1317,11 +1318,13 @@ export default function App() {
                 </AnimatePresence>
 
                 {/* Home Indicator */}
-                <div className="w-32 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full mx-auto my-4" />
+              <div className="w-32 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full mx-auto my-4" />
               </div>
-            </motion.div>
-          )}
+          </div>
+        )}
 
+        {/* ===== Layer 3: Overlay screens (slide on top of home) ===== */}
+        <AnimatePresence>
           {/* 6. Chat App (Integrated Moments & Wallet) */}
           {screen === 'app-chat' && (
             <motion.div 
@@ -1784,11 +1787,17 @@ export default function App() {
             />
           )}
 
-        </AnimatePresence>
-
-        {/* 8. AI Chat Screen */}
-        {screen === 'ai-chat' && (
-          <AiChatScreen
+          {/* 8. AI Chat Screen */}
+          {screen === 'ai-chat' && (
+            <motion.div
+              key="ai-chat"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+              className="absolute inset-0 z-50"
+            >
+              <AiChatScreen
             activeChatContact={activeChatContact}
             setActiveChatContact={setActiveChatContact}
             chatHistories={chatHistories}
@@ -1804,9 +1813,28 @@ export default function App() {
             setScreen={setScreen}
             favorites={favorites}
             setFavorites={setFavorites}
-            phonePersonas={phonePersonas}
-          />
-        )}
+                phonePersonas={phonePersonas}
+              />
+            </motion.div>
+          )}
+
+          {/* 9. Heartbeat NPC Screen */}
+          {screen === 'app-heartbeat-npc' && (
+            <motion.div
+              key="app-heartbeat-npc"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+              className="absolute inset-0 z-50"
+            >
+              <HeartbeatNPC 
+                apiConfig={apiConfig}
+                setScreen={setScreen}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Add Friend Modal */}
         <AddFriendModal
@@ -1867,14 +1895,6 @@ export default function App() {
             }
           }}
         />
-
-        {/* Heartbeat NPC Screen */}
-        {screen === 'app-heartbeat-npc' && (
-          <HeartbeatNPC 
-            apiConfig={apiConfig}
-            setScreen={setScreen}
-          />
-        )}
 
         {/* Wallet Actions Modal */}
         <WalletActionsModal

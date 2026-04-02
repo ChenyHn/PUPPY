@@ -171,7 +171,7 @@ export function NPCSetupModal({ onClose, onGameStart, apiConfig }: NPCSetupModal
             {/* 标题栏与关闭按钮 */}
             <div className="flex items-center justify-between mb-1">
               <span className="text-lg font-bold text-gray-800 dark:text-gray-100 tracking-wide">
-                新游戏设定
+                设定你的角色 (被攻略的NPC)
               </span>
               <button
                 onClick={onClose}
@@ -227,7 +227,7 @@ export function NPCSetupModal({ onClose, onGameStart, apiConfig }: NPCSetupModal
 
             {/* 你的名字 */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-gray-600 dark:text-gray-400">你的名字 (NPC)</label>
+              <label className="text-sm font-medium text-gray-600 dark:text-gray-400">你的名字 (NPC角色)</label>
               <input
                 type="text"
                 placeholder="例如：路人甲、李雷..."
@@ -260,7 +260,7 @@ export function NPCSetupModal({ onClose, onGameStart, apiConfig }: NPCSetupModal
                     className="w-full h-24 bg-white/60 dark:bg-gray-700/60 rounded-lg px-3 py-2.5 text-sm text-gray-800 dark:text-gray-100 outline-none transition-colors resize-none border border-gray-200 dark:border-gray-600"
                     disabled={isGenerating}
                   />
-                  <label className="text-sm font-medium text-gray-600 dark:text-gray-400">你的人设 (可选)</label>
+                  <label className="text-sm font-medium text-gray-600 dark:text-gray-400">你的NPC人设 (可选)</label>
                   <textarea
                     placeholder="例如：性格胆小、普通职员、相貌平平..."
                     value={userPersona}

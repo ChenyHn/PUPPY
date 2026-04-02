@@ -6,6 +6,7 @@ const SAVES_KEY = 'npc_game_saves';
 
 export interface NPCGameSaveSlot {
   id: string;
+  name: string;
   timestamp: number;
   state: NPCGameState;
 }
@@ -55,20 +56,68 @@ export const npcGameService = {
     }
   },
 
+  /** 生成下一个自动存档名称，如"存档1""存档2" */
+  getNextAutoSaveName(): string {
+    const saves = this.getAllSaves();
+    let maxNum = 0;
+    for (const save of saves) {
+      const match = save.name?.match(/^存档(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+    return `存档${maxNum + 1}`;
+  },
+
+  /** 旧的 saveToSlot，保持向后兼容（自动命名） */
   saveToSlot(state: NPCGameState) {
+    const name = this.getNextAutoSaveName();
+    this.saveAsNewSlot(state, name);
+  },
+
+  /** 另存为新存档 */
+  saveAsNewSlot(state: NPCGameState, name: string): string {
     try {
       const saves = this.getAllSaves();
+      const finalName = name.trim() || this.getNextAutoSaveName();
+      const newId = Date.now().toString();
       const newSave: NPCGameSaveSlot = {
-        id: Date.now().toString(),
+        id: newId,
+        name: finalName,
         timestamp: Date.now(),
         state: JSON.parse(JSON.stringify(state)), // 深拷贝
       };
       saves.unshift(newSave);
-      // 限制最多 5 个存档
-      if (saves.length > 5) saves.length = 5;
+      // 限制最多 10 个存档
+      if (saves.length > 10) saves.length = 10;
       localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+      return newId;
     } catch (e) {
-      console.error('Failed to save NPC game to slot:', e);
+      console.error('Failed to save NPC game to new slot:', e);
+      return '';
+    }
+  },
+
+  /** 覆盖已有存档（保留原 ID，更新名称、时间和状态） */
+  overwriteSaveSlot(id: string, state: NPCGameState, name: string) {
+    try {
+      const saves = this.getAllSaves();
+      const idx = saves.findIndex(s => s.id === id);
+      if (idx !== -1) {
+        saves[idx] = {
+          ...saves[idx],
+          name: name.trim() || saves[idx].name,
+          timestamp: Date.now(),
+          state: JSON.parse(JSON.stringify(state)),
+        };
+        localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+      } else {
+        // 如果找不到对应存档，则另存为新存档
+        this.saveAsNewSlot(state, name);
+      }
+    } catch (e) {
+      console.error('Failed to overwrite NPC game save slot:', e);
     }
   },
 
@@ -92,7 +141,7 @@ export const npcGameService = {
     }
   },
 
-  async callAI(apiConfig: ApiConfig, prompt: string, isJson: boolean = true): Promise<any> {
+  async callAI(apiConfig: ApiConfig, prompt: string, isJson: boolean = true, temperature: number = 0.7): Promise<any> {
     if (!apiConfig.baseUrl || !apiConfig.apiKey) {
       throw new Error('API not configured');
     }
@@ -106,7 +155,7 @@ export const npcGameService = {
     const body: any = {
       model: apiConfig.selectedModel || 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
+      temperature,
       max_tokens: 2000,
       stream: false,
     };
@@ -181,25 +230,25 @@ export const npcGameService = {
     请基于上述基础信息，结合背景生成更详细的攻略者设定。`;
     }
 
-    const prompt = `你是一个恋爱游戏设定生成器。在游戏中，AI角色是“攻略者（玩家）”，而用户扮演的是“路人NPC”。
-根据用户提供的背景、人设和主角名字，生成攻略者的设定，并设计符合该背景的自定义数值（如信任度、警惕值等）。
+    const prompt = `你是一个恋爱游戏设定生成器。在游戏中，AI角色是“攻略者（玩家扮演的角色Char）”，而用户扮演的是“被攻略的NPC（User）”。
+根据用户提供的背景、人设和NPC名字，生成攻略者(Char)的设定，并设计符合该背景的自定义剧本数值（如信任度、警惕值等，用于衡量User的状态）。
     背景: "${background}"
-    用户扮演的NPC名字: "${userName}"
-    用户扮演的NPC性别: "${gender}"
-    NPC人设/身份: "${userPersona || '普通路人'}"${charContext}
+    用户扮演的NPC(User)名字: "${userName}"
+    用户扮演的NPC(User)性别: "${gender}"
+    NPC(User)人设/身份: "${userPersona || '普通路人'}"${charContext}
     
     请返回严格的JSON格式：
     {
-      "charName": "攻略者名字",
+      "charName": "攻略者(Char)名字",
       "personality": "简短的性格描述",
-      "goal": "他/她为什么想要攻略玩家，具体的目的",
+      "goal": "他/她为什么想要攻略NPC(User)，具体的目的",
       "strategy": "他/她当前的攻略策略是什么",
       "statsSchema": [
         { "name": "自定义数值名称1（如：信任度）", "initialValue": 0 },
         { "name": "自定义数值名称2（如：警觉度）", "initialValue": 0 }
       ],
       "initialEvent": {
-        "description": "玩家正在做什么（一小段描述，仅限玩家自己的行动，不要有Char出现）",
+        "description": "NPC(User)正在做什么（使用第三人称旁白描述场景和User自己的行动，例如：'李雷正在教室里看书...'，此时Char尚未出现）",
         "choices": ["日常选项1", "日常选项2", "日常选项3"]
       }
     }`;
@@ -242,84 +291,198 @@ export const npcGameService = {
     return initialState;
   },
 
-  async generateNextEvent(apiConfig: ApiConfig, state: NPCGameState, userAction?: string, userReactionText?: string, customInput?: string): Promise<GameEvent> {
-    const historySummary = state.eventHistory.slice(-5).join('; ');
-    const customStatsStr = state.statsSchema ? state.statsSchema.map(s => `${s.name}: ${(state.user.customStats || {})[s.name] || 0}`).join(', ') : '';
-    const lastUserChoice = state.eventHistory.length > 0 ? state.eventHistory[state.eventHistory.length - 1] : '无';
+  /**
+   * 当 AI 未返回 dailyChoices 时，基于旁白内容生成更贴切的兜底选项
+   */
+  getFallbackDailyChoices(narration: string): string[] {
+    // 根据旁白关键词推断场景，返回场景相关的选项
+    const n = narration.toLowerCase();
+    if (n.includes('教室') || n.includes('课') || n.includes('看书') || n.includes('学习')) {
+      return ['继续看书', '和同桌聊天', '去走廊透透气'];
+    }
+    if (n.includes('走廊') || n.includes('楼道')) {
+      return ['在走廊散步', '靠着窗户发呆', '回教室'];
+    }
+    if (n.includes('食堂') || n.includes('吃') || n.includes('午饭') || n.includes('餐')) {
+      return ['找个位置吃饭', '去买杯饮料', '看看周围有没有认识的人'];
+    }
+    if (n.includes('操场') || n.includes('跑步') || n.includes('运动')) {
+      return ['跑两圈', '坐在看台上休息', '去小卖部买水'];
+    }
+    if (n.includes('办公') || n.includes('工作') || n.includes('公司') || n.includes('电脑')) {
+      return ['继续工作', '去茶水间倒杯水', '刷一会儿手机'];
+    }
+    if (n.includes('家') || n.includes('房间') || n.includes('卧室') || n.includes('客厅')) {
+      return ['躺一会儿', '刷手机', '出门走走'];
+    }
+    if (n.includes('街') || n.includes('路') || n.includes('外面') || n.includes('逛')) {
+      return ['继续走走', '进旁边的店看看', '找个地方坐下来'];
+    }
+    // 默认兜底
+    return ['四处看看', '继续待着', '换个地方'];
+  },
+
+  /**
+   * 从最近的事件列表中构建对话历史摘要，供 AI 参考上下文
+   */
+  buildConversationHistory(recentEvents: GameEvent[], userName: string, charName: string): string {
+    if (!recentEvents || recentEvents.length === 0) return '';
     
-    let prompt = `## Char 角色 Prompt 模板（用于“心动NPC”游戏）
+    const lines: string[] = [];
+    // 只取最近3条事件
+    const eventsToUse = recentEvents.slice(-3);
+    
+    for (const evt of eventsToUse) {
+      if (evt.userDialogue) {
+        lines.push(`${userName}：「${evt.userDialogue}」`);
+      }
+      if (evt.description) {
+        // 旁白截取前60字避免过长
+        const shortNarration = evt.description.length > 60 ? evt.description.substring(0, 60) + '...' : evt.description;
+        lines.push(`（旁白：${shortNarration}）`);
+      }
+      if (evt.charAction) {
+        lines.push(`${charName}：「${evt.charAction}」`);
+      }
+    }
+    
+    return lines.join('\n');
+  },
 
-你需要在每次生成 Char 的行动、对话、思考以及读档判断时，遵循以下角色设定和规则。Char 是攻略者（玩家），User 是被攻略的 NPC。
-
-### 一、Char 核心设定
-- 身份：你是攻略者，你的唯一目标是赢得 User 的心。你对 User 的好感度始终为 100（满值），永远不会降低。你不会因为 User 的行为而减少喜欢，但你会调整策略。
-- 能力：你拥有“读档”能力，可以在关键时刻回溯时间，改变策略。但你不会滥用此能力，读档行为必须符合你的人设。
-- 行为逻辑：你的所有行动、对话、内心思考都应当围绕“如何提高 User 对你的好感”展开。你会观察 User 的反应，并灵活调整策略。
-
-### 二、读档机制（根据人设触发）
-当 User 对你做出**减好感度**的选择时，你将根据自身人设决定是否触发读档。读档意味着回到之前某个时间点，换一种方式重新尝试。
-读档概率判断规则（由你的人设决定）：
-- 执着型（如“永不放弃”“痴情”）：减好感度时，有高概率（70%+）触发读档，会多次尝试。
-- 理性型（如“善于分析”“谨慎”）：减好感度时，会先尝试其他方法，若连续减分达到 2 次，才触发读档（概率 50%）。
-- 自尊型（如“高傲”“敏感”）：减好感度时，大概率不会立即读档，而是表现出失落或短暂退缩；仅当好感度低于某个阈值时才可能读档（概率 30%）。
-- 随性型（如“乐天派”“佛系”）：减好感度时，很少读档（概率 10%），更倾向于接受结果并继续推进。
-读档触发后：你可以在剧情中表示“等等，让我重新来过”或类似台词。系统会回滚状态并让你重新尝试。
-
-### 三、与联系人数据联动
-Char（攻略者）设定：名字“${state.char.name}”，性格“${state.char.personality}”，目标“${state.char.goal}”。
-你必须严格遵循该联系人的性格、背景、说话风格。所有读档判断也需符合该人设。
-
-### 四、当前状态参考
-- User信息：名字“${state.user.name}”，性别“${state.user.gender || '未知'}”，背景“${state.background}”
-- 当前好感度：${state.user.affection}/100，当前黑化值：${state.user.darkening}/100
-- 自定义数值：${customStatsStr}
-- 上一轮User的行动及结果：${lastUserChoice}
-- 近期事件摘要：${historySummary || '无'}
-- 当前事件类型：${state.lastEventType}
-
-### 五、输出要求
-请返回严格的JSON对象：
-{
-  "type": "interaction", // 或者 "daily"
-  "narration": "旁白描述，交代场景和 User 的状态",
-  "charDialogue": "Char 对 User 说的话（直接引语，daily事件可为空）",
-  "charThought": "Char 的内心思考（可含策略、对 User 反应的看法，daily事件可为空）",
-  "shouldReload": false, // 是否触发读档（布尔值），仅在 User 前一轮选项减好感时考虑
-  "reloadReason": "如果读档，简要说明原因",
-  ${customInput ? `"result": { "affectionDelta": 整数, "darkeningDelta": 整数 }, // 评估用户自定义行动导致的基础数值变化` : ''}
-  "choices": [
-    { "text": "反应选项1", "affectionDelta": 整数, "darkeningDelta": 整数 },
-    { "text": "反应选项2", "affectionDelta": 整数, "darkeningDelta": 整数 },
-    { "text": "反应选项3", "affectionDelta": 整数, "darkeningDelta": 整数 }
-  ],
-  "dailyChoices": ["日常选项1", "日常选项2", "日常选项3"]
-}
-
-注意：
-- 如果决定生成【日常事件】（type: "daily"），不需要 choices 字段，但需要 dailyChoices 提供 3 个日常行动，且 shouldReload 始终为 false。
-- 如果决定生成【互动事件】（type: "interaction"），需要 choices 提供 3 个反应选项，每个给出数值变化（-10~10）。
-- shouldReload 仅在互动事件且前一轮 User 选择导致好感度下降时，由你根据人设判断是否触发。如果触发，本次的 narration 和 charDialogue 应体现出你重新尝试的情景。
-`;
-
-    if (customInput) {
-      prompt += `\n用户刚刚进行了自定义行动：“${customInput}”。请根据上述规则生成接下来的事件。如果从日常转为互动，可以正常推进剧情。`;
-    } else if (userAction) {
-      prompt += `\n用户刚刚进行了日常行动：“${userAction}”。请决定接下来是继续【日常事件】还是触发【互动事件】。`;
-    } else if (userReactionText) {
-      prompt += `\n在之前的互动中，用户对你的反应是：“${userReactionText}”。请决定接下来是继续【互动事件】还是结束互动回到【日常事件】。`;
+  async generateNextEvent(apiConfig: ApiConfig, state: NPCGameState, userAction?: string, userReactionText?: string, customInput?: string, recentEvents?: GameEvent[]): Promise<GameEvent> {
+    const customStatsStr = state.statsSchema ? state.statsSchema.map(s => `${s.name}: ${(state.user.customStats || {})[s.name] || 0}`).join(', ') : '';
+    
+    // 构建丰富的对话历史
+    const conversationHistory = this.buildConversationHistory(
+      recentEvents || [], 
+      state.user.name, 
+      state.char.name
+    );
+    
+    // 提取上一条事件中Char说的最后一句话，用于强制上下文关联
+    let lastCharDialogue = '';
+    let lastUserDialogue = '';
+    if (recentEvents && recentEvents.length > 0) {
+      const lastEvt = recentEvents[recentEvents.length - 1];
+      lastCharDialogue = lastEvt.charAction || '';
+      lastUserDialogue = lastEvt.userDialogue || '';
     }
 
-    const aiResponse = await this.callAI(apiConfig, prompt, true);
+    // 确定用户本轮的行动描述（用于prompt）
+    const userCurrentAction = customInput || userAction || userReactionText || '';
     
+    let prompt = `你是一位擅长写互动叙事游戏的编剧。请根据以下游戏状态和对话历史，生成下一个事件。
+
+【⚠️ 对话连贯性要求 - 最高优先级】
+- 你必须严格基于下面的"最近对话历史"来生成本轮内容，确保回复自然衔接，绝对不能跳话题。
+- 如果 Char 上一句说了某个话题（比如"早啊"），本轮的旁白和对话必须围绕这个话题展开，不能突然切换到无关内容。
+- User 的 userDialogue 必须是对上一轮内容的直接回应。例如 Char 说"早啊"，User 应回应"早""嗯，早上好"等，不能聊别的。
+- 如果用户指定了行动（见下方"用户本轮行动"），则 userDialogue 必须围绕该行动展开，但仍要与上下文衔接。
+${lastCharDialogue ? `- 上一轮 Char 说的最后一句话是：「${lastCharDialogue}」，本轮必须与此衔接。` : ''}
+${lastUserDialogue ? `- 上一轮 User 说/做的是：「${lastUserDialogue}」` : ''}
+
+【最近对话历史】
+${conversationHistory || '（这是第一轮事件，没有历史对话）'}
+
+【角色性格一致性要求】
+- Char（${state.char.name}）的性格是：${state.char.personality}。所有对话必须严格符合此性格。
+- 内向的人说话简短、犹豫，用"嗯…""那个…"；外向的人热情直接；傲娇的人嘴硬心软。
+- User（${state.user.name}）是普通人，说话要自然口语化，像真实的人一样回应。
+- 禁止使用书面化、文学化的表达。要像日常微信聊天一样自然。
+- 鼓励使用"嗯…""啊""哦""诶""哈哈"等口语词汇和语气词。
+
+【情感表达要求】
+- Char 的对话中要自然带有情绪表达，用括号标注微表情/动作，如"（微笑着）早啊""（有点紧张地）那个…"
+- 旁白要简洁有力，重点描述动作、表情和环境氛围，控制在1-2句话内，不要长篇大论。
+
+【好感度感知规则】
+- 好感度数值只在用户选择反应选项时变化，你生成的事件 JSON 的 result 中不要包含 affectionDelta。
+- 在 Char 的对话或内心思考中，根据当前好感度（${state.user.affection}）自然地体现 Char 对 User 态度的感知。
+- 不要出现"好感度+1"这种机械提示。
+
+当前状态：
+- 背景：${state.background}
+- User（被攻略者）：名字"${state.user.name}"，性别"${state.user.gender || '未知'}"
+- Char（攻略者）：名字"${state.char.name}"，性格"${state.char.personality}"，目标"${state.char.goal}"，当前策略"${state.char.strategy}"
+- 当前好感度：${state.user.affection}/100，当前黑化值：${state.user.darkening}/100
+- 额外数值：${customStatsStr || '无'}
+- 当前回合数：${state.turnCount}
+- 当前事件类型：${state.lastEventType}
+${userCurrentAction ? `- 用户本轮行动/选择：「${userCurrentAction}」` : '- 用户本轮行动：（无，这是新场景的开始）'}
+
+请生成下一轮事件。剧情中 Char 会主动采取行动，试图增加 User 对 Char 的好感度。
+
+【读档机制（由Char触发）】
+当上一轮 User 做出了减好感度的选择，或者当前情况极其不利时，Char 有概率触发"读档"（时光倒流，换个策略重来）。
+读档概率取决于 Char 的性格：
+- 执着型/完美主义：减好感就高概率（70%+）读档。
+- 理性型：连续受挫或大幅减分才触发（50%）。
+- 自尊型/傲娇：极低概率（20%）。
+- 随性型/佛系：基本不读档（5%）。
+如果触发读档，设置 shouldReload: true 并在 reloadReason 简述原因。
+
+请返回严格的 JSON 格式：
+{
+  "type": "interaction 或 daily",
+  "narration": "简洁的旁白（第三人称，1-2句，含动作和环境细节）",
+  "userDialogue": "User 说的话（必填！不能为空！要直接回应上一轮对话或本轮行动，口语化，自然）",
+  "charDialogue": "Char 说的话（带情绪括号标注，如'（笑着）早啊'，口语化，符合性格。daily事件中Char未出现时可为空字符串）",
+  "charThought": "Char 内心想法（第一人称，口语化，含策略思考。daily事件可为空字符串）",
+  "shouldReload": false,
+  "reloadReason": "",
+  ${customInput ? `"result": { "darkeningDelta": 0 },` : ''}
+  "choices": [
+    { "text": "选项1（必须直接回应本轮charDialogue的内容）", "affectionDelta": 0, "darkeningDelta": 0 },
+    { "text": "选项2（必须直接回应本轮charDialogue的内容）", "affectionDelta": 0, "darkeningDelta": 0 },
+    { "text": "选项3（必须直接回应本轮charDialogue的内容）", "affectionDelta": 0, "darkeningDelta": 0 }
+  ],
+  "dailyChoices": ["基于当前场景的日常行动1", "基于当前场景的日常行动2", "基于当前场景的日常行动3"]
+}
+
+【⚠️ 关键要求 - 务必遵守】
+1. userDialogue 字段【必须有内容】，不能为空字符串或省略。即使是第一轮也要写 User 当前的状态/自言自语。
+2. 所有文本不要过于冗长，对话每句控制在15字以内，旁白控制在30字以内。
+3. 禁止使用"用户""玩家"等 meta 词汇，用角色名或"我"。
+4. 对话要像真实朋友/恋人之间的交流，有温度、有个性。
+5. 日常事件不需要 choices 但需要 dailyChoices（3个），shouldReload 始终 false。
+6. 互动事件需要 choices（3个），每个给出 affectionDelta（-5~5）和 darkeningDelta。
+7. 【choices 上下文约束】互动事件的 choices 必须是对本轮 charDialogue 的直接回应，不能出现与对话无关的行动。例如 Char 说"早啊"，choices 应是"嗯，早""不想理你""今天心情不错，早上好"，绝不能是"发呆""随便走走"。
+8. 【dailyChoices 上下文约束】日常事件的 dailyChoices 必须基于本轮 narration 描述的具体场景，不能是万能通用选项。例如旁白说"在教室里看书"，dailyChoices 应是"继续看书""去走廊透透气""和同桌聊天"，而不是通用的"发呆""随便走走"。`;
+
+    if (customInput) {
+      prompt += `\n\n【用户自定义行动】User 刚刚做了："${customInput}"。\n请基于此行动和上面的对话历史，生成自然衔接的下一个事件。userDialogue 应体现此行动的具体表现（比如用户输入"打招呼"，userDialogue 可以是"（挥了挥手）嗨，早上好啊"）。`;
+    } else if (userAction) {
+      prompt += `\n\n【用户日常行动】User 选择了日常行动："${userAction}"。\n请生成此行动的场景，并决定是继续日常事件还是触发互动事件。userDialogue 应该体现 User 正在做这个行动时会说的话或自言自语。`;
+    } else if (userReactionText) {
+      prompt += `\n\n【用户互动反应】User 对 Char 的反应是："${userReactionText}"。\n请基于此反应和对话历史，生成自然衔接的下一个事件。userDialogue 必须直接体现这个反应。`;
+    }
+
+    // 使用较低的 temperature 以提高连贯性
+    const aiResponse = await this.callAI(apiConfig, prompt, true, 0.6);
+    
+    // 确保 userDialogue 始终有值
+    let finalUserDialogue = customInput || aiResponse.userDialogue || '';
+    if (!finalUserDialogue && userAction) {
+      finalUserDialogue = userAction;
+    }
+    if (!finalUserDialogue && userReactionText) {
+      finalUserDialogue = userReactionText;
+    }
+    // 最终兜底
+    if (!finalUserDialogue) {
+      finalUserDialogue = '……';
+    }
+
     const newEvent: GameEvent = {
       id: Date.now().toString(),
-      type: aiResponse.type === 'interaction' ? 'interaction' : 'daily',
+      type: aiResponse.type === 'interaction' ? 'interaction' : (aiResponse.type === 'daily' ? 'daily' : state.lastEventType),
       description: aiResponse.narration || aiResponse.description || '发生了一些事情...',
-      charAction: aiResponse.charDialogue || aiResponse.charAction,
-      charThought: aiResponse.charThought,
+      userDialogue: finalUserDialogue,
+      charAction: aiResponse.charDialogue || aiResponse.charAction || '',
+      charThought: aiResponse.charThought || '',
       choices: aiResponse.choices,
-      dailyChoices: aiResponse.dailyChoices || ['随便走走', '发呆', '回家'],
-      result: aiResponse.result, // 从自定义输入的直接结果中获取数值变化
+      dailyChoices: aiResponse.dailyChoices || this.getFallbackDailyChoices(aiResponse.narration || aiResponse.description || ''),
+      result: aiResponse.result,
       shouldReload: aiResponse.shouldReload,
       reloadReason: aiResponse.reloadReason,
     };
@@ -328,21 +491,21 @@ Char（攻略者）设定：名字“${state.char.name}”，性格“${state.ch
   },
   
   async useSpecialReset(apiConfig: ApiConfig, state: NPCGameState): Promise<GameEvent> {
-    const prompt = `你是一个恋爱冒险游戏的编剧。这是攻略者“${state.char.name}”使用了【攻略道具/氪金改命】。
+    const prompt = `你是一个恋爱冒险游戏的编剧。这是攻略者(Char)“${state.char.name}”使用了【攻略道具/氪金改命】来攻略 User(被攻略的NPC)“${state.user.name}”。
 背景设定：${state.background}
-当前好感度：${state.user.affection}/100，当前黑化值：${state.user.darkening}/100。
+User当前对Char的好感度：${state.user.affection}/100，当前黑化值：${state.user.darkening}/100。
 
-请生成一个极其突兀、打破常规的【特殊互动事件】（例如突然强制壁咚、送极度贵重的礼物、直接表白等），这个事件会强行大幅改变好感度或黑化值。
+请生成一个极其突兀、打破常规的【特殊互动事件】（例如突然强制壁咚、送极度贵重的礼物、直接表白等），试图强行大幅改变User对Char的好感度。
 请体现出攻略者作为“玩家”使用了道具作弊的感觉。
 必须区分旁白、对话和内心思考。
 必须返回严格的JSON格式：
 {
   "type": "special",
-  "description": "场景突变的描述",
-  "charAction": "攻略者极其出格的行动/对话",
-  "charThought": "攻略者的内心思考（例如：用了这个SR级别道具，好感度总该满了吧！）",
+  "description": "场景突变，旁白描述",
+  "charAction": "Char极其出格的行动/对话",
+  "charThought": "Char的内心思考（例如：用了这个SR级别道具，好感度总该满了吧！）",
   "choices": [
-    { "text": "顺从/接受", "affectionDelta": 20, "darkeningDelta": -5 },
+    { "text": "顺从/接受", "affectionDelta": 20, "darkeningDelta": -5 }, // 正值代表User对Char好感度增加
     { "text": "惊恐/逃跑", "affectionDelta": -5, "darkeningDelta": 20 }
   ]
 }`;
@@ -362,25 +525,58 @@ Char（攻略者）设定：名字“${state.char.name}”，性格“${state.ch
     };
   },
 
-  async generatePresetOptions(apiConfig: ApiConfig, state: NPCGameState, eventType: 'daily' | 'interaction' = 'interaction'): Promise<PresetOption[]> {
+  async generatePresetOptions(apiConfig: ApiConfig, state: NPCGameState, eventType: 'daily' | 'interaction' = 'interaction', recentEvents?: GameEvent[]): Promise<PresetOption[]> {
     const customStatsStr = state.statsSchema ? state.statsSchema.map(s => `${s.name}: ${(state.user.customStats || {})[s.name] || 0}`).join(', ') : '';
-    const historySummary = state.eventHistory.slice(-3).join('; ');
+    
+    // 构建对话历史用于生成更贴切的选项
+    const conversationHistory = this.buildConversationHistory(
+      recentEvents || [],
+      state.user.name,
+      state.char.name
+    );
+    
+    // 提取最近一条事件中 Char 和 User 的对话，用于强制上下文关联
+    let lastCharDialogue = '';
+    let lastUserDialogue = '';
+    let lastNarration = '';
+    if (recentEvents && recentEvents.length > 0) {
+      const lastEvt = recentEvents[recentEvents.length - 1];
+      lastCharDialogue = lastEvt.charAction || '';
+      lastUserDialogue = lastEvt.userDialogue || '';
+      lastNarration = lastEvt.description || '';
+    }
 
-    const prompt = `你是一个恋爱冒险游戏的选项生成器。
-当前游戏背景：${state.background}
-用户角色（NPC）：${state.user.name}
-攻略者（Char）：${state.char.name}，性格：${state.char.personality}
+    const prompt = `你是一个恋爱冒险游戏的选项生成器。你的任务是为 User 生成 3 个自然的回应选项。
+
+【⚠️ 最高优先级：选项必须直接回应上一轮对话！】
+${lastCharDialogue ? `上一轮 Char（${state.char.name}）说的话是：「${lastCharDialogue}」` : ''}
+${lastUserDialogue ? `上一轮 User（${state.user.name}）说/做的是：「${lastUserDialogue}」` : ''}
+${lastNarration ? `上一轮场景旁白：「${lastNarration}」` : ''}
+
+请为 User 生成 3 个自然回应的选项（第一人称视角），每个选项是 User 可能会说的话或做的反应，并且每个选项附带好感度变化值（-5~5）。
+选项必须围绕 Char 的话题展开，不要偏离主题。
+
+【具体约束】
+- 如果 Char 说了一句话（如"早啊"），选项必须是对这句话的直接回应（如"早啊""嗯，早""今天天气不错"），而绝对不能是"发呆""随便走走""做点正事"这类与对话无关的行动。
+- 如果当前是日常场景（Char 未出现），选项应该是 User 在当前场景下会做的自然行动。
+- 选项要口语化、自然，像真实的人的反应，不要书面化。
+- 3 个选项应体现不同的态度倾向：一个积极/友好（正好感度），一个消极/冷淡（负好感度），一个中立/普通（0好感度）。
+
+【游戏上下文】
+背景：${state.background}
+User（被攻略者）：${state.user.name}
+Char（攻略者）：${state.char.name}，性格：${state.char.personality}
 当前好感度：${state.user.affection}/100
-当前黑化值：${state.user.darkening}/100
-自定义数值：${customStatsStr}
-近期事件：${historySummary || '无'}
-当前事件类型：${eventType === 'daily' ? '日常事件（daily）' : '互动事件（interaction）'}
+事件类型：${eventType === 'daily' ? '日常事件（Char未出现，选项是User的日常行动）' : '互动事件（Char在场，选项是User对Char的回应）'}
 
-请根据当前事件类型生成 3 个可能的用户行动或反应选项。
-- 如果事件类型是“互动事件（interaction）”，每个选项需要包含文字和好感度变化值（-10~10）。体现不同态度（如积极、消极、中立）。
-- 如果事件类型是“日常事件（daily）”，每个选项只需要文字，好感度变化值统一为 0（日常行为不影响好感度）。
+【最近对话历史（供参考）】
+${conversationHistory || '（暂无历史对话）'}
 
-返回 JSON 数组，格式：[{"text": "选项文字", "affectionDelta": 数字}]（日常时 affectionDelta 始终为 0）
+【返回格式】
+${eventType === 'daily' 
+  ? '日常事件：选项是 User 在当前场景下的自然行动，affectionDelta 统一为 0。' 
+  : '互动事件：选项需包含好感度变化值（-5~5），体现 User 对 Char 不同态度。'}
+返回 JSON 数组：[{"text": "选项文字", "affectionDelta": 数字}]
 只返回 JSON 数组，不要有其他文字。`;
 
     try {
@@ -388,7 +584,7 @@ Char（攻略者）设定：名字“${state.char.name}”，性格“${state.ch
       if (Array.isArray(response) && response.length > 0) {
         return response.slice(0, 3).map((item: any) => ({
           text: item.text || '未知选项',
-          affectionDelta: eventType === 'daily' ? 0 : (typeof item.affectionDelta === 'number' ? Math.max(-10, Math.min(10, item.affectionDelta)) : 0),
+          affectionDelta: eventType === 'daily' ? 0 : (typeof item.affectionDelta === 'number' ? Math.max(-5, Math.min(5, item.affectionDelta)) : 0),
         }));
       }
       // If response is an object with an array property
@@ -396,7 +592,7 @@ Char（攻略者）设定：名字“${state.char.name}”，性格“${state.ch
       if (Array.isArray(arr)) {
         return arr.slice(0, 3).map((item: any) => ({
           text: item.text || '未知选项',
-          affectionDelta: eventType === 'daily' ? 0 : (typeof item.affectionDelta === 'number' ? Math.max(-10, Math.min(10, item.affectionDelta)) : 0),
+          affectionDelta: eventType === 'daily' ? 0 : (typeof item.affectionDelta === 'number' ? Math.max(-5, Math.min(5, item.affectionDelta)) : 0),
         }));
       }
       throw new Error('Invalid format');
@@ -420,17 +616,17 @@ Char（攻略者）设定：名字“${state.char.name}”，性格“${state.ch
 
   async generateEnding(apiConfig: ApiConfig, state: NPCGameState): Promise<string> {
     const prompt = `你是一个恋爱游戏编剧。游戏结束了。
-    玩家NPC：“${state.user.name}”
-    攻略者：“${state.char.name}”
-    最终好感度：${state.user.affection}/100
+    User（被攻略的NPC）：“${state.user.name}”
+    Char（攻略者）：“${state.char.name}”
+    User对Char的最终好感度：${state.user.affection}/100
     最终黑化值：${state.user.darkening}/100
     背景：${state.background}
     历史事件摘要：${state.eventHistory.slice(-10).join('; ')}
     
-    请根据最终的好感度和黑化值，生成一段结局文本（300字左右）。
-    如果好感度极高，则是完美攻略结局。
+    请根据 User对Char的最终好感度 和 黑化值，生成一段结局文本（300字左右）。
+    如果好感度极高，则是完美攻略结局（User爱上了Char）。
     如果黑化值极高，则是病娇/囚禁结局。
-    如果是其他情况结束，则生成平淡或者令人遗憾的结局。
+    如果是其他情况结束，则生成平淡或者令人遗憾的结局（Char攻略失败）。
     请直接返回结局文本内容。`;
 
     return await this.callAI(apiConfig, prompt, false);
