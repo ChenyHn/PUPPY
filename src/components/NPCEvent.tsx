@@ -7,11 +7,26 @@ interface NPCEventProps {
   charName: string;
 }
 
-import { MessageCircle, BrainCircuit } from 'lucide-react';
+import { MessageCircle, BrainCircuit, RefreshCw } from 'lucide-react';
 
 export function NPCEvent({ event, charName }: NPCEventProps) {
   return (
     <div className="flex flex-col gap-3">
+      {/* 读档提示 */}
+      <AnimatePresence>
+        {event.shouldReload && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1 }}
+            className="flex items-center gap-2 text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-3 py-2 rounded-xl text-xs font-bold w-fit"
+          >
+            <RefreshCw size={14} className="animate-[spin_3s_linear_infinite]" />
+            <span>【时空回溯】{event.reloadReason || 'Char 触发了读档...'}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 场景/旁白描述 - 纯文本，无背景 */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}

@@ -125,25 +125,23 @@ export function NPCSetupModal({ onClose, onGameStart, apiConfig }: NPCSetupModal
       >
         {/* 顶部左右扁平夹子 */}
         <div
-          className="absolute z-20"
+          className="absolute z-20 bg-stone-300 dark:bg-stone-600"
           style={{
             top: '-8px',
             left: '28px',
             width: '32px',
             height: '14px',
-            background: 'linear-gradient(to bottom, #9ca3af, #6b7280)',
             borderRadius: '3px 3px 0 0',
             clipPath: 'polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%)',
           }}
         />
         <div
-          className="absolute z-20"
+          className="absolute z-20 bg-stone-300 dark:bg-stone-600"
           style={{
             top: '-8px',
             right: '28px',
             width: '32px',
             height: '14px',
-            background: 'linear-gradient(to bottom, #9ca3af, #6b7280)',
             borderRadius: '3px 3px 0 0',
             clipPath: 'polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%)',
           }}
@@ -294,10 +292,10 @@ export function NPCSetupModal({ onClose, onGameStart, apiConfig }: NPCSetupModal
                           } ${isGenerating ? 'cursor-not-allowed opacity-60' : ''}`}
                         >
                           <div className="flex flex-col gap-0.5 flex-1 min-w-0 mr-3">
-                            <span className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">
+                            <span className="text-sm font-bold text-gray-800 dark:text-gray-100">
                               {preset.name}
                             </span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
                               {preset.description}
                             </span>
                           </div>

@@ -289,6 +289,12 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     try {
       const nextEvent = await npcGameService.generateNextEvent(apiConfig, newState, undefined, undefined, customInput);
 
+      if (nextEvent.shouldReload && customAffectionDelta !== undefined && customAffectionDelta < 0) {
+        // 触发读档，回滚之前的好感度扣除
+        newState.user.affection = Math.min(100, Math.max(0, newState.user.affection - customAffectionDelta));
+        newState.eventHistory.push(`[系统] 攻略者触发了读档，好感度恢复。`);
+      }
+
       if (customInput && nextEvent.result) {
         const resultDelta = nextEvent.result;
         newState.user.affection = Math.min(100, Math.max(0, newState.user.affection + (resultDelta.affectionDelta || 0)));

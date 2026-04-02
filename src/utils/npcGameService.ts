@@ -245,61 +245,83 @@ export const npcGameService = {
   async generateNextEvent(apiConfig: ApiConfig, state: NPCGameState, userAction?: string, userReactionText?: string, customInput?: string): Promise<GameEvent> {
     const historySummary = state.eventHistory.slice(-5).join('; ');
     const customStatsStr = state.statsSchema ? state.statsSchema.map(s => `${s.name}: ${(state.user.customStats || {})[s.name] || 0}`).join(', ') : '';
+    const lastUserChoice = state.eventHistory.length > 0 ? state.eventHistory[state.eventHistory.length - 1] : '无';
     
-    let prompt = `你是一个恋爱冒险游戏的编剧。特别注意身份反转：AI是带有“玩家”心态的【攻略者】“${state.char.name}”（性格：${state.char.personality}，目标：${state.char.goal}），而用户扮演的是不知情的【路人NPC】“${state.user.name}”。
-背景设定：${state.background}
-当前事件类型：${state.lastEventType}
-当前好感度：${state.user.affection}/100，当前黑化值：${state.user.darkening}/100。
-自定义数值：${customStatsStr}
-近期历史事件：${historySummary || '无'}。`;
+    let prompt = `## Char 角色 Prompt 模板（用于“心动NPC”游戏）
+
+你需要在每次生成 Char 的行动、对话、思考以及读档判断时，遵循以下角色设定和规则。Char 是攻略者（玩家），User 是被攻略的 NPC。
+
+### 一、Char 核心设定
+- 身份：你是攻略者，你的唯一目标是赢得 User 的心。你对 User 的好感度始终为 100（满值），永远不会降低。你不会因为 User 的行为而减少喜欢，但你会调整策略。
+- 能力：你拥有“读档”能力，可以在关键时刻回溯时间，改变策略。但你不会滥用此能力，读档行为必须符合你的人设。
+- 行为逻辑：你的所有行动、对话、内心思考都应当围绕“如何提高 User 对你的好感”展开。你会观察 User 的反应，并灵活调整策略。
+
+### 二、读档机制（根据人设触发）
+当 User 对你做出**减好感度**的选择时，你将根据自身人设决定是否触发读档。读档意味着回到之前某个时间点，换一种方式重新尝试。
+读档概率判断规则（由你的人设决定）：
+- 执着型（如“永不放弃”“痴情”）：减好感度时，有高概率（70%+）触发读档，会多次尝试。
+- 理性型（如“善于分析”“谨慎”）：减好感度时，会先尝试其他方法，若连续减分达到 2 次，才触发读档（概率 50%）。
+- 自尊型（如“高傲”“敏感”）：减好感度时，大概率不会立即读档，而是表现出失落或短暂退缩；仅当好感度低于某个阈值时才可能读档（概率 30%）。
+- 随性型（如“乐天派”“佛系”）：减好感度时，很少读档（概率 10%），更倾向于接受结果并继续推进。
+读档触发后：你可以在剧情中表示“等等，让我重新来过”或类似台词。系统会回滚状态并让你重新尝试。
+
+### 三、与联系人数据联动
+Char（攻略者）设定：名字“${state.char.name}”，性格“${state.char.personality}”，目标“${state.char.goal}”。
+你必须严格遵循该联系人的性格、背景、说话风格。所有读档判断也需符合该人设。
+
+### 四、当前状态参考
+- User信息：名字“${state.user.name}”，性别“${state.user.gender || '未知'}”，背景“${state.background}”
+- 当前好感度：${state.user.affection}/100，当前黑化值：${state.user.darkening}/100
+- 自定义数值：${customStatsStr}
+- 上一轮User的行动及结果：${lastUserChoice}
+- 近期事件摘要：${historySummary || '无'}
+- 当前事件类型：${state.lastEventType}
+
+### 五、输出要求
+请返回严格的JSON对象：
+{
+  "type": "interaction", // 或者 "daily"
+  "narration": "旁白描述，交代场景和 User 的状态",
+  "charDialogue": "Char 对 User 说的话（直接引语，daily事件可为空）",
+  "charThought": "Char 的内心思考（可含策略、对 User 反应的看法，daily事件可为空）",
+  "shouldReload": false, // 是否触发读档（布尔值），仅在 User 前一轮选项减好感时考虑
+  "reloadReason": "如果读档，简要说明原因",
+  ${customInput ? `"result": { "affectionDelta": 整数, "darkeningDelta": 整数 }, // 评估用户自定义行动导致的基础数值变化` : ''}
+  "choices": [
+    { "text": "反应选项1", "affectionDelta": 整数, "darkeningDelta": 整数 },
+    { "text": "反应选项2", "affectionDelta": 整数, "darkeningDelta": 整数 },
+    { "text": "反应选项3", "affectionDelta": 整数, "darkeningDelta": 整数 }
+  ],
+  "dailyChoices": ["日常选项1", "日常选项2", "日常选项3"]
+}
+
+注意：
+- 如果决定生成【日常事件】（type: "daily"），不需要 choices 字段，但需要 dailyChoices 提供 3 个日常行动，且 shouldReload 始终为 false。
+- 如果决定生成【互动事件】（type: "interaction"），需要 choices 提供 3 个反应选项，每个给出数值变化（-10~10）。
+- shouldReload 仅在互动事件且前一轮 User 选择导致好感度下降时，由你根据人设判断是否触发。如果触发，本次的 narration 和 charDialogue 应体现出你重新尝试的情景。
+`;
 
     if (customInput) {
-      prompt += `\n用户进行了自定义行动：“${customInput}”。请根据当前状态，生成接下来的事件。如果用户是在日常行动中推进剧情，可以决定是否触发与攻略者的【互动事件】（interaction）或者继续【日常事件】（daily）。如果是互动事件，请给出因用户行动导致的数值变化（好感度、黑化值等）。`;
+      prompt += `\n用户刚刚进行了自定义行动：“${customInput}”。请根据上述规则生成接下来的事件。如果从日常转为互动，可以正常推进剧情。`;
     } else if (userAction) {
-      prompt += `\n现在，路人NPC刚刚进行了日常行动：“${userAction}”。请决定接下来是继续【日常事件】还是触发【互动事件】。`;
+      prompt += `\n用户刚刚进行了日常行动：“${userAction}”。请决定接下来是继续【日常事件】还是触发【互动事件】。`;
     } else if (userReactionText) {
-      prompt += `\n在之前的互动中，路人NPC对攻略者的反应是：“${userReactionText}”。请决定接下来是继续【互动事件】还是结束互动回到【日常事件】。`;
+      prompt += `\n在之前的互动中，用户对你的反应是：“${userReactionText}”。请决定接下来是继续【互动事件】还是结束互动回到【日常事件】。`;
     }
-
-    prompt += `
-你必须根据剧情合理决定返回的新事件类型（type），并在JSON中指明："type": "daily" 或 "type": "interaction"。
-
-如果决定生成【互动事件】（interaction）：
-请描述攻略者观察到了路人NPC的行为并采取了行动。必须区分旁白、攻略者的对话、内心思考。
-返回格式示例：
-{
-  "type": "interaction",
-  "description": "旁白描述当前场景和环境",
-  "charAction": "攻略者的具体行动和对话内容",
-  "charThought": "攻略者的内心思考（体现出玩家心态）",
-  ${customInput ? `"result": { "affectionDelta": 整数, "darkeningDelta": 整数 },` : ''}
-  "choices": [
-    { "text": "反应选项1", "affectionDelta": 整数, "darkeningDelta": 整数 }
-  ]
-}
-
-如果决定生成【日常事件】（daily）：
-请描述路人NPC独自一人的日常行动（攻略者不出现）。
-返回格式示例：
-{
-  "type": "daily",
-  "description": "路人NPC当前的日常情景旁白描述",
-  "dailyChoices": ["去图书馆", "去吃饭", "随便走走"]
-}
-
-注意：无论如何，都必须返回严格的JSON格式！`;
 
     const aiResponse = await this.callAI(apiConfig, prompt, true);
     
     const newEvent: GameEvent = {
       id: Date.now().toString(),
       type: aiResponse.type === 'interaction' ? 'interaction' : 'daily',
-      description: aiResponse.description || aiResponse.narration || '发生了一些事情...',
-      charAction: aiResponse.charAction || aiResponse.charDialogue,
+      description: aiResponse.narration || aiResponse.description || '发生了一些事情...',
+      charAction: aiResponse.charDialogue || aiResponse.charAction,
       charThought: aiResponse.charThought,
       choices: aiResponse.choices,
       dailyChoices: aiResponse.dailyChoices || ['随便走走', '发呆', '回家'],
       result: aiResponse.result, // 从自定义输入的直接结果中获取数值变化
+      shouldReload: aiResponse.shouldReload,
+      reloadReason: aiResponse.reloadReason,
     };
 
     return newEvent;

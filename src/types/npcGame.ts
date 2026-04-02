@@ -51,6 +51,8 @@ export interface GameEvent {
   dailyChoices?: string[];     // 仅 daily 时有选项
   charAction?: string;         // Char的行动/对话
   charThought?: string;        // Char的内心思考
+  shouldReload?: boolean;      // 是否触发了读档
+  reloadReason?: string;       // 读档原因
   result?: {
     affectionDelta: number;
     darkeningDelta: number;
