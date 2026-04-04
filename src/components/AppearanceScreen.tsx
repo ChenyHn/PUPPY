@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Check, Smartphone, Lock, Image as ImageIcon, Globe2, Plus, Sparkles, MessageCircle, Music, FileText, BookOpen, Settings, Palette, Phone, Globe, RotateCcw, CloudSun, Layers, Type, Shield, ShieldCheck, Layout, Grid3x3, MoreHorizontal, Info, ChevronRight, Sun, Moon } from 'lucide-react';
+import { ArrowLeft, Check, Smartphone, Lock, Unlock, Delete, Image as ImageIcon, Globe2, Plus, Sparkles, MessageCircle, Music, FileText, BookOpen, Settings, Palette, Phone, Globe, RotateCcw, CloudSun, Layers, Type, Shield, ShieldCheck, Layout, Grid3x3, MoreHorizontal, Info, ChevronRight, Sun, Moon } from 'lucide-react';
 import { StatusBar, GlassCard } from './Shared';
 
 interface CardItem {
@@ -182,6 +182,8 @@ export const AppearanceScreen = ({
   setIsLockScreenEnabled,
   isPasswordEnabled,
   setIsPasswordEnabled,
+  password,
+  setPassword,
   wallpaper,
   setWallpaper,
   fontLink,
@@ -205,6 +207,12 @@ export const AppearanceScreen = ({
 }: any) => {
   const [activeView, setActiveView] = useState<'home' | 'privacy' | 'frost' | 'font' | 'icons' | 'more' | 'about'>('home');
   const [success, setSuccess] = useState('');
+
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordStep, setPasswordStep] = useState<'verify' | 'new1' | 'new2'>('verify');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   const [tempSettings, setTempSettings] = useState({
     isLockScreenEnabled,
@@ -353,10 +361,10 @@ export const AppearanceScreen = ({
   return (
     <motion.div 
       key="app-appearance"
-      initial={{ x: "100%" }}
+      initial={{ x: 0 }}
       animate={{ x: 0 }}
-      exit={{ x: "100%" }}
-      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+      exit={{ x: 0 }}
+      transition={{ duration: 0 }}
       className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50"
     >
       <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
@@ -382,13 +390,13 @@ export const AppearanceScreen = ({
       <div className="flex-1 overflow-x-hidden overflow-y-auto p-6 flex flex-col gap-6">
         <AnimatePresence>
           {success && (
-            <motion.div 
-              key="success-msg"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900 text-[10px] font-bold py-2 px-4 rounded-xl text-center shadow-sm shrink-0"
-            >
+    <motion.div 
+      initial={{ x: 0 }}
+      animate={{ x: 0 }}
+      exit={{ x: 0 }}
+      transition={{ duration: 0 }}
+      className="absolute inset-0 bg-neutral-50 dark:bg-black z-50 flex flex-col"
+    >
               {success}
             </motion.div>
           )}
@@ -491,7 +499,27 @@ export const AppearanceScreen = ({
                     <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-[#1c1c1e] rounded-full transition-all ${tempSettings.isPasswordEnabled ? 'left-6' : 'left-1'}`} />
                   </button>
                 </div>
+                
                 <div className="h-px bg-zinc-100 dark:bg-zinc-800 w-full" />
+                
+                <div 
+                  className="flex flex-row justify-between items-center cursor-pointer active:opacity-70 transition-opacity"
+                  onClick={() => {
+                    setPasswordStep(password ? 'verify' : 'new1');
+                    setPasswordInput('');
+                    setPasswordError('');
+                    setShowPasswordModal(true);
+                  }}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <ShieldCheck size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
+                    <span className="text-sm text-zinc-700 dark:text-zinc-100 whitespace-nowrap">修改密码</span>
+                  </div>
+                  <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
+                </div>
+
+                <div className="h-px bg-zinc-100 dark:bg-zinc-800 w-full" />
+
                 <div className="flex flex-row justify-between items-center">
                   <div className="flex items-center gap-3 min-w-0">
                     <ImageIcon size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
@@ -1053,6 +1081,117 @@ export const AppearanceScreen = ({
         )}
         </AnimatePresence>
       </div>
+
+      {/* Password Modification Modal */}
+      <AnimatePresence>
+        {showPasswordModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[100] flex items-center justify-center bg-black/20 dark:bg-black/40 backdrop-blur-sm px-6"
+          >
+            <GlassCard className="w-full max-w-[320px] p-6 !rounded-3xl border-none shadow-none bg-white/60 dark:bg-black/60 backdrop-blur-md">
+              <div className="flex flex-col items-center">
+                <div className="w-12 h-12 rounded-full bg-zinc-100/50 dark:bg-zinc-800/50 flex items-center justify-center mb-4 text-zinc-600 dark:text-zinc-300">
+                  {passwordStep === 'verify' ? <Lock size={24} /> : <Unlock size={24} />}
+                </div>
+                <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100 mb-1">
+                  {passwordStep === 'verify' ? '验证原密码' : passwordStep === 'new1' ? '输入新密码' : '确认新密码'}
+                </h3>
+                <p className="text-[10px] text-zinc-500 mb-6">
+                  {passwordStep === 'verify' ? '请输入当前的6位锁屏密码' : '请输入6位数字新密码'}
+                </p>
+
+                <div className="flex gap-4 mb-6">
+                  {[...Array(6)].map((_, i) => (
+                    <div 
+                      key={i}
+                      className={`w-3 h-3 rounded-full transition-all ${
+                        i < passwordInput.length 
+                          ? 'bg-zinc-800 dark:bg-zinc-200 scale-125' 
+                          : 'bg-zinc-200 dark:bg-zinc-700'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                <div className="h-4 text-[10px] text-red-500 font-bold mb-4 tracking-wider">
+                  {passwordError}
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 w-full mb-6">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0].map((num, i) => (
+                    num === '' ? <div key={i} /> : (
+                      <button 
+                        key={i}
+                        onClick={() => {
+                          if (passwordInput.length >= 6) return;
+                          const newVal = passwordInput + num;
+                          setPasswordInput(newVal);
+                          setPasswordError('');
+                          
+                          if (newVal.length === 6) {
+                            setTimeout(() => {
+                              if (passwordStep === 'verify') {
+                                if (!password || newVal === password) {
+                                  setPasswordStep('new1');
+                                  setPasswordInput('');
+                                } else {
+                                  setPasswordError('原密码错误');
+                                  setPasswordInput('');
+                                }
+                              } else if (passwordStep === 'new1') {
+                                setNewPassword(newVal);
+                                setPasswordStep('new2');
+                                setPasswordInput('');
+                              } else if (passwordStep === 'new2') {
+                                if (newVal === newPassword) {
+                                  localStorage.setItem('aiphone_password', newVal);
+                                  if (setPassword) setPassword(newVal);
+                                  setShowPasswordModal(false);
+                                  setSuccess('密码修改成功');
+                                  setTimeout(() => setSuccess(''), 2000);
+                                } else {
+                                  setPasswordError('两次密码不一致');
+                                  setPasswordInput('');
+                                  setPasswordStep('new1');
+                                }
+                              }
+                            }, 200);
+                          }
+                        }}
+                        className="aspect-square rounded-full bg-white/40 dark:bg-zinc-800/40 hover:bg-white/60 dark:hover:bg-zinc-700/60 text-zinc-700 dark:text-zinc-200 text-xl font-medium flex flex-col items-center justify-center active:scale-95 transition-all border-none"
+                      >
+                        {num}
+                        <span className="text-[7px] tracking-[0.3em] text-zinc-400 dark:text-zinc-500 font-bold uppercase mt-0.5">
+                          {num === 2 ? 'ABC' : num === 3 ? 'DEF' : num === 4 ? 'GHI' : num === 5 ? 'JKL' : num === 6 ? 'MNO' : num === 7 ? 'PQRS' : num === 8 ? 'TUV' : num === 9 ? 'WXYZ' : ''}
+                        </span>
+                      </button>
+                    )
+                  ))}
+                  <button 
+                    onClick={() => {
+                      setPasswordInput(prev => prev.slice(0, -1));
+                      setPasswordError('');
+                    }}
+                    className="aspect-square flex items-center justify-center text-zinc-400 dark:text-zinc-500 active:scale-95 transition-all bg-transparent"
+                  >
+                    <Delete size={20} strokeWidth={1.5} />
+                  </button>
+                </div>
+
+                <button 
+                  onClick={() => setShowPasswordModal(false)}
+                  className="w-full py-3.5 rounded-full bg-white/50 dark:bg-zinc-800/50 hover:bg-white/80 dark:hover:bg-zinc-700/80 text-zinc-600 dark:text-zinc-300 text-xs font-bold active:scale-95 transition-all border-none"
+                >
+                  取消
+                </button>
+              </div>
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

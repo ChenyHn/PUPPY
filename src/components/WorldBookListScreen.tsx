@@ -133,10 +133,10 @@ export const WorldBookListScreen = ({ onBack, time, worldBooks, setWorldBooks, f
   return (
     <motion.div 
       key="app-world"
-      initial={{ x: "100%" }}
+      initial={{ x: 0 }}
       animate={{ x: 0 }}
-      exit={{ x: "100%" }}
-      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+      exit={{ x: 0 }}
+      transition={{ duration: 0 }}
       className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50 transition-colors"
     >
       <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />

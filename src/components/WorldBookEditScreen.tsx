@@ -69,11 +69,11 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
   return (
     <motion.div 
       key="app-world-edit"
-      initial={{ x: "100%" }}
+      initial={{ x: 0 }}
       animate={{ x: 0 }}
-      exit={{ x: "100%" }}
-      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50 transition-colors"
+      exit={{ x: 0 }}
+      transition={{ duration: 0 }}
+      className="absolute inset-0 bg-zinc-50 dark:bg-black z-50 flex flex-col"
     >
       <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
       

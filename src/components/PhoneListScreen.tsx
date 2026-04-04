@@ -8,11 +8,11 @@ export const PhoneListScreen = ({ onBack, time, personas, onEditPersona, onAddPe
   return (
     <motion.div 
       key="app-phone-list"
-      initial={{ x: "100%" }}
+      initial={{ x: 0 }}
       animate={{ x: 0 }}
-      exit={{ x: "100%" }}
-      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50"
+      exit={{ x: 0 }}
+      transition={{ duration: 0 }}
+      className="absolute inset-0 bg-white dark:bg-black z-50 flex flex-col"
     >
       <StatusBar time={time} className="bg-white/80 dark:bg-black/80 dark:text-zinc-200 backdrop-blur-md z-10" />
       

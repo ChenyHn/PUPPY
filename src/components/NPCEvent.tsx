@@ -1,17 +1,32 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GameEvent } from '../types/npcGame';
 
 interface NPCEventProps {
   event: GameEvent;
   charName: string;
+  userAvatar?: string;
 }
 
 import { MessageCircle, BrainCircuit, RefreshCw, User } from 'lucide-react';
 
-export function NPCEvent({ event, charName }: NPCEventProps) {
+export const NPCEvent = memo(function NPCEvent({ event, charName, userAvatar }: NPCEventProps) {
   // 判断是否为临时用户气泡（仅显示用户发言，等待 AI 响应）
   const isUserBubbleOnly = event.id.startsWith('user_');
+
+  // 读档分隔线事件：居中灰色小字，上下各一条细线
+  const isReloadSeparator = event.id.startsWith('reload_separator_');
+  if (isReloadSeparator) {
+    return (
+      <div className="flex items-center gap-3 my-4 px-4">
+        <div className="flex-1 h-px bg-zinc-300/50 dark:bg-zinc-600/50" />
+        <span className="text-xs text-zinc-400 dark:text-zinc-500 font-medium whitespace-nowrap tracking-wider">
+          {event.description}
+        </span>
+        <div className="flex-1 h-px bg-zinc-300/50 dark:bg-zinc-600/50" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -41,11 +56,17 @@ export function NPCEvent({ event, charName }: NPCEventProps) {
           >
             <div className="text-right">
               <span className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-0.5 block">我</span>
-              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+              <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed font-medium">
                 {event.userDialogue}
               </p>
             </div>
-            <User size={14} className="text-gray-400 dark:text-gray-500 mt-0.5 shrink-0" />
+            {userAvatar ? (
+              <img src={userAvatar} alt="我" className="w-5 h-5 rounded-full object-cover shrink-0 mt-0.5 ring-1 ring-zinc-500/20" />
+            ) : (
+              <div className="w-5 h-5 rounded-full bg-zinc-200/50 dark:bg-zinc-800 flex items-center justify-center shrink-0 mt-0.5 ring-1 ring-zinc-500/20">
+                <User size={12} className="text-zinc-500 dark:text-zinc-400" />
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -104,4 +125,13 @@ export function NPCEvent({ event, charName }: NPCEventProps) {
       )}
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // 只在 event id 或内容变化时重渲染
+  return prevProps.event.id === nextProps.event.id
+    && prevProps.event.description === nextProps.event.description
+    && prevProps.event.userDialogue === nextProps.event.userDialogue
+    && prevProps.event.charAction === nextProps.event.charAction
+    && prevProps.event.charThought === nextProps.event.charThought
+    && prevProps.charName === nextProps.charName
+    && prevProps.userAvatar === nextProps.userAvatar;
+});

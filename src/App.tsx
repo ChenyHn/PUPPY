@@ -1000,9 +1000,10 @@ export default function App() {
           {screen === 'splash' && (
             <motion.div 
               key="splash"
-              initial={{ opacity: 0 }}
+              initial={{ opacity: 1 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              exit={{ opacity: 1 }}
+              transition={{ duration: 0 }}
               className="absolute inset-0 bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center"
             >
               <motion.div
@@ -1034,10 +1035,10 @@ export default function App() {
           {screen === 'lock' && (
             <motion.div 
               key="lock"
-              initial={{ opacity: 0 }}
+              initial={{ opacity: 1 }}
               animate={{ opacity: 1 }}
-              exit={{ y: "-100%", opacity: 0 }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              exit={{ opacity: 1 }}
+              transition={{ duration: 0 }}
               className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}
               onClick={() => {
                 if (!isPasswordEnabled) {
@@ -1085,9 +1086,10 @@ export default function App() {
           {(screen === 'password-setup' || screen === 'password-unlock') && (
             <motion.div 
               key="password"
-              initial={{ opacity: 0, scale: 1.02 }}
+              initial={{ opacity: 1, scale: 1 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
+              exit={{ opacity: 1 }}
+              transition={{ duration: 0 }}
               className="absolute inset-0 bg-white dark:bg-black flex flex-col items-center justify-center"
             >
               <div className="absolute top-0 left-0 w-full h-full bg-zinc-50/50 dark:bg-black/50" />
@@ -1329,10 +1331,10 @@ export default function App() {
           {screen === 'app-chat' && (
             <motion.div 
               key="app-chat"
-              initial={{ y: "100%" }}
+              initial={{ y: 0 }}
               animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+              exit={{ y: 0 }}
+              transition={{ duration: 0 }}
               className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50"
             >
               <StatusBar time={time} className="bg-white/80 dark:bg-black/80 text-black dark:text-zinc-200 backdrop-blur-md z-10" />
@@ -1359,7 +1361,7 @@ export default function App() {
                       </button>
                       {showContactsMenu && (
                         <>
-                          <div className="fixed inset-0 z-40" onClick={() => setShowContactsMenu(false)} />
+                          <div className="absolute inset-0 z-40" onClick={() => setShowContactsMenu(false)} />
                           <div className="absolute right-0 top-full mt-2 w-36 bg-white dark:bg-gray-800 rounded-xl shadow-lg z-50 overflow-hidden">
                             <button 
                               className="w-full px-4 py-3 text-sm text-gray-400 dark:text-gray-500 text-left cursor-not-allowed"
@@ -1386,7 +1388,7 @@ export default function App() {
               </div>
 
               {/* Content Area */}
-              <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-black/50 backdrop-blur-2xl">
+              <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-black/50 backdrop-blur-2xl pb-20">
                     {chatTab === 'messages' && (
                       <div className="flex flex-col">
                         {contacts.length === 0 ? (
@@ -1629,20 +1631,20 @@ export default function App() {
               </div>
 
               {/* Bottom Tab Bar */}
-              <div className="bg-white/80 dark:bg-black/80 backdrop-blur-xl border-t border-zinc-100 dark:border-zinc-800 px-4 pb-8 pt-2 flex justify-around">
-                <button onClick={() => setChatTab('messages')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'messages' ? 'text-zinc-600 dark:text-zinc-200' : 'text-zinc-300 dark:text-zinc-500 hover:text-zinc-400 dark:hover:text-zinc-400'}`}>
+              <div className="absolute bottom-4 left-4 right-4 bg-white/60 dark:bg-black/60 backdrop-blur-md rounded-2xl py-2 px-4 flex justify-around items-center z-50">
+                <button onClick={() => setChatTab('messages')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'messages' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
                   <MessageSquare size={24} strokeWidth={chatTab === 'messages' ? 2 : 1.5} />
                   <span className="text-[10px] font-bold">消息</span>
                 </button>
-                <button onClick={() => setChatTab('contacts')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'contacts' ? 'text-zinc-600 dark:text-zinc-200' : 'text-zinc-300 dark:text-zinc-500 hover:text-zinc-400 dark:hover:text-zinc-400'}`}>
+                <button onClick={() => setChatTab('contacts')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'contacts' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
                   <Users size={24} strokeWidth={chatTab === 'contacts' ? 2 : 1.5} />
                   <span className="text-[10px] font-bold">通讯录</span>
                 </button>
-                <button onClick={() => setChatTab('moments')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'moments' ? 'text-zinc-600 dark:text-zinc-200' : 'text-zinc-300 dark:text-zinc-500 hover:text-zinc-400 dark:hover:text-zinc-400'}`}>
+                <button onClick={() => setChatTab('moments')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'moments' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
                   <Camera size={24} strokeWidth={chatTab === 'moments' ? 2 : 1.5} />
                   <span className="text-[10px] font-bold">朋友圈</span>
                 </button>
-                <button onClick={() => setChatTab('me')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'me' ? 'text-zinc-600 dark:text-zinc-200' : 'text-zinc-300 dark:text-zinc-500 hover:text-zinc-400 dark:hover:text-zinc-400'}`}>
+                <button onClick={() => setChatTab('me')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'me' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
                   <User size={24} strokeWidth={chatTab === 'me' ? 2 : 1.5} />
                   <span className="text-[10px] font-bold">我</span>
                 </button>
@@ -1669,6 +1671,8 @@ export default function App() {
               setIsLockScreenEnabled={setIsLockScreenEnabled}
               isPasswordEnabled={isPasswordEnabled}
               setIsPasswordEnabled={setIsPasswordEnabled}
+              password={password}
+              setPassword={setPassword}
               wallpaper={wallpaper}
               setWallpaper={setWallpaper}
               fontLink={fontLink}
@@ -1791,10 +1795,10 @@ export default function App() {
           {screen === 'ai-chat' && (
             <motion.div
               key="ai-chat"
-              initial={{ x: "100%" }}
+              initial={{ x: 0 }}
               animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+              exit={{ x: 0 }}
+              transition={{ duration: 0 }}
               className="absolute inset-0 z-50"
             >
               <AiChatScreen
@@ -1822,10 +1826,10 @@ export default function App() {
           {screen === 'app-heartbeat-npc' && (
             <motion.div
               key="app-heartbeat-npc"
-              initial={{ x: "100%" }}
+              initial={{ x: 0 }}
               animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+              exit={{ x: 0 }}
+              transition={{ duration: 0 }}
               className="absolute inset-0 z-50"
             >
               <HeartbeatNPC 
