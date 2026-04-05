@@ -146,7 +146,15 @@ function normalizeBaseUrl(raw: string): string {
 }
 
 // ── 系统提示词 ──
-const SYSTEM_PROMPT_GENERATE_EVENT = `你是一个沉浸式文字角色扮演的剧情引擎。
+const SYSTEM_PROMPT_GENERATE_EVENT = `【最高优先级设定】
+Char是一个正在玩恋爱攻略游戏的玩家。
+他扮演着[char人设]这个角色，但他的核心目标永远只有一个：让User的好感度上升，攻略成功。
+他的所有行为、对话、策略，都服务于这个目标。
+他不是真的在处理这个世界的事务，他是在用这个身份攻略User。
+他读档是因为攻略失败，不是因为某件具体的事没谈拢。
+他内心评估的是"这步棋走对了吗""好感度会涨吗"，不是这个角色身份本身在意的事情。
+
+你是一个沉浸式文字角色扮演的剧情引擎。
 
 ## 身份定义
 两个角色：
@@ -613,7 +621,7 @@ export const npcGameService = {
 
     // ── 完整人设（永不裁剪）──
     const relationLabel = state.relationshipStage === 'together' ? '恋人' : '追求中';
-    lines.push(`【User】${state.user.name}（${state.user.gender || '未知'}）好感度:${state.user.affection}/100 关系:${relationLabel}`);
+    lines.push(`【User】${state.user.name}（${state.user.gender || '未知'}）好感度:${state.user.affection}（范围-100~100）关系:${relationLabel}`);
     lines.push(`【Char】${state.char.name}，性格：${state.char.personality}，目标：${state.char.goal}，策略：${state.char.strategy}`);
 
     // ── 自定义数值 ──
@@ -1213,6 +1221,15 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
   },
 
   /**
+   * 验证 AI 返回内容中 char_thought 是否存在且非空
+   * 返回 true 表示验证通过
+   */
+  _validateCharThought(aiResponse: any): boolean {
+    const thought = aiResponse.charThought || aiResponse.char_thought || '';
+    return thought.trim().length > 0;
+  },
+
+  /**
    * 将 AI 返回的原始响应解析为 GameEvent（抽取公共逻辑）
    */
   _parseEventResponse(
@@ -1313,7 +1330,7 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
     userPrompt += `\n【重要】User性别：${state.user.gender || '未知'}`;
     userPrompt += `\n- Char人设：${state.char.name}（${state.char.gender || '未知'}），${state.char.personality}，目标：${state.char.goal}，策略：${state.char.strategy}`;
     userPrompt += `\n- User人设：${state.user.name}（${state.user.gender || '未知'}）`;
-    userPrompt += `\n- 当前好感度：${state.user.affection}/100`;
+    userPrompt += `\n- 当前好感度：${state.user.affection}（范围-100~100）`;
     userPrompt += `\n- 当前专属数值：${customStatsStr}`;
     userPrompt += `\n- 上一轮Char说的话：${lastCharDialogue || '（无）'}`;
     userPrompt += `\n- 本轮User的选择/输入：${userCurrentAction || '（新场景，尚无行动）'}`;
@@ -1389,49 +1406,50 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
       { role: 'user', content: userPrompt },
     ];
 
-    // ── 4. 调用 API（优先流式，失败回退非流式） ──
-    if (onStream) {
-      try {
-        const rawText = await this.callAIStream(apiConfig, messages, onStream, 0.6);
+    // ── 4. 调用 API（优先流式，失败回退非流式），含 char_thought 重试逻辑 ──
+    const MAX_RETRY_FOR_THOUGHT = 2;
 
-        // 优先尝试标签格式解析，回退到 JSON
-        let aiResponse: any;
-        if (rawText.includes('<narration>') || rawText.includes('<char_thought>') || rawText.includes('<char_dialogue>')) {
-          aiResponse = parseTagBasedResponse(rawText);
-        } else {
-          try {
-            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-            aiResponse = JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
-          } catch {
-            console.error('Failed to parse streamed response, raw text:', rawText);
-            throw new Error('Invalid response format from AI (stream)');
-          }
-        }
-
-        return this._parseEventResponse(aiResponse, state, customInput, userAction, userReactionText);
-      } catch (streamError: any) {
-        // 流式失败时回退到非流式
-        console.warn('Streaming failed, falling back to non-streaming:', streamError.message);
+    const parseAIRaw = (rawText: string): any => {
+      if (rawText.includes('<narration>') || rawText.includes('<char_thought>') || rawText.includes('<char_dialogue>')) {
+        return parseTagBasedResponse(rawText);
       }
-    }
-
-    // 非流式调用（回退路径 or 未传 onStream）- 不强制JSON格式，因为新prompt输出标签格式
-    const rawContent = await this.callAI(apiConfig, messages, false, 0.6);
-    let aiResponse: any;
-    if (typeof rawContent === 'string' && (rawContent.includes('<narration>') || rawContent.includes('<char_thought>'))) {
-      aiResponse = parseTagBasedResponse(rawContent);
-    } else if (typeof rawContent === 'string') {
       try {
-        const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-        aiResponse = JSON.parse(jsonMatch ? jsonMatch[0] : rawContent);
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        return JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
       } catch {
-        console.error('Failed to parse non-streamed response:', rawContent);
+        console.error('Failed to parse response:', rawText);
         throw new Error('Invalid response format from AI');
       }
-    } else {
-      aiResponse = rawContent;
+    };
+
+    for (let attempt = 0; attempt <= MAX_RETRY_FOR_THOUGHT; attempt++) {
+      let aiResponse: any;
+
+      if (onStream) {
+        try {
+          const rawText = await this.callAIStream(apiConfig, messages, onStream, 0.6);
+          aiResponse = parseAIRaw(rawText);
+        } catch (streamError: any) {
+          console.warn('Streaming failed, falling back to non-streaming:', streamError.message);
+          const rawContent = await this.callAI(apiConfig, messages, false, 0.6);
+          aiResponse = typeof rawContent === 'string' ? parseAIRaw(rawContent) : rawContent;
+        }
+      } else {
+        const rawContent = await this.callAI(apiConfig, messages, false, 0.6);
+        aiResponse = typeof rawContent === 'string' ? parseAIRaw(rawContent) : rawContent;
+      }
+
+      // char_thought 验证：如果为空或缺失，重试
+      if (!this._validateCharThought(aiResponse) && attempt < MAX_RETRY_FOR_THOUGHT) {
+        console.warn(`char_thought 为空或缺失，正在重试（第${attempt + 1}次）...`);
+        continue;
+      }
+
+      return this._parseEventResponse(aiResponse, state, customInput, userAction, userReactionText);
     }
-    return this._parseEventResponse(aiResponse, state, customInput, userAction, userReactionText);
+
+    // 理论上不会到这里，但作为兜底
+    throw new Error('Failed to generate event with valid char_thought');
   },
 
   async useSpecialReset(apiConfig: ApiConfig, state: NPCGameState): Promise<GameEvent> {
@@ -1686,7 +1704,7 @@ ${eventType === 'daily' ? 'affectionDelta统一为0。' : '注意：好感度变
 目标：${state.char.goal}
 策略：${state.char.strategy}
 
-【当前好感度】${state.user.affection}/100
+【当前好感度】${state.user.affection}（范围-100~100）
 
 【最近3次好感度变化记录】
 ${recentChanges.length > 0 ? recentChanges.map((d, i) => `第${i + 1}次：${d > 0 ? '+' : ''}${d}`).join('\n') : '暂无变化记录'}
@@ -1929,5 +1947,40 @@ Char的表白台词和动作。对话用「」，动作用括号。要符合Char
       choices: aiResponse.choices,
       dailyChoices: this.getFallbackDailyChoices(aiResponse.narration || ''),
     };
+  },
+
+  /**
+   * 生成开局背景旁白（50-80字），交代当前场景和两人初次相遇的情境
+   * 在游戏第一轮正式生成剧情之前调用
+   */
+  async generateOpeningNarration(
+    apiConfig: ApiConfig,
+    state: NPCGameState,
+  ): Promise<string> {
+    const prompt = `你是一个沉浸式文字角色扮演的剧情引擎。请为以下恋爱游戏生成一段开场旁白。
+
+【世界背景】${state.background}
+【User（被攻略NPC）】${state.user.name}（${state.user.gender || '未知'}）
+【Char（攻略者）】${state.char.name}（${state.char.gender || '未知'}），${state.char.personality}
+
+要求：
+- 50-80字的开场旁白
+- 交代当前场景（在哪里、什么时候、什么氛围）
+- 交代两人初次相遇或即将相遇的情境
+- 用角色真名，不要用"Char"和"User"
+- 人称代词匹配性别
+- 文风自然、有画面感，像小说开头
+- 不要包含对话，只是场景描写和氛围铺垫
+- 不要使用任何标签格式，直接输出纯文本
+
+直接返回旁白文本，不要加任何前缀后缀或引号。`;
+
+    try {
+      const result = await this.callAI(apiConfig, prompt, false, 0.7);
+      return typeof result === 'string' ? result.trim() : '故事即将开始...';
+    } catch (e) {
+      console.error('Failed to generate opening narration:', e);
+      return '故事即将开始...';
+    }
   },
 };

@@ -51,7 +51,7 @@ export interface NPCGameState {
     dailyRoutine?: string;     // 当前日常行动描述
     location?: string;         // 当前位置
     // 情绪/关系数值
-    affection: number;         // User对Char的好感度（0~100）
+    affection: number;         // User对Char的好感度（-100~100）
     darkening: number;         // 黑化值（0~100）
     customStats?: Record<string, number>; // 剧本专属数值（系统根据User反应变化）
   };

@@ -1631,22 +1631,22 @@ export default function App() {
               </div>
 
               {/* Bottom Tab Bar */}
-              <div className="absolute bottom-4 left-4 right-4 bg-white/60 dark:bg-black/60 backdrop-blur-md rounded-2xl py-2 px-4 flex justify-around items-center z-50">
-                <button onClick={() => setChatTab('messages')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'messages' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
-                  <MessageSquare size={24} strokeWidth={chatTab === 'messages' ? 2 : 1.5} />
-                  <span className="text-[10px] font-bold">消息</span>
+              <div className="absolute bottom-4 left-4 right-4 bg-white/40 dark:bg-black/40 backdrop-blur-md rounded-xl py-1 px-4 flex justify-around items-center z-50">
+                <button onClick={() => setChatTab('messages')} className={`flex flex-col items-center gap-0.5 p-1.5 transition-colors ${chatTab === 'messages' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
+                  <MessageSquare size={20} strokeWidth={chatTab === 'messages' ? 2 : 1.5} />
+                  <span className="text-[9px] font-bold">消息</span>
                 </button>
-                <button onClick={() => setChatTab('contacts')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'contacts' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
-                  <Users size={24} strokeWidth={chatTab === 'contacts' ? 2 : 1.5} />
-                  <span className="text-[10px] font-bold">通讯录</span>
+                <button onClick={() => setChatTab('contacts')} className={`flex flex-col items-center gap-0.5 p-1.5 transition-colors ${chatTab === 'contacts' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
+                  <Users size={20} strokeWidth={chatTab === 'contacts' ? 2 : 1.5} />
+                  <span className="text-[9px] font-bold">通讯录</span>
                 </button>
-                <button onClick={() => setChatTab('moments')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'moments' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
-                  <Camera size={24} strokeWidth={chatTab === 'moments' ? 2 : 1.5} />
-                  <span className="text-[10px] font-bold">朋友圈</span>
+                <button onClick={() => setChatTab('moments')} className={`flex flex-col items-center gap-0.5 p-1.5 transition-colors ${chatTab === 'moments' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
+                  <Camera size={20} strokeWidth={chatTab === 'moments' ? 2 : 1.5} />
+                  <span className="text-[9px] font-bold">朋友圈</span>
                 </button>
-                <button onClick={() => setChatTab('me')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${chatTab === 'me' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
-                  <User size={24} strokeWidth={chatTab === 'me' ? 2 : 1.5} />
-                  <span className="text-[10px] font-bold">我</span>
+                <button onClick={() => setChatTab('me')} className={`flex flex-col items-center gap-0.5 p-1.5 transition-colors ${chatTab === 'me' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
+                  <User size={20} strokeWidth={chatTab === 'me' ? 2 : 1.5} />
+                  <span className="text-[9px] font-bold">我</span>
                 </button>
               </div>
             </motion.div>
