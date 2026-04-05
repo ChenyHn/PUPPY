@@ -1,4 +1,4 @@
-import { NPCGameState, GameEvent, PresetOption, StatSchema, AutoSavePoint, ArchiveMemoryEntry, AffectionMilestone } from '../types/npcGame';
+import { NPCGameState, GameEvent, PresetOption, StatSchema, AutoSavePoint, ArchiveMemoryEntry, AffectionMilestone, RewardOption } from '../types/npcGame';
 import { ApiConfig } from '../types';
 
 const STORAGE_KEY = 'npc_game_state';
@@ -225,6 +225,21 @@ Char是玩家，他对这个游戏有一定的上帝视角。User写在括号里
 - 他会在某个瞬间感到"这步走对了"或"糟，失误了"
 - 读档重来是他的底气，所以他比普通人更敢冒险、更沉得住气
 - 他对User有真实的在意，但他也清楚这是一局他必须赢的游戏，这两件事同时存在，偶尔会产生微妙的矛盾
+
+## Char对User的真实感情
+
+Char对User的感情不只是攻略目标，他是真的爱这个人。
+他的内心要同时存在两条线：
+一条是"这步棋走对了吗"的攻略意识，
+另一条是真实的、藏不住的爱意。
+
+爱意的体现方式：
+- 某个细节让他分神，比如User的一个表情或动作
+- 想说什么话，忍住了，但心里记着
+- 攻略失败时的挫败感里有一层真实的难过，不只是"这局没赢"，而是"她又不喜欢我了"
+- 偶尔一瞬间忘记自己在攻略，只是单纯地想让眼前这个人过得好一点
+
+禁止爱意变成油腻表白，藏在细节和克制里的爱意比直说更有力量。
 </char_thought>
 
 <char_dialogue>
@@ -900,24 +915,35 @@ Char的话和动作。对话用「」，动作用括号。
   // ════════════════════════════════════════
 
   /**
-   * 返回默认的好感度节点数组
+   * 返回默认的好感度节点数组（15/30/45/60/75/90/100）
    */
   getDefaultAffectionMilestones(): AffectionMilestone[] {
     return [
-      { value: 30, triggered: false, type: 'first_move' },
-      { value: 60, triggered: false, type: 'key_event' },
+      { value: 15, triggered: false, type: 'node' },
+      { value: 30, triggered: false, type: 'node' },
+      { value: 45, triggered: false, type: 'node' },
+      { value: 60, triggered: false, type: 'node' },
+      { value: 75, triggered: false, type: 'node' },
+      { value: 90, triggered: false, type: 'node' },
       { value: 100, triggered: false, type: 'confession' },
     ];
   },
 
   /**
-   * 检查好感度是否达到了某个未触发的节点
+   * 检查好感度是否突破了历史最高值并达到了某个未触发的节点
+   * 只在历史最高值被突破时触发，下降后回升不重复触发
    * 返回第一个未触发且已达到阈值的节点，如果没有则返回 null
    */
   checkAffectionMilestones(state: NPCGameState): AffectionMilestone | null {
     const milestones = state.affectionMilestones || this.getDefaultAffectionMilestones();
+    const currentAffection = state.user.affection;
+    const peakAffection = state.peakAffection ?? 0;
+
+    // 只在当前好感度突破历史最高值时才检查节点
+    if (currentAffection <= peakAffection) return null;
+
     for (const m of milestones) {
-      if (!m.triggered && state.user.affection >= m.value) {
+      if (!m.triggered && currentAffection >= m.value && m.value > peakAffection) {
         return m;
       }
     }
@@ -925,26 +951,42 @@ Char的话和动作。对话用「」，动作用括号。
   },
 
   /**
-   * 将某个好感度节点标记为已触发，返回更新后的 state
+   * 更新历史最高好感度
    */
-  markAffectionMilestoneTriggered(state: NPCGameState, type: AffectionMilestone['type']): NPCGameState {
+  updatePeakAffection(state: NPCGameState): NPCGameState {
     const newState = { ...state };
-    const milestones = [...(newState.affectionMilestones || this.getDefaultAffectionMilestones())];
-    const idx = milestones.findIndex(m => m.type === type);
-    if (idx !== -1) {
-      milestones[idx] = { ...milestones[idx], triggered: true };
+    const current = newState.user.affection;
+    const peak = newState.peakAffection ?? 0;
+    if (current > peak) {
+      newState.peakAffection = current;
     }
-    newState.affectionMilestones = milestones;
     return newState;
   },
 
   /**
-   * 根据好感度节点类型生成对应的特殊剧情事件
-   * - first_move (30): Char 第一次主动出击
-   * - key_event (60): 关键转折事件
-   * - confession (100): 表白剧情
+   * 将某个好感度节点标记为已触发，返回更新后的 state
    */
-  async generateAffectionMilestoneEvent(
+  markAffectionMilestoneTriggered(state: NPCGameState, value: number): NPCGameState {
+    const newState = { ...state };
+    const milestones = [...(newState.affectionMilestones || this.getDefaultAffectionMilestones())];
+    const idx = milestones.findIndex(m => m.value === value);
+    if (idx !== -1) {
+      milestones[idx] = { ...milestones[idx], triggered: true };
+    }
+    newState.affectionMilestones = milestones;
+    // 同时更新历史最高好感度
+    const peak = newState.peakAffection ?? 0;
+    if (newState.user.affection > peak) {
+      newState.peakAffection = newState.user.affection;
+    }
+    return newState;
+  },
+
+  /**
+   * 生成好感度节点的特殊剧情（200-500字，有画面感和情绪张力）
+   * 100节点单独处理为表白场景
+   */
+  async generateAffectionNodeEvent(
     apiConfig: ApiConfig,
     state: NPCGameState,
     milestone: AffectionMilestone,
@@ -952,7 +994,7 @@ Char的话和动作。对话用「」，动作用括号。
     onStream?: (accumulatedText: string) => void,
   ): Promise<GameEvent> {
     const recentContext = recentEvents && recentEvents.length > 0
-      ? recentEvents.slice(-3).map(e => {
+      ? recentEvents.slice(-5).map(e => {
           const parts: string[] = [];
           if (e.description) parts.push(`旁白：${e.description}`);
           if (e.charAction) parts.push(`Char：${e.charAction}`);
@@ -961,39 +1003,44 @@ Char的话和动作。对话用「」，动作用括号。
         }).join('\n')
       : '（无近期剧情）';
 
+    const relationLabel = state.relationshipStage === 'together' ? '恋人' : '追求中';
+
+    // 根据好感度阶段描述亲密程度
+    const stageDesc = milestone.value <= 15 ? '刚刚开始有好感，还很生疏，带着试探'
+      : milestone.value <= 30 ? '有了初步好感，开始注意对方，但还保持距离'
+      : milestone.value <= 45 ? '好感渐深，开始主动找机会接近，有了一些默契'
+      : milestone.value <= 60 ? '关系明显升温，两人之间有了更多专属的互动和默契'
+      : milestone.value <= 75 ? '已经非常亲近，有很多两人独处的时刻，心照不宣'
+      : milestone.value <= 90 ? '几乎就差捅破那层窗户纸，彼此都清楚对方的心意'
+      : '好感度已满，到了表白的时刻';
+
     let taskDescription = '';
-    let milestoneLabel = '';
 
-    if (milestone.type === 'first_move') {
-      milestoneLabel = 'Char第一次主动出击';
-      taskDescription = `好感度达到30，Char决定第一次主动出击。
-
-要求：
-1. Char打破之前的节奏，做了一个比平时更主动的举动
-2. 这个主动举动必须符合Char的人设性格，不能突兀
-3. 如果Char是傲娇，可以是别扭地送东西；如果是温柔型，可以是主动约见面；如果是高冷型，可以是破例的关心
-4. 这是一个自然的升温，不是告白，只是比之前更进一步
-5. Char的内心独白要体现"是时候主动一点了"的玩家策略感`;
-    } else if (milestone.type === 'key_event') {
-      milestoneLabel = '关键事件';
-      taskDescription = `好感度达到60，触发一个关键转折事件。
-
-要求：
-1. 两人之间发生一件有纪念意义的事
-2. 可以是意外（被困在某处、突发事件要互相照应）、争执后的和解、或某个特殊时刻（一起看到某个景象、分享了某个秘密）
-3. 这个事件要推动关系产生质变的预感，让双方都意识到对方的重要性
-4. 但还没到表白的程度，是"差一步就捅破窗户纸"的感觉
-5. Char的内心独白要体现他意识到"这不只是攻略了，好像真的在意了"的微妙变化`;
-    } else {
-      milestoneLabel = '攻略成功·表白';
+    if (milestone.type === 'confession') {
       taskDescription = `好感度达到100，Char攻略成功！生成表白剧情。
 
 要求：
-1. Char以符合人设的方式表白——傲娇就别扭地说，温柔就真诚地说，高冷就用行动表达
-2. 自然承接近期剧情，不突兀
-3. Char的内心独白要体现"终于通关"的玩家成就感，同时也有真实的心动
-4. 表白后关系升级为恋人，但游戏不结束，继续推进
-5. 这是一个温馨、有画面感的场景`;
+1. 这是一段完整的表白场景，200-500字，可适当超出
+2. Char以符合人设的方式表白——傲娇就别扭地说，温柔就真诚地说，高冷就用行动表达
+3. char_dialogue中必须有明确的表白内容，但不能直白油腻
+4. 表白要自然、有画面感、有情绪张力
+5. 自然承接近期剧情，不突兀
+6. Char的内心独白要体现"终于通关"的玩家成就感，同时也有真实的心动
+7. 用角色真名替代Char/User，人称代词严格匹配性别`;
+    } else {
+      taskDescription = `好感度达到${milestone.value}，两人关系迎来了一个小进展。
+
+当前阶段描述：${stageDesc}
+
+要求：
+1. 这是一段代表两人关系小进展的特殊剧情，200-500字，可适当超出
+2. 剧情要有画面感和情绪张力，符合当前好感度阶段（${stageDesc}）
+3. 不是简单的日常，而是一个有纪念意义的小片段——可以是一个特殊的瞬间、意外的接触、不经意的温暖
+4. 好感度越高越亲密，但不要提前进入表白或恋人模式
+5. Char的行为和语言必须符合人设性格
+6. Char的内心独白要体现他作为玩家的策略思考和真实在意的混杂
+7. 自然承接近期剧情，不突兀
+8. 用角色真名替代Char/User，人称代词严格匹配性别`;
     }
 
     const systemPrompt = `你是一个沉浸式文字角色扮演的剧情引擎。现在触发了好感度节点事件，需要生成一段特殊剧情。
@@ -1003,35 +1050,183 @@ Char的话和动作。对话用「」，动作用括号。
 - User（被攻略NPC）：${state.user.name}（${state.user.gender || '未知'}）
 - 世界背景：${state.background}
 - 当前好感度：${state.user.affection}/100
+- 当前关系：${relationLabel}
 - Char的目标：${state.char.goal}
 - Char的策略：${state.char.strategy}
 
 近期剧情：
 ${recentContext}
 
-【${milestoneLabel}】
+【好感度节点 → ${milestone.value}】
 ${taskDescription}
 
 输出格式：
 <narration>
-场景描写，有画面感，3-5句。用角色真名替代Char/User。
+场景描写和剧情推进，200-500字，可适当超出。有画面感和情绪张力。用角色真名替代Char/User。
 </narration>
 
 <char_thought>
-Char的内心独白。第一人称，体现玩家视角。
+Char的内心独白。第一人称，体现玩家视角和真实情感。
 </char_thought>
 
 <char_dialogue>
-Char的话和动作。对话用「」，动作用括号。要符合Char的人设性格。
-</char_dialogue>
-
-<options>
-三个User的反应选项。格式：选项文本|好感度变化
-</options>`;
+Char的话和动作。对话用「」，动作用括号。要符合Char的人设性格。${milestone.type === 'confession' ? '必须包含明确的表白内容，但不能直白油腻。' : ''}
+</char_dialogue>`;
 
     const messages = [
       { role: 'system' as const, content: systemPrompt },
-      { role: 'user' as const, content: `请生成好感度节点「${milestoneLabel}」的特殊剧情。` },
+      { role: 'user' as const, content: `请生成好感度节点「好感度 → ${milestone.value}」的特殊剧情。` },
+    ];
+
+    let aiResponse: any;
+
+    if (onStream) {
+      try {
+        const rawText = await this.callAIStream(apiConfig, messages, onStream, 0.8);
+        if (rawText.includes('<narration>') || rawText.includes('<char_thought>')) {
+          aiResponse = parseTagBasedResponse(rawText);
+        } else {
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+          aiResponse = JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
+        }
+      } catch {
+        const rawContent = await this.callAI(apiConfig, messages, false, 0.8);
+        if (typeof rawContent === 'string' && rawContent.includes('<narration>')) {
+          aiResponse = parseTagBasedResponse(rawContent);
+        } else {
+          aiResponse = rawContent;
+        }
+      }
+    } else {
+      const rawContent = await this.callAI(apiConfig, messages, false, 0.8);
+      if (typeof rawContent === 'string' && rawContent.includes('<narration>')) {
+        aiResponse = parseTagBasedResponse(rawContent);
+      } else if (typeof rawContent === 'string') {
+        const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+        aiResponse = JSON.parse(jsonMatch ? jsonMatch[0] : rawContent);
+      } else {
+        aiResponse = rawContent;
+      }
+    }
+
+    return {
+      id: `affection_node_${milestone.value}_${Date.now()}`,
+      type: 'milestone',
+      description: aiResponse.narration || aiResponse.description || `好感度达到${milestone.value}...`,
+      charAction: aiResponse.charDialogue || aiResponse.charAction || '',
+      charThought: aiResponse.charThought || '',
+      milestoneInfo: {
+        statName: '好感度',
+        value: milestone.value,
+        eventName: milestone.type === 'confession' ? '攻略成功·表白' : `好感度 → ${milestone.value}`,
+      },
+    };
+  },
+
+  /**
+   * 生成奖励选项（3个AI生成的预设选项）
+   */
+  async generateRewardOptions(
+    apiConfig: ApiConfig,
+    state: NPCGameState,
+    milestoneValue: number,
+  ): Promise<RewardOption[]> {
+    const prompt = `你是一个恋爱游戏的奖励选项生成器。用户刚刚触发了好感度节点（好感度达到${milestoneValue}），现在需要生成3个奖励选项。
+
+角色信息：
+- Char（被奖励的人）：${state.char.name}（${state.char.gender || '未知'}），${state.char.personality}
+- User（给予奖励的人）：${state.user.name}（${state.user.gender || '未知'}）
+- 世界背景：${state.background}
+- 当前好感度：${milestoneValue}/100
+
+要求：
+- 每个选项10字以内
+- 要具体、有画面感，不要抽象空洞
+- 符合当前好感度阶段（好感度越高越亲密）
+- 符合世界观背景和Char人设
+- 好的例子："帮他理了一下乱掉的衣领"、"悄悄给他买了他提过的那个口味"、"用他的名字叫了他一声"
+- 坏的例子："给他一个微笑"（太空洞）、"送他一份礼物"（不具体）
+
+返回严格JSON格式：
+[{"text":"选项1"},{"text":"选项2"},{"text":"选项3"}]
+只返回JSON数组，不要其他文字。`;
+
+    try {
+      const response = await this.callAI(apiConfig, prompt, true, 0.8);
+      if (Array.isArray(response) && response.length >= 3) {
+        return response.slice(0, 3).map((item: any) => ({
+          text: (item.text || '').substring(0, 15),
+        }));
+      }
+      throw new Error('Invalid format');
+    } catch (e) {
+      console.error('Failed to generate reward options:', e);
+      return [
+        { text: '轻轻拍了拍他的肩' },
+        { text: '递给他一杯热饮' },
+        { text: '对他笑了一下' },
+      ];
+    }
+  },
+
+  /**
+   * 生成Char收到奖励后的反应（插入事件流）
+   */
+  async generateRewardReaction(
+    apiConfig: ApiConfig,
+    state: NPCGameState,
+    rewardText: string,
+    milestoneValue: number,
+    recentEvents?: GameEvent[],
+    onStream?: (accumulatedText: string) => void,
+  ): Promise<GameEvent> {
+    const recentContext = recentEvents && recentEvents.length > 0
+      ? recentEvents.slice(-3).map(e => {
+          const parts: string[] = [];
+          if (e.description) parts.push(`旁白：${e.description}`);
+          if (e.charAction) parts.push(`Char：${e.charAction}`);
+          return parts.join(' | ');
+        }).join('\n')
+      : '（无近期剧情）';
+
+    const systemPrompt = `你是一个沉浸式文字角色扮演的剧情引擎。User对Char做了一个奖励动作，现在需要生成Char收到奖励后的反应。
+
+角色信息：
+- Char（攻略者）：${state.char.name}（${state.char.gender || '未知'}），${state.char.personality}
+- User（做出奖励动作的人）：${state.user.name}（${state.user.gender || '未知'}）
+- 世界背景：${state.background}
+- 当前好感度：${milestoneValue}/100
+
+User对Char做的奖励动作：「${rewardText}」
+
+近期剧情：
+${recentContext}
+
+要求：
+1. 反应必须完全符合Char的人设性格：
+   - 傲娇人设：嘴上别扭但内心崩塌，比如嘴上说"谁要你..."但动作出卖了他
+   - 温柔人设：直接流露感动，真诚回应
+   - 高冷人设：可能沉默或只说一个字，但有细节出卖他（比如耳朵红了、手指微颤）
+2. 必须包含char_thought（内心独白）和char_dialogue（台词和动作）
+3. 反应自然真实，不要油腻
+4. 用角色真名替代Char/User
+
+输出格式：
+<narration>
+简短的场景描写，1-2句，描写Char收到奖励后的状态。
+</narration>
+
+<char_thought>
+Char的内心独白。体现他收到这个奖励后的真实感受。
+</char_thought>
+
+<char_dialogue>
+Char的回应。对话用「」，动作用括号。
+</char_dialogue>`;
+
+    const messages = [
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: `User对Char做了奖励：「${rewardText}」，请生成Char的反应。` },
     ];
 
     let aiResponse: any;
@@ -1066,18 +1261,12 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
     }
 
     return {
-      id: `affection_milestone_${milestone.type}_${Date.now()}`,
-      type: 'milestone',
-      description: aiResponse.narration || aiResponse.description || `好感度达到${milestone.value}...`,
+      id: `reward_reaction_${Date.now()}`,
+      type: 'special',
+      description: aiResponse.narration || aiResponse.description || '',
+      userDialogue: rewardText,
       charAction: aiResponse.charDialogue || aiResponse.charAction || '',
       charThought: aiResponse.charThought || '',
-      choices: aiResponse.choices,
-      dailyChoices: this.getFallbackDailyChoices(aiResponse.narration || ''),
-      milestoneInfo: {
-        statName: '好感度',
-        value: milestone.value,
-        eventName: milestoneLabel,
-      },
     };
   },
 
@@ -1240,6 +1429,26 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
     const hasValidTags = /<narration>|<char_thought>|<char_dialogue>/.test(rawText);
     const hasValidJson = /\{[\s\S]*"(narration|description|charDialogue|charAction)"/.test(rawText);
     if (!hasValidTags && !hasValidJson && rawText.trim().length > 30) return true;
+    return false;
+  },
+
+  /**
+   * 检查解析后的事件字段中是否包含裸露的XML标签字样（格式泄漏）
+   * 如 <char_thought>、<narration> 等出现在渲染文本中
+   * 返回 true 表示检测到格式泄漏
+   */
+  _hasLeakedTags(aiResponse: any): boolean {
+    const fieldsToCheck = [
+      aiResponse.narration || aiResponse.description || '',
+      aiResponse.charDialogue || aiResponse.charAction || '',
+      aiResponse.charThought || '',
+    ];
+    const leakPattern = /<\/?(narration|char_thought|char_dialogue|options|stats_delta)>/i;
+    for (const field of fieldsToCheck) {
+      if (leakPattern.test(field)) {
+        return true;
+      }
+    }
     return false;
   },
 
@@ -1431,6 +1640,13 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
       systemPromptWithMemory += '\n\n' + archiveMemoryPrompt;
     }
 
+    // ── 读档后策略调整注入 ──
+    if (state.justReloaded) {
+      userPrompt += '\n\n【⚠️ 重要：Char刚刚读档回到了这个时间点】\nChar刚刚读档回到了这个时间点，他需要重新开始，但要换一个不同的策略。\n禁止重复上一次读档后说过的话或做过的事，必须有明显的策略调整。\nChar的内心独白中应该体现"这次要换个方式""上次的路子不对"之类的思路转变。\nChar的行为、话术、切入角度都必须和上一轮读档后完全不同。';
+      // 清除 justReloaded 标志，避免后续每轮都注入
+      state.justReloaded = false;
+    }
+
     const messages = [
       { role: 'system', content: systemPromptWithMemory },
       { role: 'user', content: userPrompt },
@@ -1523,6 +1739,14 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
       // char_thought 验证：如果为空或缺失，重试
       if (!this._validateCharThought(aiResponse) && attempt < MAX_AUTO_RETRY) {
         console.warn(`char_thought 为空或缺失，正在重试（第${attempt + 1}次）...`);
+        continue;
+      }
+
+      // ── 格式泄漏检测：如果解析后的文本中包含裸露XML标签，静默重试 ──
+      if (this._hasLeakedTags(aiResponse) && attempt < MAX_AUTO_RETRY) {
+        console.warn(`检测到格式泄漏（XML标签出现在渲染文本中），静默重试（第${attempt + 1}次）...`);
+        // 在 user prompt 末尾追加格式提醒
+        messages[messages.length - 1].content += '\n\n请严格按格式输出，不要在文本中出现标签字符串本身（如<narration>、<char_thought>等），这些标签只用于结构分隔，不要出现在内容文字里。';
         continue;
       }
 
@@ -1815,8 +2039,9 @@ ${archiveLines.length > 0 ? archiveLines.join('\n') : '尚未读过档'}
   },
 
   /**
-   * 执行读档：从 autoSavePoints 中找到最近一个好感度高于当前值的快照，
-   * 恢复游戏状态。archiveMemory 不恢复，保留全部记录。
+   * 执行读档：从 autoSavePoints 中找到"当前好感度触发读档的阈值之前，
+   * 最近一个好感度高于触发阈值的存档点"，同时避免反复回到同一个节点。
+   * archiveMemory 不恢复，保留全部记录。
    * 
    * 返回 { restoredState, restoredEvents, reloadCount } 或 null（无可用存档）
    */
@@ -1827,16 +2052,43 @@ ${archiveLines.length > 0 ? archiveLines.join('\n') : '尚未读过档'}
     const savePoints = state.autoSavePoints || [];
     if (savePoints.length === 0) return null;
 
-    // 找到最近一个好感度高于当前值的快照
+    const currentAffection = state.user.affection;
+    const lastReloadSaveId = state.lastReloadSaveId;
+
+    // 策略：找到最近一个好感度高于当前值的存档点，但排除上次读档用过的节点
     let targetSave: AutoSavePoint | null = null;
+    
+    // 第一轮：排除上次读档目标节点，找最近一个好感度高于当前值的存档点
     for (let i = savePoints.length - 1; i >= 0; i--) {
-      if (savePoints[i].affection > state.user.affection) {
-        targetSave = savePoints[i];
+      const sp = savePoints[i];
+      if (sp.affection > currentAffection && sp.id !== lastReloadSaveId) {
+        targetSave = sp;
         break;
       }
     }
 
-    // 如果没找到好感度更高的，用最新的存档点
+    // 第二轮：如果排除后找不到，允许使用上次的节点但尝试找更早的存档点
+    if (!targetSave) {
+      for (let i = savePoints.length - 1; i >= 0; i--) {
+        const sp = savePoints[i];
+        if (sp.affection > currentAffection) {
+          targetSave = sp;
+          break;
+        }
+      }
+    }
+
+    // 第三轮：如果还没找到好感度更高的，用最新的存档点（但排除上次用过的）
+    if (!targetSave) {
+      for (let i = savePoints.length - 1; i >= 0; i--) {
+        if (savePoints[i].id !== lastReloadSaveId) {
+          targetSave = savePoints[i];
+          break;
+        }
+      }
+    }
+
+    // 最后兜底：用最新的存档点
     if (!targetSave && savePoints.length > 0) {
       targetSave = savePoints[savePoints.length - 1];
     }
@@ -1886,6 +2138,10 @@ ${archiveLines.length > 0 ? archiveLines.join('\n') : '尚未读过档'}
       autoSavePoints: currentAutoSavePoints,
       // 重置好感度变化历史
       affectionHistory: [],
+      // 记录本次读档目标节点ID，防止反复回到同一节点
+      lastReloadSaveId: targetSave.id,
+      // 标记刚刚读档，下次生成剧情时注入策略调整prompt
+      justReloaded: true,
     };
 
     return {

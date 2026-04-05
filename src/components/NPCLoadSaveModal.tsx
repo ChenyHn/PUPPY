@@ -56,19 +56,19 @@ export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurre
 
   return (
     <div className="absolute inset-0 z-50 flex flex-col bg-gray-100 dark:bg-black">
-      {/* Header */}
+      {/* Header - 退出按钮移到左上角 */}
       <div className="relative flex items-center justify-center p-4">
-        <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">选择存档</h2>
         <button
           onClick={onClose}
-          className="absolute right-4 p-2 rounded-full bg-gray-200/50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+          className="absolute left-4 p-2 rounded-full bg-gray-200/50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
         >
           <X size={20} />
         </button>
+        <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">选择存档</h2>
       </div>
 
-      {/* Save List */}
-      <div className="flex-1 overflow-y-auto p-4 pb-28 flex flex-col gap-3">
+      {/* Save List - 固定最大高度，可滚动，不溢出覆盖底部按钮 */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3" style={{ maxHeight: 'calc(100% - 60px - 80px)' }}>
         {saves.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-600">
             <Clock size={48} className="mb-4 opacity-20" />
@@ -90,7 +90,7 @@ export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurre
               {/* 左上角打孔 */}
               <div className="absolute top-[12px] left-[12px] w-[10px] h-[10px] bg-gray-100 dark:bg-black rounded-full z-10 pointer-events-none" />
 
-              <div className="flex-1 min-w-0 flex flex-col gap-1.5 relative z-20 pl-4">
+              <div className="flex-1 min-w-0 flex flex-col gap-1.5 relative z-[5] pl-4">
                 {/* 存档名称 */}
                 <div className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
                   <FileText size={14} className="text-gray-400 dark:text-gray-500 shrink-0" />
@@ -118,7 +118,7 @@ export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurre
                 </div>
               </div>
               
-              <div className="flex items-center gap-2 relative z-20">
+              <div className="flex items-center gap-2 relative z-[5]">
                 <button
                   onClick={(e) => handleDeleteSave(e, save.id)}
                   className="p-2.5 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
@@ -132,24 +132,22 @@ export function NPCLoadSaveModal({ onClose, onLoadGame, onNewGame, onResumeCurre
         )}
       </div>
 
-      {/* Floating Footer */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 pb-safe pointer-events-none">
-        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-md rounded-2xl p-2 flex flex-row justify-around gap-3 pointer-events-auto">
-          {onResumeCurrent && (
-            <button
-              onClick={onResumeCurrent}
-              className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl font-bold active:scale-95 transition-all flex items-center justify-center gap-2"
-            >
-              <span>继续游戏</span>
-            </button>
-          )}
+      {/* 底部按钮区域 - 无外层大容器包裹，z-index高于存档卡片 */}
+      <div className="relative z-20 p-4 pb-safe flex flex-row justify-around gap-3">
+        {onResumeCurrent && (
           <button
-            onClick={onNewGame}
-            className="flex-1 py-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl font-bold active:scale-95 transition-all flex items-center justify-center gap-2"
+            onClick={onResumeCurrent}
+            className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl font-bold active:scale-95 transition-all flex items-center justify-center gap-2"
           >
-            <span>开始新游戏</span>
+            <span>继续游戏</span>
           </button>
-        </div>
+        )}
+        <button
+          onClick={onNewGame}
+          className="flex-1 py-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl font-bold active:scale-95 transition-all flex items-center justify-center gap-2"
+        >
+          <span>开始新游戏</span>
+        </button>
       </div>
 
       {/* Delete Confirmation Modal */}

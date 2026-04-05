@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, AlertTriangle, RefreshCw, LogOut, Send, Save, Image as ImageIcon, Plus, X, Minus, ImageOff } from 'lucide-react';
 import { ApiConfig, Screen } from '../types';
-import { NPCGameState, GameEvent, PresetOption, AffectionMilestone } from '../types/npcGame';
+import { NPCGameState, GameEvent, PresetOption, AffectionMilestone, RewardOption } from '../types/npcGame';
 import { npcGameService, extractPartialEventFields } from '../utils/npcGameService';
 import { NPCSetupModal } from '../components/NPCSetupModal';
 import { NPCEvent } from '../components/NPCEvent';
@@ -118,6 +118,9 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   // 预设选项（现在直接从事件中提取，不再单独请求）
   const [presetOptions, setPresetOptions] = useState<PresetOption[]>([]);
 
+  // 防重复提交：选项处理中锁定
+  const [isProcessingOption, setIsProcessingOption] = useState(false);
+
   // 上一次用户操作上下文（用于 API 失败后重试）
   const [lastActionContext, setLastActionContext] = useState<{
     type: 'initial' | 'next';
@@ -141,8 +144,15 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     value: number;
     type: AffectionMilestone['type'];
     label: string;
-    subtitle: string;
   } | null>(null);
+
+  // 奖励面板状态
+  const [showRewardPanel, setShowRewardPanel] = useState(false);
+  const [rewardOptions, setRewardOptions] = useState<RewardOption[]>([]);
+  const [rewardCustomInput, setRewardCustomInput] = useState('');
+  const [isLoadingReward, setIsLoadingReward] = useState(false);
+  const [pendingRewardMilestoneValue, setPendingRewardMilestoneValue] = useState<number>(0);
+  const [pendingRewardEventList, setPendingRewardEventList] = useState<GameEvent[]>([]);
 
   // 读档遮罩状态
   const [reloadOverlay, setReloadOverlay] = useState<{ charNote: string } | null>(null);
@@ -286,7 +296,6 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
           const newState = { ...gameState, user: { ...gameState.user, avatar: dataUrl } };
           setGameState(newState);
           npcGameService.saveGame(newState);
-          npcGameService.saveToSlot(newState);
         }
       };
     };
@@ -484,7 +493,8 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   };
 
   /**
-   * 检查好感度是否达到某个节点（30/60/100），触发对应的全屏提示和特殊剧情
+   * 检查好感度是否达到某个节点（15/30/45/60/75/90/100），触发完整节点流程
+   * 流程：全屏提示(5秒) → 特殊剧情 → 奖励面板(非100节点)
    * 返回 true 表示触发了节点事件（调用方应停止后续流程等待完成）
    */
   const checkAffectionMilestoneTrigger = async (
@@ -492,39 +502,36 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     currentEventList: GameEvent[],
   ): Promise<boolean> => {
     const milestone = npcGameService.checkAffectionMilestones(state);
-    if (!milestone) return false;
-
-    // 构建全屏提示信息
-    const overlayInfo: Record<AffectionMilestone['type'], { label: string; subtitle: string }> = {
-      first_move: { label: '好感度 → 30', subtitle: 'Char第一次主动出击' },
-      key_event: { label: '好感度 → 60', subtitle: '关键事件' },
-      confession: { label: '好感度 → 100', subtitle: '攻略成功' },
-    };
-
-    const info = overlayInfo[milestone.type];
+    if (!milestone) {
+      // 没有触发节点，但仍需更新历史最高好感度
+      const updated = npcGameService.updatePeakAffection(state);
+      if (updated.peakAffection !== state.peakAffection) {
+        setGameState({ ...updated });
+        npcGameService.saveGame(updated);
+      }
+      return false;
+    }
 
     // 标记节点为已触发
-    let updatedState = npcGameService.markAffectionMilestoneTriggered(state, milestone.type);
+    let updatedState = npcGameService.markAffectionMilestoneTriggered(state, milestone.value);
     setGameState({ ...updatedState });
     npcGameService.saveGame(updatedState);
 
-    // 显示全屏提示
+    // ═══ 第一步：全屏提示，5秒后自动进入第二步 ═══
     setAffectionMilestoneOverlay({
       value: milestone.value,
       type: milestone.type,
-      label: info.label,
-      subtitle: info.subtitle,
+      label: `好感度 → ${milestone.value}`,
     });
 
-    // 2秒后消失并生成特殊剧情
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
     setAffectionMilestoneOverlay(null);
 
-    // 生成好感度节点特殊剧情
+    // ═══ 第二步：生成特殊剧情 ═══
     setIsGenerating(true);
     setStreamingEvent(null);
     try {
-      const milestoneEvent = await npcGameService.generateAffectionMilestoneEvent(
+      const milestoneEvent = await npcGameService.generateAffectionNodeEvent(
         apiConfig, updatedState, milestone, currentEventList, handleStreamChunk,
       );
       setStreamingEvent(null);
@@ -542,13 +549,104 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       npcGameService.saveGame(updatedState);
       setCurrentEvent(milestoneEvent);
       setEventList(updatedList);
-      setPresetOptions(extractPresetsFromEvent(milestoneEvent));
+
+      // ═══ 第三步：奖励面板（100节点不弹奖励面板） ═══
+      if (milestone.type === 'confession') {
+        // 100节点：不弹奖励面板，直接设置恋人模式选项
+        setPresetOptions(extractPresetsFromEvent(milestoneEvent));
+      } else {
+        // 非100节点：生成奖励选项并弹出面板
+        setPresetOptions([]); // 清空预设选项，等奖励流程结束再恢复
+        setPendingRewardMilestoneValue(milestone.value);
+        setPendingRewardEventList(updatedList);
+        setIsLoadingReward(true);
+        setShowRewardPanel(true);
+        try {
+          const options = await npcGameService.generateRewardOptions(apiConfig, updatedState, milestone.value);
+          setRewardOptions(options);
+        } catch {
+          setRewardOptions([
+            { text: '轻轻拍了拍他的肩' },
+            { text: '递给他一杯热饮' },
+            { text: '对他笑了一下' },
+          ]);
+        } finally {
+          setIsLoadingReward(false);
+        }
+      }
     } catch (e: any) {
       setError(e.message || '生成好感度节点剧情失败');
     } finally {
       setIsGenerating(false);
     }
     return true;
+  };
+
+  /**
+   * 处理用户选择奖励（预设/自定义/什么都不给）
+   */
+  const handleRewardSelect = async (rewardText: string | null) => {
+    setShowRewardPanel(false);
+    setRewardOptions([]);
+    setRewardCustomInput('');
+
+    if (!gameState) return;
+
+    // 「什么都不给」- 不生成反应，恢复正常流程
+    if (rewardText === null) {
+      // 恢复当前事件的预设选项
+      if (currentEvent) {
+        setPresetOptions(extractPresetsFromEvent(currentEvent));
+      }
+      return;
+    }
+
+    // 生成Char收到奖励的反应
+    setIsGenerating(true);
+    setStreamingEvent(null);
+    try {
+      const reactionEvent = await npcGameService.generateRewardReaction(
+        apiConfig,
+        gameState,
+        rewardText,
+        pendingRewardMilestoneValue,
+        pendingRewardEventList,
+        handleStreamChunk,
+      );
+      setStreamingEvent(null);
+
+      const updatedList = [...pendingRewardEventList, reactionEvent];
+      const updatedState = {
+        ...gameState,
+        currentEvent: reactionEvent,
+        events: updatedList,
+      };
+
+      setGameState(updatedState);
+      npcGameService.saveGame(updatedState);
+      setCurrentEvent(reactionEvent);
+      setEventList(updatedList);
+      // 奖励反应事件后恢复选项
+      if (reactionEvent.choices) {
+        setPresetOptions(extractPresetsFromEvent(reactionEvent));
+      } else {
+        // 无选项时使用上一个事件的选项
+        const prevEvent = pendingRewardEventList[pendingRewardEventList.length - 1];
+        if (prevEvent) {
+          setPresetOptions(extractPresetsFromEvent(prevEvent));
+        }
+      }
+    } catch (e: any) {
+      setError(e.message || '生成奖励反应失败');
+      // 恢复选项
+      if (currentEvent) {
+        setPresetOptions(extractPresetsFromEvent(currentEvent));
+      }
+    } finally {
+      setIsGenerating(false);
+      setPendingRewardMilestoneValue(0);
+      setPendingRewardEventList([]);
+    }
   };
 
   /**
@@ -773,6 +871,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       setError('生成失败，点击重试');
     } finally {
       setIsGenerating(false);
+      setIsProcessingOption(false);
     }
   };
 
@@ -996,7 +1095,8 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
   const handleCustomInputSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!gameState || isGenerating || !customInputText.trim()) return;
+    if (!gameState || isGenerating || isProcessingOption || !customInputText.trim()) return;
+    setIsProcessingOption(true);
     const text = customInputText.trim();
     const delta = affectionDelta;
     setCustomInputText('');
@@ -1006,7 +1106,8 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   };
 
   const handlePresetOptionSelect = (option: PresetOption) => {
-    if (!gameState || isGenerating) return;
+    if (!gameState || isGenerating || isProcessingOption) return;
+    setIsProcessingOption(true);
     setShowQuickActions(false);
     setAffectionDelta(0);
     // 去掉可能残留的序号前缀，确保发出去的文本干净
@@ -1414,7 +1515,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
                     exit={{ opacity: 0, y: 8 }}
                     transition={{ delay: idx * 0.05 }}
                     onClick={() => handlePresetOptionSelect(option)}
-                    disabled={isGenerating}
+                    disabled={isGenerating || isProcessingOption}
                     className="bg-white/60 dark:bg-black/50 backdrop-blur-xl rounded-2xl px-4 py-3 text-left active:scale-[0.98] transition-all hover:bg-white/80 dark:hover:bg-black/70 disabled:opacity-40 flex items-center justify-between gap-2"
                   >
                     <span className="text-sm font-medium text-zinc-800 dark:text-zinc-100 flex-1">
@@ -1497,7 +1598,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
               {/* 发送按钮 */}
               <button
                 type="submit"
-                disabled={!customInputText.trim() || isGenerating || !currentEvent}
+                disabled={!customInputText.trim() || isGenerating || isProcessingOption || !currentEvent}
                 className="p-2.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-2xl disabled:opacity-30 transition-all active:scale-95 shrink-0"
               >
                 <Send size={14} />
@@ -1544,32 +1645,132 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         )}
       </AnimatePresence>
 
-      {/* ====== 好感度节点全屏通知 ====== */}
+      {/* ====== 好感度节点全屏通知（磨砂半透明遮罩，5秒自动进入特殊剧情） ====== */}
       <AnimatePresence>
         {affectionMilestoneOverlay && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.6 }}
             className="absolute inset-0 z-[60] flex items-center justify-center"
+            style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', backgroundColor: 'rgba(0,0,0,0.5)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ delay: 0.3, duration: 0.5, ease: 'easeOut' }}
+              className="text-center"
+            >
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5, duration: 0.4 }}
+                className="text-lg font-light text-white/50 tracking-[0.4em] mb-4"
+              >〔</motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7, duration: 0.5 }}
+                className="text-3xl font-bold text-white tracking-[0.2em] mb-4"
+              >
+                {affectionMilestoneOverlay.label}
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.9, duration: 0.4 }}
+                className="text-lg font-light text-white/50 tracking-[0.4em]"
+              >〕</motion.div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ====== 奖励选择面板 ====== */}
+      <AnimatePresence>
+        {showRewardPanel && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="absolute inset-0 z-[55] flex items-center justify-center p-4"
             style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', backgroundColor: 'rgba(0,0,0,0.4)' }}
           >
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ delay: 0.2, duration: 0.4, ease: 'easeOut' }}
-              className="text-center"
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-sm bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl rounded-[28px] p-6 shadow-2xl"
             >
-              <div className="text-lg font-light text-white/60 tracking-[0.3em] mb-3">〔</div>
-              <div className="text-2xl font-bold text-white tracking-widest mb-2">
-                {affectionMilestoneOverlay.label}
-              </div>
-              <div className="text-lg font-light text-white/60 tracking-[0.3em] mt-3">〕</div>
-              <div className="mt-6 text-base text-white/80 font-medium tracking-wider">
-                {affectionMilestoneOverlay.subtitle}
-              </div>
+              <h3 className="text-center text-lg font-bold text-zinc-800 dark:text-zinc-100 mb-5 tracking-wide">
+                要给他一点奖励吗？
+              </h3>
+
+              {isLoadingReward ? (
+                <div className="flex items-center justify-center py-8 gap-2 text-zinc-400">
+                  <RefreshCw size={16} className="animate-spin" />
+                  <span className="text-sm">正在生成奖励选项...</span>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2.5">
+                  {/* AI生成的3个预设奖励选项 */}
+                  {rewardOptions.map((option, idx) => (
+                    <motion.button
+                      key={idx}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.08 }}
+                      onClick={() => handleRewardSelect(option.text)}
+                      disabled={isGenerating}
+                      className="w-full text-left px-4 py-3 bg-white/60 dark:bg-zinc-800/60 hover:bg-white/90 dark:hover:bg-zinc-700/80 rounded-2xl text-sm font-medium text-zinc-800 dark:text-zinc-100 active:scale-[0.98] transition-all disabled:opacity-40"
+                    >
+                      {option.text}
+                    </motion.button>
+                  ))}
+
+                  {/* 自定义输入选项 */}
+                  <motion.div
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.24 }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      type="text"
+                      value={rewardCustomInput}
+                      onChange={(e) => setRewardCustomInput(e.target.value)}
+                      placeholder="自定义..."
+                      disabled={isGenerating}
+                      className="flex-1 min-w-0 px-4 py-3 bg-white/60 dark:bg-zinc-800/60 rounded-2xl text-sm text-zinc-800 dark:text-zinc-100 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-600 transition-colors disabled:opacity-40"
+                    />
+                    {rewardCustomInput.trim() && (
+                      <button
+                        onClick={() => handleRewardSelect(rewardCustomInput.trim())}
+                        disabled={isGenerating}
+                        className="px-4 py-3 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-2xl text-sm font-bold active:scale-95 transition-transform disabled:opacity-40 shrink-0"
+                      >
+                        确定
+                      </button>
+                    )}
+                  </motion.div>
+
+                  {/* 什么都不给 */}
+                  <motion.button
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.35 }}
+                    onClick={() => handleRewardSelect(null)}
+                    disabled={isGenerating}
+                    className="w-full text-center py-3 text-zinc-400 dark:text-zinc-500 text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300 active:scale-[0.98] transition-all disabled:opacity-40 mt-1"
+                  >
+                    什么都不给
+                  </motion.button>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}

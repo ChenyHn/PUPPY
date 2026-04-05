@@ -19,9 +19,13 @@ export interface ArchiveMemoryEntry {
 }
 
 export interface AffectionMilestone {
-  value: number;           // 触发阈值（30, 60, 100）
+  value: number;           // 触发阈值（15/30/45/60/75/90/100）
   triggered: boolean;      // 是否已触发
-  type: 'first_move' | 'key_event' | 'confession';
+  type: 'node' | 'confession'; // node=普通好感度节点, confession=表白节点(100)
+}
+
+export interface RewardOption {
+  text: string;            // 奖励选项文本（10字以内）
 }
 
 export interface StatMilestone {
@@ -82,6 +86,7 @@ export interface NPCGameState {
   
   // 好感度节点系统
   affectionMilestones?: AffectionMilestone[];
+  peakAffection?: number;  // 历史最高好感度（用于节点触发判断，只在突破历史最高时触发）
 
   // 保存当前事件以便读档恢复
   currentEvent?: GameEvent | null;
@@ -96,6 +101,8 @@ export interface NPCGameState {
   affectionHistory?: number[];            // 最近好感度变化记录（用于AI判断读档）
   lastAutoSaveAffection?: number;         // 上次自动存档时的好感度（用于每10点触发）
   lastAutoSaveRound?: number;             // 上次自动存档时的轮数（用于每5轮触发）
+  lastReloadSaveId?: number;              // 上次读档目标存档点ID（防止反复回到同一节点）
+  justReloaded?: boolean;                 // 是否刚刚读档（用于注入策略调整prompt）
 }
 
 export interface GameEvent {
