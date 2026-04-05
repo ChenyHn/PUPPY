@@ -103,6 +103,7 @@ export interface NPCGameState {
   lastAutoSaveRound?: number;             // 上次自动存档时的轮数（用于每5轮触发）
   lastReloadSaveId?: number;              // 上次读档目标存档点ID（防止反复回到同一节点）
   justReloaded?: boolean;                 // 是否刚刚读档（用于注入策略调整prompt）
+  lastReloadAffection?: number;           // 上次读档时的好感度（用于下限保护：高于此值禁止触发读档）
 }
 
 export interface GameEvent {

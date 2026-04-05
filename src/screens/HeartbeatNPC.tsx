@@ -708,10 +708,19 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     setGameState(JSON.parse(JSON.stringify(newState)));
     npcGameService.saveGame(newState);
 
-    // ── 【读档时机修正】读档判断在生成对话之前执行 ──
+    // ══════ 第一步：好感度节点检查（15/30/45/60/75/90/100）══════
+    // 好感度节点优先于读档判断，节点触发说明攻略在推进
+    const affectionMilestoneTriggered = await checkAffectionMilestoneTrigger(newState, eventList);
+    if (affectionMilestoneTriggered) {
+      setIsProcessingOption(false);
+      return; // 节点流程全部结束后直接返回，不执行读档判断
+    }
+
+    // ══════ 第二步：读档判断（节点流程结束后才执行）══════
+    // 传入 justTriggeredMilestone=false（因为如果触发了节点，上面已经return了）
     if (customAffectionDelta !== undefined && customAffectionDelta !== 0) {
       try {
-        const reloadJudgment = await npcGameService.judgeCharReload(apiConfig, newState);
+        const reloadJudgment = await npcGameService.judgeCharReload(apiConfig, newState, false);
         if (reloadJudgment.shouldReload) {
           const reloadResult = npcGameService.executeReload(newState, reloadJudgment.charNote);
           if (reloadResult) {
@@ -733,6 +742,8 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
               setCurrentEvent(lastNormalEvent);
               setPresetOptions(extractPresetsFromEvent(lastNormalEvent));
             }
+            setIsGenerating(false);
+            setIsProcessingOption(false);
             return; // 读档后直接返回，不生成本轮对话
           }
         }
@@ -740,10 +751,6 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         console.error('Char读档判断失败，继续正常流程:', reloadErr);
       }
     }
-
-    // ── 好感度节点检查（30/60/100）──
-    const affectionMilestoneTriggered = await checkAffectionMilestoneTrigger(newState, eventList);
-    if (affectionMilestoneTriggered) return;
 
     // 立即显示用户的发言/行动（临时气泡）
     let hadUserBubble = false;
@@ -1096,6 +1103,9 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   const handleCustomInputSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!gameState || isGenerating || isProcessingOption || !customInputText.trim()) return;
+    // 立即同步显示 loading 状态，不等待任何异步操作
+    setIsGenerating(true);
+    setStreamingEvent(null);
     setIsProcessingOption(true);
     const text = customInputText.trim();
     const delta = affectionDelta;
@@ -1107,6 +1117,9 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
   const handlePresetOptionSelect = (option: PresetOption) => {
     if (!gameState || isGenerating || isProcessingOption) return;
+    // 立即同步显示 loading 状态，不等待任何异步操作
+    setIsGenerating(true);
+    setStreamingEvent(null);
     setIsProcessingOption(true);
     setShowQuickActions(false);
     setAffectionDelta(0);

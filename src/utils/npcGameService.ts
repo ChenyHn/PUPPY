@@ -1410,6 +1410,21 @@ Char的回应。对话用「」，动作用括号。
   },
 
   /**
+   * 验证 AI 返回的原始文本是否包含全部4个必需标签的开闭标记
+   * 必需标签：narration, char_thought, char_dialogue, options
+   * 返回 true 表示全部存在
+   */
+  _validateAllRequiredTags(rawText: string): boolean {
+    const requiredTags = ['narration', 'char_thought', 'char_dialogue', 'options'];
+    for (const tag of requiredTags) {
+      if (!rawText.includes(`<${tag}>`) || !rawText.includes(`</${tag}>`)) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  /**
    * 验证 AI 返回内容中 char_thought 是否存在且非空
    * 返回 true 表示验证通过
    */
@@ -1633,6 +1648,9 @@ Char的回应。对话用「」，动作用括号。
 
     userPrompt += '\n\n请严格按照系统提示词中定义的输出格式，使用 <narration>、<char_thought>、<char_dialogue>、<options>、<stats_delta> 标签生成下一轮剧情。要求：1）必须自然承接上一轮剧情，不能无视上文；2）narration内容自然、有画面感，字数根据剧情需要决定；3）charThought必须直接回应User刚才的具体表现并体现攻略策略思考，禁止出现任何具体数值或数值变化描述，字数根据剧情需要决定；4）Char的言行和内心独白的语气用词必须符合Char自身人设，禁止模仿User说话方式；5）本轮结尾要留一个小的情节钩子引向下一轮；6）根据本轮User的行为判断专属数值变化，在<stats_delta>中输出。';
 
+    // ── 强制输出格式规则（防掉格式终极方案） ──
+    userPrompt += '\n\n===输出规则===\n你必须且只能输出以下格式，不得包含任何其他文字、解释、代码块标记：\n<narration>旁白内容</narration>\n<char_thought>内心独白</char_thought>\n<char_dialogue>对话内容</char_dialogue>\n<options>\n选项1文本|好感变化\n选项2文本|好感变化\n选项3文本|好感变化\n</options>\n违反此格式的输出将被视为无效。';
+
     // ── 注入 archiveMemory 到系统 prompt ──
     let systemPromptWithMemory = SYSTEM_PROMPT_GENERATE_EVENT;
     const archiveMemoryPrompt = this.buildArchiveMemoryPrompt(state);
@@ -1653,8 +1671,8 @@ Char的回应。对话用「」，动作用括号。
     ];
 
     // ── 4. 调用 API（优先流式，失败回退非流式），含容错重试逻辑 ──
-    // 最多自动重试 2 次（格式错误/截断/char_thought 缺失）
-    const MAX_AUTO_RETRY = 2;
+    // 最多自动重试 3 次（格式错误/截断/char_thought 缺失/必需标签缺失）
+    const MAX_AUTO_RETRY = 3;
 
     const parseAIRaw = (rawText: string): any => {
       if (rawText.includes('<narration>') || rawText.includes('<char_thought>') || rawText.includes('<char_dialogue>')) {
@@ -1736,17 +1754,24 @@ Char的回应。对话用「」，动作用括号。
         }
       }
 
+      // ── 必需标签完整性校验：4个标签的开闭标记必须全部存在 ──
+      if (rawText && !this._validateAllRequiredTags(rawText) && attempt < MAX_AUTO_RETRY) {
+        console.warn(`必需标签不完整（缺少 narration/char_thought/char_dialogue/options 中的某个），静默重试（第${attempt + 1}次）...`);
+        messages[messages.length - 1].content += '\n\n上次输出格式不正确，请严格重新输出，只输出规定格式内容，不要任何额外文字。';
+        continue;
+      }
+
       // char_thought 验证：如果为空或缺失，重试
       if (!this._validateCharThought(aiResponse) && attempt < MAX_AUTO_RETRY) {
         console.warn(`char_thought 为空或缺失，正在重试（第${attempt + 1}次）...`);
+        messages[messages.length - 1].content += '\n\n上次输出格式不正确，请严格重新输出，只输出规定格式内容，不要任何额外文字。';
         continue;
       }
 
       // ── 格式泄漏检测：如果解析后的文本中包含裸露XML标签，静默重试 ──
       if (this._hasLeakedTags(aiResponse) && attempt < MAX_AUTO_RETRY) {
         console.warn(`检测到格式泄漏（XML标签出现在渲染文本中），静默重试（第${attempt + 1}次）...`);
-        // 在 user prompt 末尾追加格式提醒
-        messages[messages.length - 1].content += '\n\n请严格按格式输出，不要在文本中出现标签字符串本身（如<narration>、<char_thought>等），这些标签只用于结构分隔，不要出现在内容文字里。';
+        messages[messages.length - 1].content += '\n\n上次输出格式不正确，请严格重新输出，只输出规定格式内容，不要任何额外文字。请严格按格式输出，不要在文本中出现标签字符串本身（如<narration>、<char_thought>等），这些标签只用于结构分隔，不要出现在内容文字里。';
         continue;
       }
 
@@ -1754,7 +1779,7 @@ Char的回应。对话用「」，动作用括号。
     }
 
     // 所有重试都失败，抛出错误提示
-    throw new Error('AI 返回格式异常，请重试');
+    throw new Error('AI 返回格式异常（已重试3次），请稍后重试');
   },
 
   async useSpecialReset(apiConfig: ApiConfig, state: NPCGameState): Promise<GameEvent> {
@@ -1984,14 +2009,44 @@ ${eventType === 'daily' ? 'affectionDelta统一为0。' : '注意：好感度变
 
   /**
    * 调用AI判断Char此刻是否会选择读档重来
+   * 增强版：包含里程碑节点触发检测和好感度下限保护
+   * 
+   * @param justTriggeredMilestone 是否刚刚触发了好感度里程碑节点（如果是则禁止读档）
    * 返回 { shouldReload: boolean, charNote: string }
    */
   async judgeCharReload(
     apiConfig: ApiConfig,
     state: NPCGameState,
+    justTriggeredMilestone: boolean = false,
   ): Promise<{ shouldReload: boolean; charNote: string }> {
-    // 获取最近3次好感度变化记录
+    // ── 前置硬性保护：里程碑节点刚触发时禁止读档 ──
+    if (justTriggeredMilestone) {
+      return { shouldReload: false, charNote: '' };
+    }
+
+    // ── 前置硬性保护：好感度下限保护 ──
+    // 好感度高于上一次读档时的好感度 → 禁止触发读档
+    const lastReloadAffection = state.lastReloadAffection ?? -Infinity;
+    if (state.user.affection > lastReloadAffection && lastReloadAffection > -Infinity) {
+      return { shouldReload: false, charNote: '' };
+    }
+
+    // ── 前置硬性保护：好感度呈上升趋势时禁止读档 ──
     const recentChanges = (state.affectionHistory || []).slice(-3);
+    if (recentChanges.length >= 2) {
+      const lastTwo = recentChanges.slice(-2);
+      // 最近两次都是正向变化 → 上升趋势，禁止读档
+      if (lastTwo.every(d => d > 0)) {
+        return { shouldReload: false, charNote: '' };
+      }
+    }
+
+    // 只有好感度呈下降趋势时，才提交给AI判断
+    const hasDecline = recentChanges.some(d => d < 0);
+    if (!hasDecline && recentChanges.length > 0) {
+      // 没有任何下降记录，不触发读档
+      return { shouldReload: false, charNote: '' };
+    }
     
     // 构建 archiveMemory 上下文
     const archiveLines: string[] = [];
@@ -2000,6 +2055,10 @@ ${eventType === 'daily' ? 'affectionDelta统一为0。' : '注意：好感度变
         archiveLines.push(`第${mem.attempt}次读档：好感度${mem.failedAt}时失败，原因：${mem.charNote}`);
       }
     }
+
+    // 检查是否刚刚触发了好感度里程碑节点（二次确认）
+    const milestones = state.affectionMilestones || [];
+    const justTriggeredAny = milestones.some(m => m.triggered && m.value === state.user.affection);
 
     const prompt = `根据char的人设，判断他此刻是否会选择读档重来。
 
@@ -2010,6 +2069,10 @@ ${eventType === 'daily' ? 'affectionDelta统一为0。' : '注意：好感度变
 策略：${state.char.strategy}
 
 【当前好感度】${state.user.affection}（范围-100~100）
+【上次读档时的好感度】${lastReloadAffection === -Infinity ? '未读过档' : lastReloadAffection}
+
+【当前好感度是否刚刚触发了里程碑节点】${justTriggeredAny ? '是' : '否'}
+如果是，禁止触发读档。里程碑节点触发说明攻略在推进，不是失败。
 
 【最近3次好感度变化记录】
 ${recentChanges.length > 0 ? recentChanges.map((d, i) => `第${i + 1}次：${d > 0 ? '+' : ''}${d}`).join('\n') : '暂无变化记录'}
@@ -2018,6 +2081,9 @@ ${recentChanges.length > 0 ? recentChanges.map((d, i) => `第${i + 1}次：${d >
 ${archiveLines.length > 0 ? archiveLines.join('\n') : '尚未读过档'}
 
 判断依据：
+- 好感度高于上次读档时的好感度 → 禁止触发读档（说明在进步）
+- 好感度刚刚触发了里程碑节点 → 禁止触发读档（节点说明攻略在推进）
+- 只有好感度低于某个阈值且呈下降趋势时，才允许触发读档
 - 傲娇/好胜人设：好感度连续下降2次就会触发
 - 沉稳/成熟人设：好感度下降6次才触发
 - 其他人设：根据人设性格自行判断敏感程度
@@ -2142,6 +2208,8 @@ ${archiveLines.length > 0 ? archiveLines.join('\n') : '尚未读过档'}
       lastReloadSaveId: targetSave.id,
       // 标记刚刚读档，下次生成剧情时注入策略调整prompt
       justReloaded: true,
+      // 记录本次读档时的好感度（用于下限保护：后续好感度高于此值时禁止再触发读档）
+      lastReloadAffection: currentAffection,
     };
 
     return {
