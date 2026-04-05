@@ -885,6 +885,115 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     }
   };
 
+  /**
+   * 重新生成最后一条 char 回应：
+   * 清除最后一条事件，使用相同上下文重新调用 AI
+   */
+  const handleRegenerate = async () => {
+    if (!gameState || isGenerating || eventList.length === 0) return;
+
+    // 找到最后一条非用户气泡事件
+    const lastEvent = eventList[eventList.length - 1];
+    if (!lastEvent || lastEvent.id.startsWith('user_') || lastEvent.id.startsWith('reload_separator_')) return;
+
+    // 如果有保存的上下文（上次操作），优先使用
+    if (lastActionContext) {
+      // 移除最后一条事件，恢复到之前的状态
+      setEventList(lastActionContext.eventsSnapshot);
+      setCurrentEvent(
+        lastActionContext.eventsSnapshot.length > 0
+          ? lastActionContext.eventsSnapshot[lastActionContext.eventsSnapshot.length - 1]
+          : null,
+      );
+      // 重新调用
+      retryLastAction();
+      return;
+    }
+
+    // 没有 lastActionContext 时，从当前状态重建上下文
+    const prevEventList = eventList.slice(0, -1);
+    const prevLastEvent = prevEventList.length > 0 ? prevEventList[prevEventList.length - 1] : null;
+
+    // 提取上一次用户输入（从被移除的事件中）
+    const lastUserInput = lastEvent.userDialogue || '';
+
+    // 提取上一次选中的预设选项信息
+    const hadUserBubble = !!lastUserInput;
+
+    // 恢复事件列表（移除最后一条）
+    setEventList(prevEventList);
+    setCurrentEvent(prevLastEvent);
+
+    // 构建重试上下文
+    const retryContext = {
+      type: 'next' as const,
+      customInput: lastUserInput || undefined,
+      affectionDelta: 0,
+      selectedPresetOption: null,
+      stateSnapshot: JSON.parse(JSON.stringify(gameState)),
+      eventsSnapshot: prevEventList,
+      hadUserBubble,
+    };
+    setLastActionContext(retryContext);
+
+    // 重新显示用户气泡（如果有）
+    if (hadUserBubble && lastUserInput) {
+      const userBubbleEvent: GameEvent = {
+        id: `user_${Date.now()}`,
+        type: prevLastEvent?.type || 'daily',
+        description: '',
+        userDialogue: lastUserInput,
+      };
+      setEventList(prev => [...prev, userBubbleEvent]);
+    }
+
+    // 调用 AI 重新生成
+    setIsGenerating(true);
+    setError('');
+    setPresetOptions([]);
+    setStreamingEvent(null);
+    try {
+      const nextEvent = await npcGameService.generateNextEvent(
+        apiConfig,
+        retryContext.stateSnapshot,
+        undefined,
+        undefined,
+        lastUserInput || undefined,
+        prevEventList,
+        handleStreamChunk,
+        null,
+      );
+      setStreamingEvent(null);
+
+      const updatedState = JSON.parse(JSON.stringify(retryContext.stateSnapshot)) as NPCGameState;
+      updatedState.currentEvent = nextEvent;
+
+      const updatedList = prevEventList.filter(e => !e.id.startsWith('user_'));
+      updatedList.push(nextEvent);
+      updatedState.events = updatedList;
+
+      setGameState(updatedState);
+      npcGameService.saveGame(updatedState);
+      setCurrentEvent(nextEvent);
+
+      setEventList(() => {
+        const withoutBubble = prevEventList.filter(e => !e.id.startsWith('user_'));
+        return [...withoutBubble, nextEvent];
+      });
+
+      setPresetOptions(extractPresetsFromEvent(nextEvent));
+      setLastActionContext(null);
+    } catch (e: any) {
+      setStreamingEvent(null);
+      if (hadUserBubble) {
+        setEventList(prev => prev.filter(e => !e.id.startsWith('user_')));
+      }
+      setError('重新生成失败，点击重试');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleCustomInputSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!gameState || isGenerating || !customInputText.trim()) return;
@@ -1220,6 +1329,24 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       >
         {/* 历史事件区域 - 独立渲染，不受 isGenerating 影响 */}
         <MemoizedEventList eventList={eventList} charName={gameState.char.name} userAvatar={userAvatar} />
+
+        {/* 重新生成按钮 - 显示在最后一条 char 回应的右上角 */}
+        {!isGenerating && !showGameOver && eventList.length > 0 && (() => {
+          const lastEvt = eventList[eventList.length - 1];
+          const isCharResponse = lastEvt && !lastEvt.id.startsWith('user_') && !lastEvt.id.startsWith('reload_separator_') && !lastEvt.id.startsWith('opening_');
+          return isCharResponse ? (
+            <div className="flex justify-end -mt-2 mb-1 px-2">
+              <button
+                onClick={handleRegenerate}
+                className="flex items-center gap-1 px-2 py-1 rounded-xl text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/40 dark:hover:bg-white/10 active:scale-95 transition-all text-[11px]"
+                title="重新生成"
+              >
+                <RefreshCw size={12} />
+                <span>重新生成</span>
+              </button>
+            </div>
+          ) : null;
+        })()}
 
         {/* 生成中的区域 - 仅此区域随 isGenerating 变化 */}
         {isGenerating && (

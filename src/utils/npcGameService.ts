@@ -1230,6 +1230,36 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
   },
 
   /**
+   * 检查 AI 返回的原始文本是否包含代码块标记（```）或明显格式错误
+   * 返回 true 表示存在格式问题
+   */
+  _hasFormatErrors(rawText: string): boolean {
+    // 检查代码块标记
+    if (/```/.test(rawText)) return true;
+    // 检查是否完全没有有效内容标签也没有有效 JSON
+    const hasValidTags = /<narration>|<char_thought>|<char_dialogue>/.test(rawText);
+    const hasValidJson = /\{[\s\S]*"(narration|description|charDialogue|charAction)"/.test(rawText);
+    if (!hasValidTags && !hasValidJson && rawText.trim().length > 30) return true;
+    return false;
+  },
+
+  /**
+   * 检查 AI 返回的原始文本是否存在未闭合标签（token 截断）
+   * 返回 true 表示检测到截断
+   */
+  _hasUnclosedTags(rawText: string): boolean {
+    const tags = ['narration', 'char_thought', 'char_dialogue', 'options', 'stats_delta'];
+    for (const tag of tags) {
+      const openRegex = new RegExp(`<${tag}>`);
+      const closeRegex = new RegExp(`</${tag}>`);
+      if (openRegex.test(rawText) && !closeRegex.test(rawText)) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  /**
    * 将 AI 返回的原始响应解析为 GameEvent（抽取公共逻辑）
    */
   _parseEventResponse(
@@ -1406,8 +1436,9 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
       { role: 'user', content: userPrompt },
     ];
 
-    // ── 4. 调用 API（优先流式，失败回退非流式），含 char_thought 重试逻辑 ──
-    const MAX_RETRY_FOR_THOUGHT = 2;
+    // ── 4. 调用 API（优先流式，失败回退非流式），含容错重试逻辑 ──
+    // 最多自动重试 2 次（格式错误/截断/char_thought 缺失）
+    const MAX_AUTO_RETRY = 2;
 
     const parseAIRaw = (rawText: string): any => {
       if (rawText.includes('<narration>') || rawText.includes('<char_thought>') || rawText.includes('<char_dialogue>')) {
@@ -1422,25 +1453,75 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
       }
     };
 
-    for (let attempt = 0; attempt <= MAX_RETRY_FOR_THOUGHT; attempt++) {
+    for (let attempt = 0; attempt <= MAX_AUTO_RETRY; attempt++) {
       let aiResponse: any;
+      let rawText = '';
 
       if (onStream) {
         try {
-          const rawText = await this.callAIStream(apiConfig, messages, onStream, 0.6);
+          rawText = await this.callAIStream(apiConfig, messages, onStream, 0.6);
+
+          // ── 解析容错：检查代码块或格式错误 ──
+          if (this._hasFormatErrors(rawText) && attempt < MAX_AUTO_RETRY) {
+            console.warn(`AI 返回包含代码块或格式错误，自动重试（第${attempt + 1}次）...`);
+            continue;
+          }
+
+          // ── token 截断检测：检查未闭合标签 ──
+          if (this._hasUnclosedTags(rawText) && attempt < MAX_AUTO_RETRY) {
+            console.warn(`AI 返回存在未闭合标签（token 截断），自动重试（第${attempt + 1}次）...`);
+            continue;
+          }
+
           aiResponse = parseAIRaw(rawText);
         } catch (streamError: any) {
           console.warn('Streaming failed, falling back to non-streaming:', streamError.message);
           const rawContent = await this.callAI(apiConfig, messages, false, 0.6);
-          aiResponse = typeof rawContent === 'string' ? parseAIRaw(rawContent) : rawContent;
+          if (typeof rawContent === 'string') {
+            rawText = rawContent;
+
+            // ── 解析容错（非流式回退） ──
+            if (this._hasFormatErrors(rawText) && attempt < MAX_AUTO_RETRY) {
+              console.warn(`AI 返回包含代码块或格式错误（非流式），自动重试（第${attempt + 1}次）...`);
+              continue;
+            }
+
+            // ── token 截断检测（非流式回退） ──
+            if (this._hasUnclosedTags(rawText) && attempt < MAX_AUTO_RETRY) {
+              console.warn(`AI 返回存在未闭合标签（非流式），自动重试（第${attempt + 1}次）...`);
+              continue;
+            }
+
+            aiResponse = parseAIRaw(rawContent);
+          } else {
+            aiResponse = rawContent;
+          }
         }
       } else {
         const rawContent = await this.callAI(apiConfig, messages, false, 0.6);
-        aiResponse = typeof rawContent === 'string' ? parseAIRaw(rawContent) : rawContent;
+        if (typeof rawContent === 'string') {
+          rawText = rawContent;
+
+          // ── 解析容错 ──
+          if (this._hasFormatErrors(rawText) && attempt < MAX_AUTO_RETRY) {
+            console.warn(`AI 返回包含代码块或格式错误，自动重试（第${attempt + 1}次）...`);
+            continue;
+          }
+
+          // ── token 截断检测 ──
+          if (this._hasUnclosedTags(rawText) && attempt < MAX_AUTO_RETRY) {
+            console.warn(`AI 返回存在未闭合标签（token 截断），自动重试（第${attempt + 1}次）...`);
+            continue;
+          }
+
+          aiResponse = parseAIRaw(rawContent);
+        } else {
+          aiResponse = rawContent;
+        }
       }
 
       // char_thought 验证：如果为空或缺失，重试
-      if (!this._validateCharThought(aiResponse) && attempt < MAX_RETRY_FOR_THOUGHT) {
+      if (!this._validateCharThought(aiResponse) && attempt < MAX_AUTO_RETRY) {
         console.warn(`char_thought 为空或缺失，正在重试（第${attempt + 1}次）...`);
         continue;
       }
@@ -1448,8 +1529,8 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
       return this._parseEventResponse(aiResponse, state, customInput, userAction, userReactionText);
     }
 
-    // 理论上不会到这里，但作为兜底
-    throw new Error('Failed to generate event with valid char_thought');
+    // 所有重试都失败，抛出错误提示
+    throw new Error('AI 返回格式异常，请重试');
   },
 
   async useSpecialReset(apiConfig: ApiConfig, state: NPCGameState): Promise<GameEvent> {
