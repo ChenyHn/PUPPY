@@ -104,6 +104,8 @@ export interface NPCGameState {
   lastReloadSaveId?: number;              // 上次读档目标存档点ID（防止反复回到同一节点）
   justReloaded?: boolean;                 // 是否刚刚读档（用于注入策略调整prompt）
   lastReloadAffection?: number;           // 上次读档时的好感度（用于下限保护：高于此值禁止触发读档）
+  immunityCount?: number;                 // 好感度下降豁免权次数
+  justGotImmunity?: boolean;              // 是否刚刚获得豁免权（用于下一轮prompt注入道具反应）
 }
 
 export interface GameEvent {

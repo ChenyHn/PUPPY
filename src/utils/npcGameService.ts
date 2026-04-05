@@ -240,6 +240,24 @@ Char对User的感情不只是攻略目标，他是真的爱这个人。
 - 偶尔一瞬间忘记自己在攻略，只是单纯地想让眼前这个人过得好一点
 
 禁止爱意变成油腻表白，藏在细节和克制里的爱意比直说更有力量。
+
+【爱意优先级最高】
+Char爱User是前提，攻略是手段不是目的。
+他不是为了赢才追User，他是因为真的爱才想让User也爱上他。
+
+内心独白必须体现这一点：
+- 他观察User的细节，不是在分析攻略对象，是因为他根本移不开眼
+- 某个瞬间他会忘记自己在攻略，只是单纯地因为User的某个动作而心跳加速
+- 他的挫败感里有真实的难过，不只是"这局输了"，而是"她还不喜欢我"
+- 当User做了让他心动的事，内心可以非常混乱、非常直接、不需要理性，就是那一刻真实的反应
+
+根据Char人设放大情绪：
+- 年下/活泼型：内心可以很混乱很重复，比如某句话反复出现，思维跳跃，克制不住地高兴或慌乱
+- 高冷型：越克制越说明在意，一个细节能让他想很久
+- 傲娇型：嘴上反着说，心里完全是另一回事，他自己都觉得自己很没用
+
+禁止：内心独白是冷静的旁观者视角
+必须：内心独白是一个真实的人在心跳加速
 </char_thought>
 
 <char_dialogue>
@@ -930,24 +948,23 @@ Char的话和动作。对话用「」，动作用括号。
   },
 
   /**
-   * 检查好感度是否突破了历史最高值并达到了某个未触发的节点
-   * 只在历史最高值被突破时触发，下降后回升不重复触发
-   * 返回第一个未触发且已达到阈值的节点，如果没有则返回 null
+   * 检查好感度是否跨越了某些未触发的节点
+   * 使用正确的跨越判断：oldAffection < milestone.value && newAffection >= milestone.value
+   * 返回所有本次跨越的未触发节点数组（按 value 升序排列），如果没有则返回空数组
    */
-  checkAffectionMilestones(state: NPCGameState): AffectionMilestone | null {
+  checkAffectionMilestones(state: NPCGameState, oldAffection: number): AffectionMilestone[] {
     const milestones = state.affectionMilestones || this.getDefaultAffectionMilestones();
-    const currentAffection = state.user.affection;
-    const peakAffection = state.peakAffection ?? 0;
+    const newAffection = state.user.affection;
 
-    // 只在当前好感度突破历史最高值时才检查节点
-    if (currentAffection <= peakAffection) return null;
-
+    const crossed: AffectionMilestone[] = [];
     for (const m of milestones) {
-      if (!m.triggered && currentAffection >= m.value && m.value > peakAffection) {
-        return m;
+      if (!m.triggered && oldAffection < m.value && newAffection >= m.value) {
+        crossed.push(m);
       }
     }
-    return null;
+    // 按 value 升序排列，确保从低到高依次触发
+    crossed.sort((a, b) => a.value - b.value);
+    return crossed;
   },
 
   /**
@@ -1006,13 +1023,23 @@ Char的话和动作。对话用「」，动作用括号。
     const relationLabel = state.relationshipStage === 'together' ? '恋人' : '追求中';
 
     // 根据好感度阶段描述亲密程度
-    const stageDesc = milestone.value <= 15 ? '刚刚开始有好感，还很生疏，带着试探'
-      : milestone.value <= 30 ? '有了初步好感，开始注意对方，但还保持距离'
-      : milestone.value <= 45 ? '好感渐深，开始主动找机会接近，有了一些默契'
-      : milestone.value <= 60 ? '关系明显升温，两人之间有了更多专属的互动和默契'
-      : milestone.value <= 75 ? '已经非常亲近，有很多两人独处的时刻，心照不宣'
-      : milestone.value <= 90 ? '几乎就差捅破那层窗户纸，彼此都清楚对方的心意'
-      : '好感度已满，到了表白的时刻';
+    const stageDesc = milestone.value <= 15 ? '你开始留意TA了——还很生疏，带着试探'
+      : milestone.value <= 30 ? 'TA的某句话让你多想了一秒——开始注意对方，但还保持距离'
+      : milestone.value <= 45 ? '你发现自己有点期待TA出现——开始主动找机会接近，有了一些默契'
+      : milestone.value <= 60 ? '你已经不完全是在配合TA了——两人之间有了更多专属的互动和默契'
+      : milestone.value <= 75 ? '你有点说不清自己的感觉了——已经非常亲近，有很多两人独处的时刻'
+      : milestone.value <= 90 ? '你快输了——几乎就差捅破那层窗户纸，彼此都清楚对方的心意'
+      : '沦陷——好感度已满，到了表白的时刻';
+
+    // 根据当前好感度确定user的亲密程度描述
+    const affection = state.user.affection;
+    const userIntimacyDesc = affection <= 30
+      ? `${state.user.name}还很克制，但有一个小细节出卖了TA`
+      : affection <= 60
+      ? `${state.user.name}开始有点主动，但还在假装无所谓`
+      : affection <= 90
+      ? `${state.user.name}已经藏不住了，但嘴上不说`
+      : `${state.user.name}彻底沦陷，这一刻不想装了`;
 
     let taskDescription = '';
 
@@ -1028,22 +1055,21 @@ Char的话和动作。对话用「」，动作用括号。
 6. Char的内心独白要体现"终于通关"的玩家成就感，同时也有真实的心动
 7. 用角色真名替代Char/User，人称代词严格匹配性别`;
     } else {
-      taskDescription = `好感度达到${milestone.value}，两人关系迎来了一个小进展。
-
-当前阶段描述：${stageDesc}
+      taskDescription = `生成一段特殊小剧场，有${state.char.name}和${state.user.name}的互动，
+纯旁白第三人称描写，没有对话选项。
 
 要求：
-1. 这是一段代表两人关系小进展的特殊剧情，200-500字，可适当超出
-2. 剧情要有画面感和情绪张力，符合当前好感度阶段（${stageDesc}）
-3. 不是简单的日常，而是一个有纪念意义的小片段——可以是一个特殊的瞬间、意外的接触、不经意的温暖
-4. 好感度越高越亲密，但不要提前进入表白或恋人模式
-5. Char的行为和语言必须符合人设性格
-6. Char的内心独白要体现他作为玩家的策略思考和真实在意的混杂
-7. 自然承接近期剧情，不突兀
-8. 用角色真名替代Char/User，人称代词严格匹配性别`;
+- 必须同时出现${state.char.name}和${state.user.name}两个人
+- ${state.char.name}对${state.user.name}的爱意是满分的，通过动作和细节体现，不是说出来的，是做出来的
+- ${userIntimacyDesc}
+- 场景是一个温馨日常的小瞬间，不是推进主线的，就是甜一下
+- 150-200字，有起有落，结尾留余韵
+- 禁止霸总油腻，禁止直白表白，情感全部藏在细节动作里
+- 用角色真名替代Char/User，人称代词严格匹配性别`;
     }
 
-    const systemPrompt = `你是一个沉浸式文字角色扮演的剧情引擎。现在触发了好感度节点事件，需要生成一段特殊剧情。
+    const systemPrompt = milestone.type === 'confession'
+      ? `你是一个沉浸式文字角色扮演的剧情引擎。现在触发了好感度节点事件，需要生成一段特殊剧情。
 
 角色信息：
 - Char（攻略者）：${state.char.name}（${state.char.gender || '未知'}），${state.char.personality}
@@ -1070,8 +1096,24 @@ Char的内心独白。第一人称，体现玩家视角和真实情感。
 </char_thought>
 
 <char_dialogue>
-Char的话和动作。对话用「」，动作用括号。要符合Char的人设性格。${milestone.type === 'confession' ? '必须包含明确的表白内容，但不能直白油腻。' : ''}
-</char_dialogue>`;
+Char的话和动作。对话用「」，动作用括号。要符合Char的人设性格。必须包含明确的表白内容，但不能直白油腻。
+</char_dialogue>`
+      : `你是一个沉浸式文字角色扮演的剧情引擎。现在需要生成一段独立的小剧场片段。
+
+角色信息：
+- Char（攻略者）：${state.char.name}（${state.char.gender || '未知'}），${state.char.personality}
+- User（被攻略NPC）：${state.user.name}（${state.user.gender || '未知'}）
+- 世界背景：${state.background}
+
+【小剧场要求】
+${taskDescription}
+
+输出格式：
+<narration>
+独立小剧场内容。100-150字，纯旁白，没有对话。用角色真名替代Char/User。
+</narration>
+
+注意：小剧场不需要 char_thought、char_dialogue、options 标签。只需要 narration。`;
 
     const messages = [
       { role: 'system' as const, content: systemPrompt },
@@ -1118,20 +1160,20 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
       milestoneInfo: {
         statName: '好感度',
         value: milestone.value,
-        eventName: milestone.type === 'confession' ? '攻略成功·表白' : `好感度 → ${milestone.value}`,
+        eventName: milestone.type === 'confession' ? '沦陷' : `好感度 → ${milestone.value}`,
       },
     };
   },
 
   /**
-   * 生成奖励选项（3个AI生成的预设选项）
+   * 生成奖励选项（2个AI生成的剧情类预设选项）
    */
   async generateRewardOptions(
     apiConfig: ApiConfig,
     state: NPCGameState,
     milestoneValue: number,
   ): Promise<RewardOption[]> {
-    const prompt = `你是一个恋爱游戏的奖励选项生成器。用户刚刚触发了好感度节点（好感度达到${milestoneValue}），现在需要生成3个奖励选项。
+    const prompt = `你是一个恋爱游戏的奖励选项生成器。用户刚刚触发了好感度节点（好感度达到${milestoneValue}），现在需要生成2个具体的小动作奖励选项。
 
 角色信息：
 - Char（被奖励的人）：${state.char.name}（${state.char.gender || '未知'}），${state.char.personality}
@@ -1140,21 +1182,21 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
 - 当前好感度：${milestoneValue}/100
 
 要求：
+- 恰好2个选项，不多不少
 - 每个选项10字以内
-- 要具体、有画面感，不要抽象空洞
+- 必须是具体的小动作，比如"递给他一杯热饮""帮他整理了一下桌上的东西"
 - 符合当前好感度阶段（好感度越高越亲密）
 - 符合世界观背景和Char人设
-- 好的例子："帮他理了一下乱掉的衣领"、"悄悄给他买了他提过的那个口味"、"用他的名字叫了他一声"
-- 坏的例子："给他一个微笑"（太空洞）、"送他一份礼物"（不具体）
+- 禁止抽象空洞的选项如"给他一个微笑""送他一份礼物"
 
 返回严格JSON格式：
-[{"text":"选项1"},{"text":"选项2"},{"text":"选项3"}]
+[{"text":"选项1"},{"text":"选项2"}]
 只返回JSON数组，不要其他文字。`;
 
     try {
       const response = await this.callAI(apiConfig, prompt, true, 0.8);
-      if (Array.isArray(response) && response.length >= 3) {
-        return response.slice(0, 3).map((item: any) => ({
+      if (Array.isArray(response) && response.length >= 2) {
+        return response.slice(0, 2).map((item: any) => ({
           text: (item.text || '').substring(0, 15),
         }));
       }
@@ -1162,9 +1204,8 @@ Char的话和动作。对话用「」，动作用括号。要符合Char的人设
     } catch (e) {
       console.error('Failed to generate reward options:', e);
       return [
-        { text: '轻轻拍了拍他的肩' },
         { text: '递给他一杯热饮' },
-        { text: '对他笑了一下' },
+        { text: '帮他整理桌上的东西' },
       ];
     }
   },
@@ -1656,6 +1697,16 @@ Char的回应。对话用「」，动作用括号。
     const archiveMemoryPrompt = this.buildArchiveMemoryPrompt(state);
     if (archiveMemoryPrompt) {
       systemPromptWithMemory += '\n\n' + archiveMemoryPrompt;
+    }
+
+    // ── 豁免权道具反应注入 ──
+    if (state.justGotImmunity) {
+      userPrompt += `\n\n【道具提示】Char刚刚获得了一个豁免权道具，他在这一轮的内心独白里必须对此有反应，反应方式完全根据他的人设性格来：
+活泼/年下型：可以非常夸张地惊喜
+高冷型：表面淡定但内心震动
+傲娇型：嘴上说不稀罕但其实很在意
+无论哪种，都要体现出他把攻略User当成一件很认真的事在对待`;
+      state.justGotImmunity = false;
     }
 
     // ── 读档后策略调整注入 ──
@@ -2187,6 +2238,9 @@ ${archiveLines.length > 0 ? archiveLines.join('\n') : '尚未读过档'}
     };
     restoredEvents.push(separatorEvent);
 
+    // 保留当前的 immunityCount（豁免权不随读档恢复，全局保留）
+    const currentImmunityCount = state.immunityCount ?? 0;
+
     // 恢复游戏状态
     const restoredState: NPCGameState = {
       ...state,
@@ -2210,6 +2264,8 @@ ${archiveLines.length > 0 ? archiveLines.join('\n') : '尚未读过档'}
       justReloaded: true,
       // 记录本次读档时的好感度（用于下限保护：后续好感度高于此值时禁止再触发读档）
       lastReloadAffection: currentAffection,
+      // 豁免权不随读档恢复，全局保留
+      immunityCount: currentImmunityCount,
     };
 
     return {

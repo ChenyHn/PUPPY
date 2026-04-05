@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GameEvent } from '../types/npcGame';
 
@@ -10,9 +10,91 @@ interface NPCEventProps {
 
 import { MessageCircle, BrainCircuit, RefreshCw, User } from 'lucide-react';
 
+/** 小剧场折叠组件 */
+function MilestoneBlock({ description }: { description: string }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        border: '1.5px solid #f0a1ab',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        background: 'rgba(240,161,171,0.12)',
+      }}
+    >
+      {/* 标题栏（始终可见） */}
+      <div
+        onClick={() => setCollapsed(prev => !prev)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          cursor: 'pointer',
+          padding: '10px 16px',
+          userSelect: 'none',
+        }}
+      >
+        <span style={{
+          color: '#f0a1ab',
+          fontSize: '11px',
+          letterSpacing: '0.3em',
+        }}>
+          ✦ 小剧场 ✦
+        </span>
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '4px',
+          color: '#f0a1ab',
+          fontSize: '10px',
+        }}>
+          <span style={{ fontSize: '10px', color: '#f0a1ab' }}>
+            {collapsed ? '展开' : '收起'}
+          </span>
+          <span style={{ fontSize: '10px', color: '#f0a1ab' }}>
+            {collapsed ? '▼' : '▲'}
+          </span>
+        </span>
+      </div>
+
+      {/* 内容区域（可折叠） */}
+      <div
+        style={{
+          maxHeight: collapsed ? '0px' : '2000px',
+          opacity: collapsed ? 0 : 1,
+          transition: 'max-height 0.4s ease, opacity 0.3s ease',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ padding: '0 16px 16px 16px' }}>
+          <div className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed tracking-wide whitespace-pre-wrap">
+            {description}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export const NPCEvent = memo(function NPCEvent({ event, charName, userAvatar }: NPCEventProps) {
   // 判断是否为临时用户气泡（仅显示用户发言，等待 AI 响应）
   const isUserBubbleOnly = event.id.startsWith('user_');
+
+  // 豁免权获得提示事件：居中玫粉色小字，无气泡
+  const isImmunityEvent = event.id.startsWith('immunity_');
+  if (isImmunityEvent) {
+    return (
+      <div className="flex justify-center my-3 px-4">
+        <span className="text-xs font-medium tracking-wider" style={{ color: '#d4627a' }}>
+          你将一次豁免权交给了他。
+        </span>
+      </div>
+    );
+  }
 
   // 读档分隔线事件：居中灰色小字，上下各一条细线
   const isReloadSeparator = event.id.startsWith('reload_separator_');
@@ -74,15 +156,19 @@ export const NPCEvent = memo(function NPCEvent({ event, charName, userAvatar }: 
       {/* 如果是临时用户气泡，不渲染旁白和 Char 内容 */}
       {!isUserBubbleOnly && (
         <>
-          {/* 场景/旁白描述 - 纯文本，无背景（仅在有内容时显示） */}
+          {/* 场景/旁白描述 - 里程碑事件使用小剧场样式 */}
           {event.description && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed tracking-wide whitespace-pre-wrap"
-            >
-              {event.description}
-            </motion.div>
+          event.type === 'milestone' ? (
+              <MilestoneBlock description={event.description} />
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed tracking-wide whitespace-pre-wrap"
+              >
+                {event.description}
+              </motion.div>
+            )
           )}
 
           {/* Char的内心思考 - 斜体，灰色，无背景 */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, AlertTriangle, RefreshCw, LogOut, Send, Save, Image as ImageIcon, Plus, X, Minus, ImageOff } from 'lucide-react';
 import { ApiConfig, Screen } from '../types';
@@ -8,6 +8,10 @@ import { NPCSetupModal } from '../components/NPCSetupModal';
 import { NPCEvent } from '../components/NPCEvent';
 import { NPCLoadSaveModal } from '../components/NPCLoadSaveModal';
 import { NPCSaveNameModal } from '../components/NPCSaveNameModal';
+import heartbeatBg from '../assets/heartbeat-bg.png.png';
+import heartbeatHeart1 from '../assets/heartbeat-heart1.png.png';
+import heartbeatHeart2 from '../assets/heartbeat-heart2.png.png';
+import heartbeatHeart3 from '../assets/heartbeat-heart3.png.png';
 
 interface HeartbeatNPCProps {
   apiConfig: ApiConfig;
@@ -22,6 +26,22 @@ const AVATAR_KEY = 'npc_game_user_avatar';
  */
 function stripNumberPrefix(text: string): string {
   return text.replace(/^\d+\s*[\.。、\)）:：]\s*/, '').trim();
+}
+
+/**
+ * 根据好感度节点值返回对应的描述文案
+ */
+function getAffectionMilestoneText(value: number): string {
+  switch (value) {
+    case 15: return '你开始留意TA了';
+    case 30: return 'TA的某句话让你多想了一秒';
+    case 45: return '你发现自己有点期待TA出现';
+    case 60: return '你已经不完全是在配合TA了';
+    case 75: return '你有点说不清自己的感觉了';
+    case 90: return '你快输了';
+    case 100: return '沦陷';
+    default: return '';
+  }
 }
 
 /**
@@ -99,6 +119,16 @@ const MemoizedEventList = React.memo(function MemoizedEventList({
   return true;
 });
 
+const floatStyle1: React.CSSProperties = {
+  animation: 'floatHeart1 4s ease-in-out infinite 0s',
+};
+const floatStyle2: React.CSSProperties = {
+  animation: 'floatHeart2 4s ease-in-out infinite 1.2s',
+};
+const floatStyle3: React.CSSProperties = {
+  animation: 'floatHeart3 4s ease-in-out infinite 2.4s',
+};
+
 export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   const [gameState, setGameState] = useState<NPCGameState | null>(null);
   const [currentEvent, setCurrentEvent] = useState<GameEvent | null>(null);
@@ -147,12 +177,37 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   } | null>(null);
 
   // 奖励面板状态
-  const [showRewardPanel, setShowRewardPanel] = useState(false);
+  const [showRewardPromptBar, setShowRewardPromptBar] = useState(false); // 提示条
+  const [showRewardPanel, setShowRewardPanel] = useState(false); // 展开面板
   const [rewardOptions, setRewardOptions] = useState<RewardOption[]>([]);
   const [rewardCustomInput, setRewardCustomInput] = useState('');
   const [isLoadingReward, setIsLoadingReward] = useState(false);
   const [pendingRewardMilestoneValue, setPendingRewardMilestoneValue] = useState<number>(0);
   const [pendingRewardEventList, setPendingRewardEventList] = useState<GameEvent[]>([]);
+
+  // 好感度节点提示条（事件流底部，用户主动点击后才进入遮罩）
+  const [showMilestonePromptBar, setShowMilestonePromptBar] = useState(false);
+  const [pendingMilestoneData, setPendingMilestoneData] = useState<{
+    milestones: AffectionMilestone[];
+    state: NPCGameState;
+    eventList: GameEvent[];
+  } | null>(null);
+
+  // 奖励后继续剧情提示
+  const [showRewardContinueBar, setShowRewardContinueBar] = useState(false);
+
+  // 重新生成确认弹窗
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+
+  // 豁免权提示弹窗
+  const [showImmunityConfirm, setShowImmunityConfirm] = useState(false);
+  const [immunityMessage, setImmunityMessage] = useState('');
+  const [pendingAffectionAction, setPendingAffectionAction] = useState<{
+    state: NPCGameState;
+    customInput?: string;
+    delta: number;
+    selectedPresetOption?: { text: string; affectionDelta: number } | null;
+  } | null>(null);
 
   // 读档遮罩状态
   const [reloadOverlay, setReloadOverlay] = useState<{ charNote: string } | null>(null);
@@ -184,6 +239,30 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   // 智能滚动状态
   const isNearBottomRef = useRef(true);
   const [showNewContentIndicator, setShowNewContentIndicator] = useState(false);
+
+  // 注入 floatHeart 关键帧动画到 DOM
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      @keyframes floatHeart1 {
+        0%   { transform: translateX(0px); }
+        50%  { transform: translateX(-16px); }
+        100% { transform: translateX(0px); }
+      }
+      @keyframes floatHeart2 {
+        0%   { transform: translateY(0px); }
+        50%  { transform: translateY(-20px); }
+        100% { transform: translateY(0px); }
+      }
+      @keyframes floatHeart3 {
+        0%   { transform: translateY(0px); }
+        50%  { transform: translateY(-20px); }
+        100% { transform: translateY(0px); }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
 
   // 初始化检查是否存在存档
   useEffect(() => {
@@ -318,12 +397,17 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     });
   }, []);
 
-  // 加载存档
+  // 加载存档（豁免权不随读档恢复，全局保留）
   const handleLoadGame = (saveId: string) => {
     const saves = npcGameService.getAllSaves();
     const targetSave = saves.find(s => s.id === saveId);
     const loadedState = npcGameService.loadFromSlot(saveId);
     if (loadedState) {
+      // 保留当前游戏的 immunityCount（如果有的话）
+      const currentImmunity = gameState?.immunityCount ?? 0;
+      const loadedImmunity = loadedState.immunityCount ?? 0;
+      const preservedImmunity = Math.max(currentImmunity, loadedImmunity);
+      loadedState.immunityCount = preservedImmunity;
       setGameState(loadedState);
       // 同步头像到独立存储
       if (loadedState.user.avatar) {
@@ -360,6 +444,10 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   const handleResumeCurrentGame = () => {
     const saved = npcGameService.loadGame();
     if (saved && !saved.isGameOver) {
+      // 保留豁免权（全局保留，不随读档恢复）
+      const currentImmunity = gameState?.immunityCount ?? 0;
+      const savedImmunity = saved.immunityCount ?? 0;
+      saved.immunityCount = Math.max(currentImmunity, savedImmunity);
       setGameState(saved);
       // 同步头像到独立存储
       if (saved.user.avatar) {
@@ -493,17 +581,18 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   };
 
   /**
-   * 检查好感度是否达到某个节点（15/30/45/60/75/90/100），触发完整节点流程
-   * 流程：全屏提示(5秒) → 特殊剧情 → 奖励面板(非100节点)
-   * 返回 true 表示触发了节点事件（调用方应停止后续流程等待完成）
+   * 检测好感度是否跨越了节点（15/30/45/60/75/90/100），
+   * 仅做检测并存储待处理数据 + 显示提示条，不阻塞正常剧情流程。
+   * 返回 true 表示检测到节点（提示条已显示）。
    */
-  const checkAffectionMilestoneTrigger = async (
+  const detectAndQueueAffectionMilestones = (
     state: NPCGameState,
     currentEventList: GameEvent[],
-  ): Promise<boolean> => {
-    const milestone = npcGameService.checkAffectionMilestones(state);
-    if (!milestone) {
-      // 没有触发节点，但仍需更新历史最高好感度
+    oldAff: number,
+  ): boolean => {
+    console.log('=== 节点检测被调用 ===', '旧好感度:', oldAff, '新好感度:', state.user.affection);
+    const crossedMilestones = npcGameService.checkAffectionMilestones(state, oldAff);
+    if (crossedMilestones.length === 0) {
       const updated = npcGameService.updatePeakAffection(state);
       if (updated.peakAffection !== state.peakAffection) {
         setGameState({ ...updated });
@@ -512,92 +601,154 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       return false;
     }
 
-    // 标记节点为已触发
-    let updatedState = npcGameService.markAffectionMilestoneTriggered(state, milestone.value);
+    console.log('=== 跨越的节点 ===', crossedMilestones.map(m => m.value));
+
+    // 标记所有跨越的节点为已触发
+    let updatedState = state;
+    for (const milestone of crossedMilestones) {
+      updatedState = npcGameService.markAffectionMilestoneTriggered(updatedState, milestone.value);
+    }
     setGameState({ ...updatedState });
     npcGameService.saveGame(updatedState);
 
-    // ═══ 第一步：全屏提示，5秒后自动进入第二步 ═══
-    setAffectionMilestoneOverlay({
-      value: milestone.value,
-      type: milestone.type,
-      label: `好感度 → ${milestone.value}`,
+    // 存储待处理的节点数据，等用户主动点击
+    setPendingMilestoneData({
+      milestones: crossedMilestones,
+      state: updatedState,
+      eventList: currentEventList,
     });
 
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    setAffectionMilestoneOverlay(null);
+    // 在事件流底部显示提示条
+    setShowMilestonePromptBar(true);
 
-    // ═══ 第二步：生成特殊剧情 ═══
-    setIsGenerating(true);
-    setStreamingEvent(null);
-    try {
-      const milestoneEvent = await npcGameService.generateAffectionNodeEvent(
-        apiConfig, updatedState, milestone, currentEventList, handleStreamChunk,
-      );
-      setStreamingEvent(null);
-
-      // 如果是表白节点（100），设置关系阶段为 together
-      if (milestone.type === 'confession') {
-        updatedState = { ...updatedState, relationshipStage: 'together' as const };
-      }
-
-      updatedState.currentEvent = milestoneEvent;
-      const updatedList = [...currentEventList, milestoneEvent];
-      updatedState.events = updatedList;
-
-      setGameState({ ...updatedState });
-      npcGameService.saveGame(updatedState);
-      setCurrentEvent(milestoneEvent);
-      setEventList(updatedList);
-
-      // ═══ 第三步：奖励面板（100节点不弹奖励面板） ═══
-      if (milestone.type === 'confession') {
-        // 100节点：不弹奖励面板，直接设置恋人模式选项
-        setPresetOptions(extractPresetsFromEvent(milestoneEvent));
-      } else {
-        // 非100节点：生成奖励选项并弹出面板
-        setPresetOptions([]); // 清空预设选项，等奖励流程结束再恢复
-        setPendingRewardMilestoneValue(milestone.value);
-        setPendingRewardEventList(updatedList);
-        setIsLoadingReward(true);
-        setShowRewardPanel(true);
-        try {
-          const options = await npcGameService.generateRewardOptions(apiConfig, updatedState, milestone.value);
-          setRewardOptions(options);
-        } catch {
-          setRewardOptions([
-            { text: '轻轻拍了拍他的肩' },
-            { text: '递给他一杯热饮' },
-            { text: '对他笑了一下' },
-          ]);
-        } finally {
-          setIsLoadingReward(false);
-        }
-      }
-    } catch (e: any) {
-      setError(e.message || '生成好感度节点剧情失败');
-    } finally {
-      setIsGenerating(false);
-    }
     return true;
   };
 
   /**
-   * 处理用户选择奖励（预设/自定义/什么都不给）
+   * 用户点击「✦ 好感度达到新节点，点击查看」提示条
+   * → 显示节点遮罩 UI
    */
-  const handleRewardSelect = async (rewardText: string | null) => {
+  const handleMilestonePromptBarClick = () => {
+    if (!pendingMilestoneData) return;
+    setShowMilestonePromptBar(false);
+
+    const firstMilestone = pendingMilestoneData.milestones[0];
+    setAffectionMilestoneOverlay({
+      value: firstMilestone.value,
+      type: firstMilestone.type,
+      label: `好感度 ♡ ${firstMilestone.value} ♡`,
+    });
+  };
+
+  /**
+   * 用户点击遮罩底部「查看小剧场 ♡」按钮
+   * → 关闭遮罩，依次生成所有跨越节点的小剧场
+   */
+  const handleMilestoneOverlayButtonClick = async () => {
+    setAffectionMilestoneOverlay(null);
+
+    if (!pendingMilestoneData) return;
+
+    const { milestones, state, eventList: currentEventList } = pendingMilestoneData;
+    let updatedState = state;
+    let updatedList = currentEventList;
+
+    for (const milestone of milestones) {
+      // 生成小剧场
+      setIsGenerating(true);
+      setStreamingEvent(null);
+      try {
+        const milestoneEvent = await npcGameService.generateAffectionNodeEvent(
+          apiConfig, updatedState, milestone, updatedList, handleStreamChunk,
+        );
+        setStreamingEvent(null);
+
+        if (milestone.type === 'confession') {
+          updatedState = { ...updatedState, relationshipStage: 'together' as const };
+        }
+
+        updatedState.currentEvent = milestoneEvent;
+        updatedList = [...updatedList, milestoneEvent];
+        updatedState.events = updatedList;
+
+        setGameState({ ...updatedState });
+        npcGameService.saveGame(updatedState);
+        setCurrentEvent(milestoneEvent);
+        setEventList(updatedList);
+
+        // 小剧场内容插入后，立即自动加载预设选项
+        setPresetOptions(extractPresetsFromEvent(milestoneEvent));
+
+        // 奖励提示条（100节点不弹奖励）
+        if (milestone.type === 'confession') {
+          // confession 已在上方加载预设
+        } else {
+          const isLastMilestone = milestone === milestones[milestones.length - 1];
+          if (isLastMilestone) {
+            setPendingRewardMilestoneValue(milestone.value);
+            setPendingRewardEventList(updatedList);
+            setShowRewardPromptBar(true);
+            setIsLoadingReward(true);
+            npcGameService.generateRewardOptions(apiConfig, updatedState, milestone.value)
+              .then(options => setRewardOptions(options))
+              .catch(() => setRewardOptions([
+                { text: '递给他一杯热饮' },
+                { text: '帮他整理桌上的东西' },
+              ]))
+              .finally(() => setIsLoadingReward(false));
+          }
+        }
+      } catch (e: any) {
+        setError(e.message || '生成好感度节点剧情失败');
+        break;
+      } finally {
+        setIsGenerating(false);
+      }
+    }
+
+    setPendingMilestoneData(null);
+  };
+
+  /**
+   * 处理用户选择奖励（预设/自定义/什么都不给/豁免权）
+   */
+  const handleRewardSelect = async (rewardText: string | null, isImmunity: boolean = false) => {
     setShowRewardPanel(false);
+    setShowRewardPromptBar(false);
     setRewardOptions([]);
     setRewardCustomInput('');
 
     if (!gameState) return;
 
-    // 「什么都不给」- 不生成反应，恢复正常流程
+    // 豁免权
+    if (isImmunity) {
+      const newState = { ...gameState, immunityCount: (gameState.immunityCount || 0) + 1, justGotImmunity: true };
+      setGameState(newState);
+      npcGameService.saveGame(newState);
+      const immunityEvent: GameEvent = {
+        id: `immunity_${Date.now()}`,
+        type: 'special',
+        description: '',
+        userDialogue: '',
+        charAction: '',
+        charThought: '',
+      };
+      const updatedList = [...pendingRewardEventList, immunityEvent];
+      setEventList(updatedList);
+      newState.events = updatedList;
+      npcGameService.saveGame(newState);
+      // 奖励面板关闭后，立即自动加载预设选项
+      const lastMeaningfulEvt = pendingRewardEventList[pendingRewardEventList.length - 1];
+      if (lastMeaningfulEvt) setPresetOptions(extractPresetsFromEvent(lastMeaningfulEvt));
+      setShowRewardContinueBar(true);
+      return;
+    }
+
+    // 「什么都不给」- 不生成反应，显示继续剧情提示
     if (rewardText === null) {
-      // 恢复当前事件的预设选项
-      if (currentEvent) {
-        setPresetOptions(extractPresetsFromEvent(currentEvent));
-      }
+      // 奖励面板关闭后，立即自动加载预设选项
+      if (currentEvent) setPresetOptions(extractPresetsFromEvent(currentEvent));
+      setShowRewardContinueBar(true);
       return;
     }
 
@@ -626,16 +777,9 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       npcGameService.saveGame(updatedState);
       setCurrentEvent(reactionEvent);
       setEventList(updatedList);
-      // 奖励反应事件后恢复选项
-      if (reactionEvent.choices) {
-        setPresetOptions(extractPresetsFromEvent(reactionEvent));
-      } else {
-        // 无选项时使用上一个事件的选项
-        const prevEvent = pendingRewardEventList[pendingRewardEventList.length - 1];
-        if (prevEvent) {
-          setPresetOptions(extractPresetsFromEvent(prevEvent));
-        }
-      }
+      // 奖励面板关闭后，立即自动加载预设选项
+      setPresetOptions(extractPresetsFromEvent(reactionEvent));
+      setShowRewardContinueBar(true);
     } catch (e: any) {
       setError(e.message || '生成奖励反应失败');
       // 恢复选项
@@ -682,8 +826,26 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
     newState.turnCount += 1;
 
+    // 在好感度更新前记录旧值（供节点跨越检测使用）
+    // 必须使用原始 inputState 的好感度，确保是更新前的值
+    const oldAffection = inputState.user.affection;
+
     if (customAffectionDelta !== undefined && customAffectionDelta !== 0 && currentEvent?.type !== 'daily') {
-      newState.user.affection = Math.min(100, Math.max(-100, newState.user.affection + customAffectionDelta));
+      // ── 豁免权检查：好感度下降时，如果有豁免权则消耗一次并跳过扣减 ──
+      if (customAffectionDelta < 0 && (newState.immunityCount ?? 0) > 0) {
+        const remaining = (newState.immunityCount ?? 0) - 1;
+        newState.immunityCount = remaining;
+        setImmunityMessage(`他似乎察觉到了什么，这次没有扣除好感度\n（豁免权已使用，剩余：${remaining}次）`);
+        setShowImmunityConfirm(true);
+        // 不修改好感度，跳过 affectionDelta 应用
+        customAffectionDelta = 0;
+      } else {
+        newState.user.affection = Math.min(100, Math.max(-100, newState.user.affection + customAffectionDelta));
+      }
+      const newAffection = newState.user.affection;
+      console.log('好感度变化:', '新值:', newAffection);
+      console.log('=== 好感度更新 ===', '旧值:', oldAffection, '新值:', newAffection);
+      console.log('=== 当前节点列表 ===', newState.affectionMilestones);
       // 记录好感度变化
       newState = npcGameService.recordAffectionChange(newState, customAffectionDelta);
     }
@@ -708,16 +870,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     setGameState(JSON.parse(JSON.stringify(newState)));
     npcGameService.saveGame(newState);
 
-    // ══════ 第一步：好感度节点检查（15/30/45/60/75/90/100）══════
-    // 好感度节点优先于读档判断，节点触发说明攻略在推进
-    const affectionMilestoneTriggered = await checkAffectionMilestoneTrigger(newState, eventList);
-    if (affectionMilestoneTriggered) {
-      setIsProcessingOption(false);
-      return; // 节点流程全部结束后直接返回，不执行读档判断
-    }
-
-    // ══════ 第二步：读档判断（节点流程结束后才执行）══════
-    // 传入 justTriggeredMilestone=false（因为如果触发了节点，上面已经return了）
+    // ══════ 读档判断 ══════
     if (customAffectionDelta !== undefined && customAffectionDelta !== 0) {
       try {
         const reloadJudgment = await npcGameService.judgeCharReload(apiConfig, newState, false);
@@ -829,6 +982,14 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       setPresetOptions(extractPresetsFromEvent(nextEvent));
       setLastActionContext(null); // 成功后清除重试上下文
 
+      // ── 好感度节点检测（在事件生成之后，不阻塞剧情） ──
+      if (customAffectionDelta !== undefined && customAffectionDelta !== 0) {
+        const finalEventList = hadUserBubble
+          ? [...eventList.filter(e => !e.id.startsWith('user_')), nextEvent]
+          : [...eventList, nextEvent];
+        detectAndQueueAffectionMilestones(newState, finalEventList, oldAffection);
+      }
+
       // ── 里程碑触发检查（读档判断已移至生成对话之前） ──
       const milestone = npcGameService.checkMilestones(newState);
       if (milestone) {
@@ -844,7 +1005,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         // 显示里程碑全屏通知
         setMilestoneOverlay({ statName: milestone.statName, value: milestone.value, eventName: milestone.eventName });
         
-        // 2秒后消失并生成特殊剧情
+        // 2秒后消失并生成小剧场
         setTimeout(async () => {
           setMilestoneOverlay(null);
           setIsGeneratingMilestone(true);
@@ -864,7 +1025,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
             npcGameService.saveGame(newState);
             setPresetOptions(extractPresetsFromEvent(milestoneEvent));
           } catch (err) {
-            console.error('里程碑特殊剧情生成失败:', err);
+            console.error('里程碑小剧场生成失败:', err);
             setIsGeneratingMilestone(false);
             setStreamingEvent(null);
           }
@@ -1053,7 +1214,8 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       setEventList(prev => [...prev, userBubbleEvent]);
     }
 
-    // 调用 AI 重新生成
+    // 调用 AI 重新生成（过滤掉小剧场/milestone事件，避免以小剧场内容作为上下文）
+    const filteredPrevEventList = prevEventList.filter(e => e.type !== 'milestone');
     setIsGenerating(true);
     setError('');
     setPresetOptions([]);
@@ -1065,7 +1227,7 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         undefined,
         undefined,
         lastUserInput || undefined,
-        prevEventList,
+        filteredPrevEventList,
         handleStreamChunk,
         null,
       );
@@ -1107,6 +1269,8 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     setIsGenerating(true);
     setStreamingEvent(null);
     setIsProcessingOption(true);
+    // 关闭继续剧情提示条
+    setShowRewardContinueBar(false);
     const text = customInputText.trim();
     const delta = affectionDelta;
     setCustomInputText('');
@@ -1121,6 +1285,8 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     setIsGenerating(true);
     setStreamingEvent(null);
     setIsProcessingOption(true);
+    // 关闭继续剧情提示条
+    setShowRewardContinueBar(false);
     setShowQuickActions(false);
     setAffectionDelta(0);
     // 去掉可能残留的序号前缀，确保发出去的文本干净
@@ -1204,6 +1370,33 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
 
   return (
     <div className="absolute inset-0 w-full h-full flex flex-col z-40 overflow-hidden">
+      {/* floatHeart keyframes */}
+      <style>{`
+        @keyframes floatHeart1 {
+          0%   { transform: translateX(0px); }
+          50%  { transform: translateX(-16px); }
+          100% { transform: translateX(0px); }
+        }
+        @keyframes floatHeart2 {
+          0%   { transform: translateY(0px); }
+          50%  { transform: translateY(-20px); }
+          100% { transform: translateY(0px); }
+        }
+        @keyframes floatHeart3 {
+          0%   { transform: translateY(0px); }
+          50%  { transform: translateY(-20px); }
+          100% { transform: translateY(0px); }
+        }
+        .regen-btn {
+          color: rgba(140,155,175,0.6);
+          border: 1px solid rgba(140,155,175,0.3);
+          transition: color 0.2s ease, border-color 0.2s ease;
+        }
+        .regen-btn:hover {
+          color: rgba(140,155,175,0.9);
+          border-color: rgba(140,155,175,0.6);
+        }
+      `}</style>
       {/* 隐藏的壁纸文件选择器 */}
       <input
         ref={wallpaperInputRef}
@@ -1444,19 +1637,67 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         {/* 历史事件区域 - 独立渲染，不受 isGenerating 影响 */}
         <MemoizedEventList eventList={eventList} charName={gameState.char.name} userAvatar={userAvatar} />
 
-        {/* 重新生成按钮 - 显示在最后一条 char 回应的右上角 */}
+        {/* 重新生成按钮 - 显示文字，点击弹出确认提示 */}
         {!isGenerating && !showGameOver && eventList.length > 0 && (() => {
+          const lastNormalIdx = (() => {
+            for (let i = eventList.length - 1; i >= 0; i--) {
+              const e = eventList[i];
+              if (!e.id.startsWith('user_') && !e.id.startsWith('reload_separator_') && !e.id.startsWith('opening_') && e.type !== 'milestone') {
+                return i;
+              }
+            }
+            return -1;
+          })();
           const lastEvt = eventList[eventList.length - 1];
-          const isCharResponse = lastEvt && !lastEvt.id.startsWith('user_') && !lastEvt.id.startsWith('reload_separator_') && !lastEvt.id.startsWith('opening_');
-          return isCharResponse ? (
-            <div className="flex justify-end -mt-2 mb-1 px-2">
+          const isLastNormal = lastNormalIdx >= 0 && lastNormalIdx === eventList.length - 1;
+          const showRegen = isLastNormal && lastEvt && lastEvt.type !== 'milestone';
+          return showRegen ? (
+            <div className="flex justify-end -mt-3 mb-0 pr-2 relative">
+              {/* 确认重新生成弹窗 */}
+              <AnimatePresence>
+                {showRegenConfirm && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.18 }}
+                    className="absolute bottom-full mb-2 right-0 px-4 py-3 rounded-2xl shadow-lg flex flex-col items-center gap-2.5 z-10"
+                    style={{
+                      background: 'rgba(255,255,255,0.82)',
+                      backdropFilter: 'blur(14px)',
+                      WebkitBackdropFilter: 'blur(14px)',
+                      border: '1px solid rgba(255,255,255,0.5)',
+                      minWidth: '140px',
+                    }}
+                  >
+                    <span className="text-xs font-medium whitespace-nowrap" style={{ color: '#8C9BAF' }}>确认重新生成？</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setShowRegenConfirm(false); handleRegenerate(); }}
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-medium active:scale-95 transition-transform"
+                        style={{ backgroundColor: '#8C9BAF', color: '#fff' }}
+                      >
+                        确认
+                      </button>
+                      <button
+                        onClick={() => setShowRegenConfirm(false)}
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-medium active:scale-95 transition-transform"
+                        style={{ backgroundColor: '#8C9BAF', color: '#fff' }}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <button
-                onClick={handleRegenerate}
-                className="flex items-center gap-1 px-2 py-1 rounded-xl text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-white/40 dark:hover:bg-white/10 active:scale-95 transition-all text-[11px]"
+                onClick={() => setShowRegenConfirm(prev => !prev)}
+                className="regen-btn flex items-center gap-1"
                 title="重新生成"
+                style={{ background: 'none', padding: '2px 6px', cursor: 'pointer', borderRadius: '8px' }}
               >
-                <RefreshCw size={12} />
-                <span>重新生成</span>
+                <RefreshCw size={13} />
+                <span className="text-xs">重新生成</span>
               </button>
             </div>
           ) : null;
@@ -1625,83 +1866,294 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         </div>
       </div>
 
+      {/* ====== 豁免权使用提示弹窗 ====== */}
+      <AnimatePresence>
+        {showImmunityConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[65] flex items-center justify-center"
+            style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', backgroundColor: 'rgba(0,0,0,0.35)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-[280px] rounded-[24px] p-6 text-center shadow-2xl"
+              style={{ background: 'linear-gradient(180deg, #fffdf5 0%, #fef9e7 100%)' }}
+            >
+              <span className="text-3xl mb-3 block">🛡</span>
+              <p className="text-sm font-medium leading-relaxed whitespace-pre-line" style={{ color: '#6b5a2e' }}>
+                {immunityMessage}
+              </p>
+              <button
+                onClick={() => setShowImmunityConfirm(false)}
+                className="mt-5 px-8 py-2.5 rounded-full text-sm font-medium active:scale-95 transition-transform"
+                style={{ backgroundColor: '#d4a54a', color: '#fff' }}
+              >
+                知道了
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ====== 读档遮罩动画 ====== */}
       <AnimatePresence>
         {reloadOverlay && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
+            exit={{
+              opacity: [1, 0.2, 0.8, 0.15, 0.6, 0],
+            }}
+            transition={{ duration: 0.01 }}
             className="absolute inset-0 z-[70] flex flex-col items-center justify-center"
-            style={{ backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', backgroundColor: 'rgba(0,0,0,0.6)' }}
+            style={{ backgroundColor: 'rgba(0,0,0,0.96)' }}
           >
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-              className="text-center flex flex-col items-center gap-4"
-            >
-              <p className="text-white/80 text-base italic font-light tracking-wide max-w-[280px]">
-                {reloadOverlay.charNote}
-              </p>
+            {/* 主内容区域 */}
+            <div className="text-center flex flex-col items-center gap-0 relative w-full max-w-[320px]">
+              {/* 第一行：charNote 内心独白 */}
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.6, duration: 0.4 }}
-                className="text-white/50 text-sm font-medium tracking-widest"
+                transition={{ delay: 0.1, duration: 0.5 }}
+                className="text-[13px] italic font-light tracking-wide leading-relaxed max-w-[280px] mb-6"
+                style={{ color: 'rgba(220,220,220,0.85)' }}
               >
-                [ 正在读取存档... ]
+                {reloadOverlay.charNote}
               </motion.p>
-            </motion.div>
+
+              {/* 暗红色扫描线 */}
+              <motion.div
+                initial={{ scaleX: 0, opacity: 1 }}
+                animate={{ scaleX: [0, 1, 1], opacity: [1, 1, 0] }}
+                transition={{ delay: 0.7, duration: 0.8, times: [0, 0.7, 1], ease: 'easeInOut' }}
+                className="w-full mb-6"
+                style={{
+                  height: '1px',
+                  backgroundColor: '#8B0000',
+                  transformOrigin: 'left center',
+                }}
+              />
+
+              {/* 第二行：R E L O A D */}
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1.0, duration: 0.3 }}
+                className="text-[15px] font-medium mb-5"
+                style={{ color: 'rgba(255,255,255,0.95)', letterSpacing: '0.6em' }}
+              >
+                R E L O A D
+              </motion.p>
+
+              {/* 第三行：存档读取中 */}
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0, 1, 1, 0.5, 1] }}
+                transition={{ delay: 1.4, duration: 1.2 }}
+                className="text-[11px] font-medium"
+                style={{ color: '#8B0000', letterSpacing: '0.15em' }}
+              >
+                存档读取中 ◈
+              </motion.p>
+            </div>
+
+            {/* 右下角：时间倒流 */}
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.35 }}
+              transition={{ delay: 1.8, duration: 0.4 }}
+              className="absolute bottom-6 right-6 text-[10px] font-normal"
+              style={{ color: 'rgba(100,100,100,0.6)' }}
+            >
+              时间倒流
+            </motion.p>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ====== 好感度节点全屏通知（磨砂半透明遮罩，5秒自动进入特殊剧情） ====== */}
+      {/* ====== 好感度节点全屏通知（图片背景 + 浮动爱心 + 逐行淡入文字） ====== */}
       <AnimatePresence>
         {affectionMilestoneOverlay && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.6 }}
-            className="absolute inset-0 z-[60] flex items-center justify-center"
-            style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', backgroundColor: 'rgba(0,0,0,0.5)' }}
+            initial={{ scale: 0.96, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.4 } }}
+            transition={{ duration: 0.6, ease: [0, 0, 0.2, 1] }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              overflow: 'hidden',
+              zIndex: 9999,
+            }}
           >
-            <motion.div
-              initial={{ scale: 0.85, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ delay: 0.3, duration: 0.5, ease: 'easeOut' }}
-              className="text-center"
-            >
-              <motion.div
+            {/* 背景图层 */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              backgroundImage: `url(${heartbeatBg})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }} />
+
+            {/* 爱心图层1 */}
+            <img
+              src={heartbeatHeart1}
+              alt=""
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                ...floatStyle1,
+              }}
+            />
+
+            {/* 爱心图层2 */}
+            <img
+              src={heartbeatHeart2}
+              alt=""
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                ...floatStyle2,
+              }}
+            />
+
+            {/* 爱心图层3 */}
+            <img
+              src={heartbeatHeart3}
+              alt=""
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                ...floatStyle3,
+              }}
+            />
+
+            {/* 文字内容层 */}
+            <div style={{
+              position: 'relative',
+              zIndex: 10,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              gap: '12px',
+            }}>
+              {/* 第一行：HEARTBEAT */}
+              <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.5, duration: 0.4 }}
-                className="text-lg font-light text-white/50 tracking-[0.4em] mb-4"
-              >〔</motion.div>
-              <motion.div
+                transition={{ delay: 0.3, duration: 0.5 }}
+                style={{
+                  color: '#f0a1ab',
+                  fontSize: '11px',
+                  fontWeight: 300,
+                  letterSpacing: '0.3em',
+                  textTransform: 'uppercase' as const,
+                }}
+              >
+                HEARTBEAT
+              </motion.p>
+
+              {/* 第二行：节点描述文案 */}
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.6, duration: 0.5 }}
+                style={{
+                  color: '#f0a1ab',
+                  fontSize: '18px',
+                  fontWeight: 400,
+                }}
+              >
+                {getAffectionMilestoneText(affectionMilestoneOverlay.value)}
+              </motion.p>
+
+              {/* 第三行：好感度 ♡ 数值 ♡ */}
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.9, duration: 0.5 }}
+                style={{
+                  color: '#f0a1ab',
+                  fontSize: '28px',
+                  fontWeight: 300,
+                  letterSpacing: '0.05em',
+                }}
+              >
+                好感度 ♡ {affectionMilestoneOverlay.value} ♡
+              </motion.p>
+
+              {/* 底部按钮：查看小剧场 */}
+              <motion.button
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7, duration: 0.5 }}
-                className="text-3xl font-bold text-white tracking-[0.2em] mb-4"
+                transition={{ delay: 1.4, duration: 0.5 }}
+                onClick={handleMilestoneOverlayButtonClick}
+                style={{
+                  marginTop: '32px',
+                  padding: '12px 36px',
+                  backgroundColor: '#ffffff',
+                  color: '#f0a1ab',
+                  fontSize: '15px',
+                  fontWeight: 500,
+                  borderRadius: '24px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  letterSpacing: '0.1em',
+                  boxShadow: '0 4px 20px rgba(240,161,171,0.25)',
+                }}
               >
-                {affectionMilestoneOverlay.label}
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.9, duration: 0.4 }}
-                className="text-lg font-light text-white/50 tracking-[0.4em]"
-              >〕</motion.div>
-            </motion.div>
+                查看小剧场 ♡
+              </motion.button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ====== 奖励选择面板 ====== */}
+      {/* ====== 奖励提示条（事件流底部） ====== */}
+      <AnimatePresence>
+        {showRewardPromptBar && !showRewardPanel && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="absolute bottom-20 left-0 right-0 z-[55] flex justify-center px-4"
+          >
+            <button
+              onClick={() => setShowRewardPanel(true)}
+              className="px-6 py-3 rounded-full text-sm font-medium active:scale-95 transition-all shadow-lg"
+              style={{ backgroundColor: 'rgba(255,240,245,0.95)', color: '#d4627a' }}
+            >
+              ✦ 要给他一点奖励吗？
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ====== 奖励面板（展开后） ====== */}
       <AnimatePresence>
         {showRewardPanel && (
           <motion.div
@@ -1709,62 +2161,105 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="absolute inset-0 z-[55] flex items-center justify-center p-4"
-            style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', backgroundColor: 'rgba(0,0,0,0.4)' }}
+            className="absolute inset-0 z-[55] flex items-end justify-center pb-6 px-4"
+            style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', backgroundColor: 'rgba(0,0,0,0.25)' }}
+            onClick={(e) => { if (e.target === e.currentTarget) { setShowRewardPanel(false); } }}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 10 }}
-              transition={{ duration: 0.3 }}
-              className="w-full max-w-sm bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl rounded-[28px] p-6 shadow-2xl"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              className="w-full max-w-sm rounded-[24px] p-5 shadow-2xl border-0 relative overflow-hidden"
+              style={{
+                background: 'linear-gradient(180deg, #ffffff 0%, #fff5f7 100%)',
+                boxShadow: '0 0 40px rgba(212,98,122,0.12), 0 8px 32px rgba(0,0,0,0.08)',
+              }}
             >
-              <h3 className="text-center text-lg font-bold text-zinc-800 dark:text-zinc-100 mb-5 tracking-wide">
-                要给他一点奖励吗？
-              </h3>
+              {/* 边缘粉色光晕 */}
+              <div className="absolute inset-0 rounded-[24px] pointer-events-none" style={{
+                boxShadow: 'inset 0 0 30px rgba(212,98,122,0.08)',
+              }} />
+
+              {/* 标题 */}
+              <p className="text-center text-base font-light tracking-wider mb-4" style={{ color: '#d4627a' }}>
+                送给他
+              </p>
 
               {isLoadingReward ? (
-                <div className="flex items-center justify-center py-8 gap-2 text-zinc-400">
+                <div className="flex items-center justify-center py-8 gap-2" style={{ color: '#d4627a' }}>
                   <RefreshCw size={16} className="animate-spin" />
-                  <span className="text-sm">正在生成奖励选项...</span>
+                  <span className="text-sm font-light">正在准备...</span>
                 </div>
               ) : (
-                <div className="flex flex-col gap-2.5">
-                  {/* AI生成的3个预设奖励选项 */}
+                <div className="flex flex-col gap-2.5 relative z-10">
+                  {/* 第一个：豁免权（金色特殊） */}
+                  <motion.button
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.05 }}
+                    onClick={() => handleRewardSelect(null, true)}
+                    disabled={isGenerating}
+                    className="w-full text-left px-4 py-3.5 rounded-2xl active:scale-[0.98] transition-all disabled:opacity-40 flex items-center gap-3"
+                    style={{
+                      background: 'linear-gradient(135deg, #fffdf5 0%, #fef9e7 100%)',
+                      border: '1.5px solid',
+                      borderImage: 'linear-gradient(135deg, #d4a54a, #e8c76a, #d4a54a) 1',
+                      borderRadius: '16px',
+                      borderImageSlice: 1,
+                    }}
+                  >
+                    <span className="text-xl shrink-0" style={{ color: '#c9952a' }}>🛡</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium" style={{ color: '#6b5a2e' }}>好感度下降豁免权 × 1</p>
+                      <p className="text-[10px] mt-0.5" style={{ color: '#c9952a' }}>下次好感下降时可抵消一次</p>
+                    </div>
+                  </motion.button>
+
+                  {/* 第二、三个：AI生成的剧情类奖励 */}
                   {rewardOptions.map((option, idx) => (
                     <motion.button
                       key={idx}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.08 }}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 + idx * 0.06 }}
                       onClick={() => handleRewardSelect(option.text)}
                       disabled={isGenerating}
-                      className="w-full text-left px-4 py-3 bg-white/60 dark:bg-zinc-800/60 hover:bg-white/90 dark:hover:bg-zinc-700/80 rounded-2xl text-sm font-medium text-zinc-800 dark:text-zinc-100 active:scale-[0.98] transition-all disabled:opacity-40"
+                      className="w-full text-left px-4 py-3 bg-white rounded-2xl active:scale-[0.98] transition-all disabled:opacity-40 flex items-center gap-3"
+                      style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
                     >
-                      {option.text}
+                      <span className="text-base shrink-0" style={{ color: '#d4627a' }}>♡</span>
+                      <span className="text-sm font-medium" style={{ color: '#4a4a4a' }}>{option.text}</span>
                     </motion.button>
                   ))}
 
-                  {/* 自定义输入选项 */}
+                  {/* 第四个：自定义输入 */}
                   <motion.div
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.24 }}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 }}
                     className="flex gap-2"
                   >
                     <input
                       type="text"
                       value={rewardCustomInput}
                       onChange={(e) => setRewardCustomInput(e.target.value)}
-                      placeholder="自定义..."
+                      placeholder="描述一个你能做的举动，剧情将据此推进"
                       disabled={isGenerating}
-                      className="flex-1 min-w-0 px-4 py-3 bg-white/60 dark:bg-zinc-800/60 rounded-2xl text-sm text-zinc-800 dark:text-zinc-100 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-600 transition-colors disabled:opacity-40"
+                      className="flex-1 min-w-0 px-4 py-3 rounded-2xl text-sm outline-none border-0 transition-colors disabled:opacity-40"
+                      style={{
+                        backgroundColor: 'rgba(255,240,245,0.6)',
+                        color: '#4a4a4a',
+                        fontWeight: 300,
+                      }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && rewardCustomInput.trim()) handleRewardSelect(rewardCustomInput.trim()); }}
                     />
                     {rewardCustomInput.trim() && (
                       <button
                         onClick={() => handleRewardSelect(rewardCustomInput.trim())}
                         disabled={isGenerating}
-                        className="px-4 py-3 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-2xl text-sm font-bold active:scale-95 transition-transform disabled:opacity-40 shrink-0"
+                        className="px-4 py-3 rounded-2xl text-sm font-medium active:scale-95 transition-transform disabled:opacity-40 shrink-0"
+                        style={{ backgroundColor: '#d4627a', color: '#fff' }}
                       >
                         确定
                       </button>
@@ -1778,13 +2273,68 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
                     transition={{ delay: 0.35 }}
                     onClick={() => handleRewardSelect(null)}
                     disabled={isGenerating}
-                    className="w-full text-center py-3 text-zinc-400 dark:text-zinc-500 text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300 active:scale-[0.98] transition-all disabled:opacity-40 mt-1"
+                    className="w-full text-center py-2 text-[12px] font-normal active:scale-[0.98] transition-all disabled:opacity-40 mt-1"
+                    style={{ color: '#aaa' }}
                   >
                     什么都不给
                   </motion.button>
                 </div>
               )}
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ====== 好感度节点提示条（事件流底部） ====== */}
+      <AnimatePresence>
+        {showMilestonePromptBar && !isGenerating && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="absolute bottom-20 left-0 right-0 z-[55] flex justify-center px-4"
+          >
+            <button
+              onClick={handleMilestonePromptBarClick}
+              className="px-6 py-3 rounded-full text-sm font-medium active:scale-95 transition-all shadow-lg"
+              style={{
+                background: 'rgba(255,255,255,0.75)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255,255,255,0.5)',
+                color: '#f0a1ab',
+              }}
+            >
+              ✦ 好感度达到新节点，点击查看
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ====== 奖励后继续剧情提示条（纯提示，不可点击，文档流内占位） ====== */}
+      <AnimatePresence>
+        {showRewardContinueBar && !isGenerating && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            style={{ position: 'relative', zIndex: 1 }}
+            className="flex justify-center px-4 py-2"
+          >
+            <div
+              className="px-6 py-3 rounded-full text-sm font-medium shadow-lg"
+              style={{
+                background: 'rgba(255,255,255,0.75)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255,255,255,0.5)',
+                color: '#f0a1ab',
+                cursor: 'default',
+                userSelect: 'none',
+              }}
+            >
+              ✦ 请继续推动剧情
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
