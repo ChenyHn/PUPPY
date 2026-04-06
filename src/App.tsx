@@ -59,7 +59,8 @@ import {
   Bot,
   Copy,
   Quote,
-  Star
+  Star,
+  ShoppingBag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -74,12 +75,15 @@ import { FavoritesScreen } from './components/FavoritesScreen';
 import { AddFriendModal } from './components/AddFriendModal';
 import { ProfileEditorModal, type CurrentUser } from './components/ProfileEditorModal';
 import { WalletActionsModal, type WalletData } from './components/WalletActionsModal';
+import { PaymentSecurityModal } from './components/PaymentSecurityModal';
 import { HeartbeatNPC } from './screens/HeartbeatNPC';
+import { MusicScreen } from './components/MusicScreen';
+import { ShoppingScreen } from './components/shopping/ShoppingScreen';
 
 import type { ChatMessage } from './types';
 
 // --- Types ---
-type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-favorites' | 'app-heartbeat-npc';
+type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-favorites' | 'app-heartbeat-npc' | 'app-music' | 'app-shopping';
 
 interface FavoriteItem {
   id: string;
@@ -291,9 +295,9 @@ interface HomeAppItem {
 
 const DEFAULT_HOME_APPS: HomeAppItem[] = [
   { id: 'chat', icon: MessageCircle, label: '聊天', screen: 'app-chat' },
-  { id: 'music', icon: Music, label: '音乐' },
+  { id: 'music', icon: Music, label: '音乐', screen: 'app-music' },
   { id: 'notes', icon: FileText, label: '备忘录' },
-  { id: 'photos', icon: ImageIcon, label: '相册' },
+  { id: 'shopping', icon: ShoppingBag, label: '购物', screen: 'app-shopping' },
   { id: 'world', icon: BookOpen, label: '世界书', screen: 'app-world' },
   { id: 'settings', icon: Settings, label: '设置', screen: 'app-settings' },
   { id: 'appearance', icon: Palette, label: '外观', screen: 'app-appearance' },
@@ -411,8 +415,13 @@ const ReorderableGrid = ({
   );
 };
 
-const ChatListItem = ({ name, msg, time, unread = 0, avatar }: any) => (
-  <div className="flex items-center gap-4 p-4 hover:bg-neutral-100 dark:hover:bg-zinc-800/50 active:bg-neutral-200 dark:active:bg-zinc-800 transition-colors cursor-pointer border-b border-neutral-200 dark:border-zinc-800 last:border-b-0">
+const ChatListItem = ({ name, msg, time, unread = 0, avatar, isPinned }: any) => (
+  <div className={`flex items-center gap-4 p-4 transition-colors cursor-pointer border-b border-neutral-200 dark:border-zinc-800 last:border-b-0 relative
+    ${isPinned 
+      ? 'bg-zinc-100/80 dark:bg-zinc-800/80 hover:bg-zinc-200/80 dark:hover:bg-zinc-700/80' 
+      : 'bg-white dark:bg-[#1c1c1e] hover:bg-neutral-50 dark:hover:bg-zinc-800/60'
+    }`}
+  >
     <div className="w-[56px] h-[56px] rounded-full bg-neutral-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 dark:text-zinc-500 flex-shrink-0 overflow-hidden">
       {avatar ? (
         <img src={avatar} alt={name} className="w-full h-full object-cover" />
@@ -568,6 +577,7 @@ export default function App() {
     };
   });
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showPaymentSecurityModal, setShowPaymentSecurityModal] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('aiphone_wallet', JSON.stringify(wallet));
@@ -993,7 +1003,7 @@ export default function App() {
       }}
     >
       {/* Mobile Frame */}
-      <div id="phone-container" className={`relative w-full h-full max-w-[390px] max-h-[844px] sm:h-[844px] sm:rounded-[44px] sm:border-[12px] sm:border-white dark:sm:border-zinc-800 sm:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:sm:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}>
+      <div id="phone-container" className={`relative w-full h-full max-w-[390px] max-h-[844px] sm:h-[844px] sm:rounded-[44px] sm:border-[12px] sm:border-white dark:sm:border-zinc-800 sm:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:sm:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup relative ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}>
         
         <AnimatePresence mode="wait">
           {/* 1. Splash Screen */}
@@ -1423,12 +1433,13 @@ export default function App() {
                                     <div key="ai_assistant" onClick={() => {
                                       setActiveChatContact(null);
                                       setScreen('ai-chat');
-                                    }} className={aiSettings.isPinned ? 'bg-zinc-50/80 dark:bg-zinc-900/50' : ''}>
+                                    }}>
                                       <ChatListItem 
                                         name={aiSettings.remark || "AI 助手"} 
                                         msg={chatMessages.length > 0 ? chatMessages[chatMessages.length-1].content : "你好！有什么我可以帮你的吗？"} 
                                         time="10:24" 
                                         unread={0} 
+                                        isPinned={aiSettings.isPinned}
                                       />
                                     </div>
                                   );
@@ -1442,8 +1453,14 @@ export default function App() {
                                     <div key={contact.id} onClick={() => {
                                       setActiveChatContact(contact);
                                       setScreen('ai-chat');
-                                    }} className={contactSettings.isPinned ? 'bg-zinc-50/80 dark:bg-zinc-900/50' : ''}>
-                                      <ChatListItem name={displayName} msg={lastMsg} time="09:15" avatar={contact.avatar} />
+                                    }}>
+                                      <ChatListItem 
+                                        name={displayName} 
+                                        msg={lastMsg} 
+                                        time="09:15" 
+                                        avatar={contact.avatar} 
+                                        isPinned={contactSettings.isPinned}
+                                      />
                                     </div>
                                   );
                                 }
@@ -1603,7 +1620,10 @@ export default function App() {
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none">
+                          <div 
+                            className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer"
+                            onClick={() => setShowPaymentSecurityModal(true)}
+                          >
                             <div className="flex items-center gap-4">
                               <ShieldCheck size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
                               <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">支付安全</span>
@@ -1822,7 +1842,46 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* 9. Heartbeat NPC Screen */}
+          {/* 9. Music Screen */}
+          {screen === 'app-music' && (
+            <motion.div
+              key="app-music"
+              initial={{ x: 0 }}
+              animate={{ x: 0 }}
+              exit={{ x: 0 }}
+              transition={{ duration: 0 }}
+              className="absolute inset-0 z-50"
+            >
+              <MusicScreen
+                onBack={() => setScreen('home')}
+                time={time}
+                contacts={contacts}
+                setScreen={setScreen as (s: string) => void}
+                chatHistories={chatHistories}
+                setChatHistories={setChatHistories}
+                setActiveChatContact={setActiveChatContact}
+              />
+            </motion.div>
+          )}
+
+          {/* 10. Shopping Screen */}
+          {screen === 'app-shopping' && (
+            <motion.div
+              key="app-shopping"
+              initial={{ x: 0 }}
+              animate={{ x: 0 }}
+              exit={{ x: 0 }}
+              transition={{ duration: 0 }}
+              className="absolute inset-0 z-50"
+            >
+              <ShoppingScreen
+                onBack={() => setScreen('home')}
+                time={time}
+              />
+            </motion.div>
+          )}
+
+          {/* 11. Heartbeat NPC Screen */}
           {screen === 'app-heartbeat-npc' && (
             <motion.div
               key="app-heartbeat-npc"
@@ -1848,16 +1907,32 @@ export default function App() {
           contacts={contacts}
           apiConfig={apiConfig}
           onAddContact={(persona) => {
-            setContacts(prev => {
-              if (prev.some(c => c.id === persona.id)) return prev;
-              return [...prev, persona];
-            });
+            try {
+              if (!persona || !persona.id) {
+                console.error('[App] onAddContact: invalid persona', persona);
+                return;
+              }
+              setContacts(prev => {
+                if (prev.some(c => c.id === persona.id)) return prev;
+                return [...prev, persona];
+              });
+            } catch (err) {
+              console.error('[App] onAddContact error:', err);
+            }
           }}
           onAddNewPersona={(persona) => {
-            setPhonePersonas(prev => {
-              if (prev.some(p => p.id === persona.id)) return prev;
-              return [...prev, persona];
-            });
+            try {
+              if (!persona || !persona.id) {
+                console.error('[App] onAddNewPersona: invalid persona', persona);
+                return;
+              }
+              setPhonePersonas(prev => {
+                if (prev.some(p => p.id === persona.id)) return prev;
+                return [...prev, persona];
+              });
+            } catch (err) {
+              console.error('[App] onAddNewPersona error:', err);
+            }
           }}
         />
 
@@ -1908,6 +1983,12 @@ export default function App() {
           setWallet={setWallet}
           phonePersonas={phonePersonas}
           apiConfig={apiConfig}
+        />
+
+        {/* Payment Security Modal */}
+        <PaymentSecurityModal
+          isOpen={showPaymentSecurityModal}
+          onClose={() => setShowPaymentSecurityModal(false)}
         />
       </div>
 

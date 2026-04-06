@@ -1,7 +1,69 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, Component, type ErrorInfo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search, Loader2, User, UserPlus, AlertCircle } from 'lucide-react';
+import { renderInPhoneContainer } from '../utils/portal';
 import type { Persona, ApiConfig } from '../types';
+
+// --- ErrorBoundary for AddFriendModal ---
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  onReset?: () => void;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class AddFriendErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[AddFriendModal] ErrorBoundary caught error:', error, errorInfo);
+  }
+
+  reset = () => {
+    this.setState({ hasError: false, error: null });
+    this.props.onReset?.();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="absolute inset-0 z-[70] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-white dark:bg-[#1c1c1e] rounded-[24px] w-full max-w-[340px] flex flex-col overflow-hidden shadow-2xl p-6">
+            <div className="flex flex-col items-center gap-4 py-8">
+              <div className="w-14 h-14 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center">
+                <AlertCircle size={28} className="text-red-500" />
+              </div>
+              <span className="text-sm font-bold text-red-600 dark:text-red-400">
+                出现了一点问题
+              </span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 text-center">
+                添加好友时遇到错误，请重试
+              </span>
+              <button
+                onClick={this.reset}
+                className="mt-2 px-6 py-2 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-xl text-sm font-bold active:scale-95 transition-all"
+              >
+                关闭并重试
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 interface AddFriendModalProps {
   isOpen: boolean;
@@ -126,7 +188,12 @@ async function generatePersonaByAI(
   } catch (err) {
     console.error('AI persona generation failed:', err);
     // Fallback to simple generation
-    return generateFallbackPersona(accountName);
+    try {
+      return generateFallbackPersona(accountName);
+    } catch (fallbackErr) {
+      console.error('Fallback persona generation also failed:', fallbackErr);
+      return null;
+    }
   }
 }
 
@@ -159,7 +226,7 @@ function generateFallbackPersona(accountName: string): Persona {
   };
 }
 
-export function AddFriendModal({
+function AddFriendModalInner({
   isOpen,
   onClose,
   phonePersonas,
@@ -177,6 +244,26 @@ export function AddFriendModal({
     error?: string;
   } | null>(null);
   const [addSuccess, setAddSuccess] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  // Reset all internal state when modal closes (isOpen changes to false)
+  useEffect(() => {
+    if (!isOpen) {
+      // Use a small delay to allow exit animation to complete before resetting state
+      const timer = setTimeout(() => {
+        resetState();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
+  const resetState = () => {
+    setQuery('');
+    setSearchResult(null);
+    setIsSearching(false);
+    setAddSuccess(false);
+    setAddError(null);
+  };
 
   const handleSearch = async () => {
     const trimmed = query.trim();
@@ -185,93 +272,95 @@ export function AddFriendModal({
     setIsSearching(true);
     setSearchResult(null);
     setAddSuccess(false);
+    setAddError(null);
 
-    // Simulate network delay
-    await new Promise((r) => setTimeout(r, 500 + Math.random() * 500));
-
-    // 1. Local search (match name or chatId)
-    const existing = phonePersonas.find(
-      (p) =>
-        p.name === trimmed ||
-        p.chatName === trimmed ||
-        p.chatId === trimmed
-    );
-    if (existing) {
-      setSearchResult({ found: true, contact: existing, isExisting: true });
-      setIsSearching(false);
-      return;
-    }
-
-    // 2. Random probability (60%) to "find" the account
-    const shouldExist = Math.random() < 0.6;
-    if (!shouldExist) {
-      setSearchResult({ found: false, error: '用户不存在' });
-      setIsSearching(false);
-      return;
-    }
-
-    // 3. AI generate new persona
     try {
+      // Simulate network delay
+      await new Promise((r) => setTimeout(r, 500 + Math.random() * 500));
+
+      // 1. Local search (match name or chatId)
+      const existing = phonePersonas.find(
+        (p) =>
+          p.name === trimmed ||
+          p.chatName === trimmed ||
+          p.chatId === trimmed
+      );
+      if (existing) {
+        setSearchResult({ found: true, contact: existing, isExisting: true });
+        setIsSearching(false);
+        return;
+      }
+
+      // 2. Random probability (60%) to "find" the account
+      const shouldExist = Math.random() < 0.6;
+      if (!shouldExist) {
+        setSearchResult({ found: false, error: '用户不存在' });
+        setIsSearching(false);
+        return;
+      }
+
+      // 3. AI generate new persona
       const newPersona = await generatePersonaByAI(trimmed, apiConfig);
       if (!newPersona) {
         setSearchResult({ found: false, error: '生成失败，请重试' });
       } else {
         setSearchResult({ found: true, contact: newPersona, isExisting: false });
       }
-    } catch {
-      setSearchResult({ found: false, error: '生成失败，请重试' });
+    } catch (err) {
+      console.error('[AddFriendModal] Search error:', err);
+      setSearchResult({ found: false, error: '搜索失败，请重试' });
+    } finally {
+      // Always ensure isSearching is set to false, no matter what happens
+      setIsSearching(false);
     }
-
-    setIsSearching(false);
   };
 
   const handleAdd = () => {
     if (!searchResult?.contact) return;
 
-    const persona = searchResult.contact;
-    const isAlreadyContact = contacts.some((c) => c.id === persona.id);
+    try {
+      const persona = searchResult.contact;
+      const isAlreadyContact = contacts.some((c) => c.id === persona.id);
 
-    if (isAlreadyContact) {
+      if (isAlreadyContact) {
+        setAddSuccess(true);
+        setAddError(null);
+        setTimeout(() => {
+          handleClose();
+        }, 800);
+        return;
+      }
+
+      // If it's a new persona (not in phonePersonas), save it first
+      if (!searchResult.isExisting) {
+        onAddNewPersona(persona);
+      }
+
+      // Add to contacts
+      onAddContact(persona);
       setAddSuccess(true);
+      setAddError(null);
+
       setTimeout(() => {
-        onClose();
-        resetState();
+        handleClose();
       }, 800);
-      return;
+    } catch (err) {
+      console.error('[AddFriendModal] Add contact error:', err);
+      setAddError('添加失败，请重试');
+      setAddSuccess(false);
     }
-
-    // If it's a new persona (not in phonePersonas), save it first
-    if (!searchResult.isExisting) {
-      onAddNewPersona(persona);
-    }
-
-    // Add to contacts
-    onAddContact(persona);
-    setAddSuccess(true);
-
-    setTimeout(() => {
-      onClose();
-      resetState();
-    }, 800);
-  };
-
-  const resetState = () => {
-    setQuery('');
-    setSearchResult(null);
-    setIsSearching(false);
-    setAddSuccess(false);
   };
 
   const handleClose = () => {
     onClose();
-    resetState();
+    // resetState will be triggered by the useEffect watching isOpen
   };
 
   const isAlreadyContact = searchResult?.contact
     ? contacts.some((c) => c.id === searchResult.contact!.id)
     : false;
 
-  return (
+  const modalContent = (
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -363,21 +452,49 @@ export function AddFriendModal({
                     exit={{ opacity: 0, scale: 0.9 }}
                     className="flex-1 flex flex-col items-center justify-center py-8 gap-3"
                   >
-                    <div className="w-12 h-12 rounded-full bg-green-50 dark:bg-green-900/30 flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                       <UserPlus
                         size={24}
-                        className="text-green-500"
+                        className="text-zinc-600 dark:text-zinc-400"
                       />
                     </div>
-                    <span className="text-sm font-bold text-green-600 dark:text-green-400">
+                    <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
                       添加成功！
                     </span>
+                  </motion.div>
+                )}
+
+                {/* Add Error */}
+                {!isSearching && !addSuccess && addError && (
+                  <motion.div
+                    key="add-error"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="flex-1 flex flex-col items-center justify-center py-8 gap-3"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center">
+                      <AlertCircle
+                        size={24}
+                        className="text-red-500"
+                      />
+                    </div>
+                    <span className="text-sm text-red-500 dark:text-red-400 font-medium">
+                      {addError}
+                    </span>
+                    <button
+                      onClick={() => setAddError(null)}
+                      className="text-xs text-zinc-500 dark:text-zinc-400 underline mt-1"
+                    >
+                      返回重试
+                    </button>
                   </motion.div>
                 )}
 
                 {/* Error / Not Found */}
                 {!isSearching &&
                   !addSuccess &&
+                  !addError &&
                   searchResult &&
                   !searchResult.found && (
                     <motion.div
@@ -402,6 +519,7 @@ export function AddFriendModal({
                 {/* Found Contact Card */}
                 {!isSearching &&
                   !addSuccess &&
+                  !addError &&
                   searchResult?.found &&
                   searchResult.contact && (
                     <motion.div
@@ -471,7 +589,7 @@ export function AddFriendModal({
                   )}
 
                 {/* Initial empty state */}
-                {!isSearching && !searchResult && !addSuccess && (
+                {!isSearching && !searchResult && !addSuccess && !addError && (
                   <motion.div
                     key="empty"
                     initial={{ opacity: 0 }}
@@ -494,5 +612,30 @@ export function AddFriendModal({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+
+  return isOpen ? renderInPhoneContainer(modalContent) : null;
+}
+
+// Exported component: wraps the inner modal with an ErrorBoundary
+export function AddFriendModal(props: AddFriendModalProps) {
+  const [boundaryKey, setBoundaryKey] = useState(0);
+
+  const handleErrorReset = () => {
+    setBoundaryKey((k) => k + 1);
+    props.onClose();
+  };
+
+  // Reset ErrorBoundary when modal opens
+  useEffect(() => {
+    if (props.isOpen) {
+      setBoundaryKey((k) => k + 1);
+    }
+  }, [props.isOpen]);
+
+  return (
+    <AddFriendErrorBoundary key={boundaryKey} onReset={handleErrorReset}>
+      <AddFriendModalInner {...props} />
+    </AddFriendErrorBoundary>
   );
 }

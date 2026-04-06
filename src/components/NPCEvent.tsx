@@ -110,6 +110,44 @@ export const NPCEvent = memo(function NPCEvent({ event, charName, userAvatar }: 
     );
   }
 
+  // 「命运已定」特殊标识：好感度100表白结束后显示
+  if (event.description === '__FATE_SEALED__') {
+    return (
+      <div className="flex flex-col items-center my-6 px-4 gap-3">
+        {/* 分隔线：上下各一条细线，中间文字 */}
+        <div className="flex items-center gap-3 w-full">
+          <div className="flex-1" style={{ height: '0.5px', background: 'rgba(240,161,171,0.4)' }} />
+          <span style={{
+            color: '#f0a1ab',
+            fontSize: '13px',
+            fontWeight: 400,
+            letterSpacing: '0.35em',
+            whiteSpace: 'nowrap',
+          }}>
+            ✦ 命运已定 ✦
+          </span>
+          <div className="flex-1" style={{ height: '0.5px', background: 'rgba(240,161,171,0.4)' }} />
+        </div>
+        {/* 提示条：磨砂白样式 */}
+        <div
+          className="rounded-full px-5 py-2.5 text-center"
+          style={{
+            background: 'rgba(255,255,255,0.65)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.5)',
+            color: 'rgba(140,140,140,0.85)',
+            fontSize: '12px',
+            fontWeight: 400,
+            letterSpacing: '0.05em',
+          }}
+        >
+          他已经赢了这局游戏，但故事还在继续
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {/* 读档提示 */}

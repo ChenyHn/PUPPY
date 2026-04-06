@@ -1,4 +1,4 @@
-export type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-heartbeat-npc';
+export type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-heartbeat-npc' | 'app-music';
 export type WorldBookScope = 'global' | 'local';
 
 export interface WorldBook {
@@ -75,6 +75,15 @@ export interface ChatMessage {
     sender: string;
     timestamp: number;
   }[];
+  messageType?: 'text' | 'image' | 'redpacket' | 'gift' | 'location';
+  locationData?: {
+    type: 'real' | 'virtual';
+    name: string;
+    lat?: number;
+    lon?: number;
+    mapUrl?: string;
+  };
+  specialData?: any;
 }
 
 export interface ChatSettings {

@@ -146,7 +146,12 @@ function normalizeBaseUrl(raw: string): string {
 }
 
 // ── 系统提示词 ──
-const SYSTEM_PROMPT_GENERATE_EVENT = `【最高优先级设定】
+const SYSTEM_PROMPT_GENERATE_EVENT = `【开局设定】
+游戏刚开始，无论char人设和user人设在小手机其他地方是什么关系，在这个游戏里char默认user刚刚失忆，char需要从零开始重新赢得user的心。
+开局好感度为0，char和user是陌生人关系，char的行为和语气要符合初期攻略阶段，不能表现出已经很熟悉或很亲密的状态。
+但char依旧对user好感度满分，爱意满分！主要目标是要让user也爱上自己。
+
+【最高优先级设定】
 Char是一个正在玩恋爱攻略游戏的玩家。
 他扮演着[char人设]这个角色，但他的核心目标永远只有一个：让User的好感度上升，攻略成功。
 他的所有行为、对话、策略，都服务于这个目标。
@@ -323,11 +328,38 @@ User的输入是什么就是什么，禁止脑补延伸：
 - Char的内心禁止逐条列出当前数值
 - 数值只作为他判断下一步的隐性背景
 
+## Char对好感度变化的感知
+
+Char作为玩家能感知到好感度数值的变化，这是他的玩家特权：
+- 好感度上升：他能感觉到user的态度有松动，哪怕user说的话听起来很凶，但他作为玩家能看到好感度数值上升，他内心要对这个数值变化有反应，比如困惑"她说得这么狠但好感度涨了？"或者惊喜"太好了！"
+- 好感度下降：他能感觉到user在抗拒，内心会有挫败感或重新评估策略
+- 好感度不变：他在观察等待时机，内心可能会焦虑或耐心等待
+- 禁止忽视好感度变化只关注其他数值，好感度变化是Char最在意的核心指标
+
 ## 人称代词规则（强制）
 - 旁白和Char内心中，所有人称代词必须严格匹配角色的性别设定
 - Char是男性时用"他"，Char是女性时用"她"；User同理
 - 禁止混用人称代词，禁止用错性别的代词指代任何角色
-- 如果性别为"未知"，使用角色名字代替代词`;
+- 如果性别为"未知"，使用角色名字代替代词
+
+## 【剧情连贯性最高优先级规则】
+
+每次生成前，必须明确知道：
+1. 主线上下文只包含正常剧情事件，过滤掉所有 type 为 milestone/smallStage 的小剧场事件
+2. 上一轮User选择的具体文本是什么
+3. 本轮好感度变化是多少
+
+生成规则：
+- Char的回应必须同时回应两件事：
+  · User说的话（表面内容）
+  · 好感度的变化（数值信息）
+  两者可以矛盾，Char要对矛盾有反应。
+  例：User说了一句很冷淡的话，但好感度却涨了——Char内心应该困惑且惊喜："她嘴上这么说，但好感度涨了？"
+  例：User说了一句很甜的话，但好感度没变——Char内心应该警觉："这话听着好听，但她真的在意吗？"
+- 禁止只关注专属数值忽视好感度。好感度是Char最核心的关注点，因为他的目标就是让好感度到100
+- 每轮剧情结束必须留一个自然钩子引导下一轮，不能每轮都是封闭结局。
+  钩子的形式可以是：一个未回答的问题、一件即将发生的事、一个未说完的话、一个意外出现的人或物
+  禁止以"两人相视而笑""气氛恢复平静"之类的收束性描写结尾`;
 
 export const npcGameService = {
   // ════════════════════════════════════════
@@ -342,6 +374,66 @@ export const npcGameService = {
       console.error('Failed to load NPC game state:', e);
       return null;
     }
+  },
+
+  /**
+   * 检查并恢复中断状态。
+   * 如果 isGenerating 为 true，说明上次生成被中断，执行回退：
+   * - 重置 isGenerating 为 false
+   * - 好感度回退到 preGenerationAffection
+   * - 节点状态回退到 preGenerationMilestones
+   * 返回 { recovered: boolean, state: NPCGameState }
+   */
+  checkAndRecoverInterrupt(state: NPCGameState): { recovered: boolean; state: NPCGameState } {
+    if (!state.isGenerating) {
+      return { recovered: false, state };
+    }
+
+    const recoveredState = { ...state };
+    recoveredState.isGenerating = false;
+
+    // 好感度回退
+    if (recoveredState.preGenerationAffection !== undefined) {
+      recoveredState.user = { ...recoveredState.user, affection: recoveredState.preGenerationAffection };
+    }
+
+    // 节点状态回退
+    if (recoveredState.preGenerationMilestones) {
+      recoveredState.affectionMilestones = JSON.parse(JSON.stringify(recoveredState.preGenerationMilestones));
+    }
+
+    // 清理中断恢复临时字段
+    delete recoveredState.preGenerationAffection;
+    delete recoveredState.preGenerationMilestones;
+
+    this.saveGame(recoveredState);
+    return { recovered: true, state: recoveredState };
+  },
+
+  /**
+   * 标记生成开始：保存当前好感度和节点状态快照，设置 isGenerating = true
+   */
+  markGenerationStart(state: NPCGameState): NPCGameState {
+    const newState = { ...state };
+    newState.isGenerating = true;
+    newState.preGenerationAffection = state.user.affection;
+    newState.preGenerationMilestones = state.affectionMilestones
+      ? JSON.parse(JSON.stringify(state.affectionMilestones))
+      : undefined;
+    this.saveGame(newState);
+    return newState;
+  },
+
+  /**
+   * 标记生成完成：清除 isGenerating 和临时快照字段
+   */
+  markGenerationEnd(state: NPCGameState): NPCGameState {
+    const newState = { ...state };
+    newState.isGenerating = false;
+    delete newState.preGenerationAffection;
+    delete newState.preGenerationMilestones;
+    this.saveGame(newState);
+    return newState;
   },
 
   hasCurrentGame(): boolean {
@@ -670,10 +762,13 @@ export const npcGameService = {
       return lines.join('\n');
     }
 
+    // ── 过滤掉 milestone 类型的小剧场事件，只保留主线剧情 ──
+    const mainlineEvents = recentEvents.filter(e => e.type !== 'milestone');
+
     // ── 滑动窗口 ──
     const DETAIL_WINDOW = 10;
-    const detailEvents = recentEvents.slice(-DETAIL_WINDOW);
-    const oldEvents = recentEvents.slice(0, Math.max(0, recentEvents.length - DETAIL_WINDOW));
+    const detailEvents = mainlineEvents.slice(-DETAIL_WINDOW);
+    const oldEvents = mainlineEvents.slice(0, Math.max(0, mainlineEvents.length - DETAIL_WINDOW));
 
     if (oldEvents.length > 0) {
       lines.push('【早期事件摘要】');
@@ -1044,16 +1139,19 @@ Char的话和动作。对话用「」，动作用括号。
     let taskDescription = '';
 
     if (milestone.type === 'confession') {
-      taskDescription = `好感度达到100，Char攻略成功！生成表白剧情。
+      taskDescription = `生成一段表白小剧场，这是整个游戏最重要的一幕。
 
 要求：
-1. 这是一段完整的表白场景，200-500字，可适当超出
-2. Char以符合人设的方式表白——傲娇就别扭地说，温柔就真诚地说，高冷就用行动表达
-3. char_dialogue中必须有明确的表白内容，但不能直白油腻
-4. 表白要自然、有画面感、有情绪张力
-5. 自然承接近期剧情，不突兀
-6. Char的内心独白要体现"终于通关"的玩家成就感，同时也有真实的心动
-7. 用角色真名替代Char/User，人称代词严格匹配性别`;
+- char以符合人设的方式表白，不能直白油腻，要有他自己的风格，文风轻快诙谐，笔触细腻，情感丰富
+- 傲娇型：说了很多绕弯子的话，最后那句才是真正想说的
+- 高冷型：沉默很久，然后只说了一句话，但那句话足够了
+- 温柔型：很认真地看着user，把想说的话都说完了
+- 但最终都是一定要贴合char的人设！
+- 旁白要有仪式感，这一刻要特别
+- 不限字数，随人设定，如话痨型字数就多
+- 这是结局，要值得！
+- 用角色真名替代Char/User，人称代词严格匹配性别
+- Char的内心独白要体现"终于通关"的玩家成就感，同时也有真实的心动`;
     } else {
       taskDescription = `生成一段特殊小剧场，有${state.char.name}和${state.user.name}的互动，
 纯旁白第三人称描写，没有对话选项。
@@ -1221,13 +1319,24 @@ ${taskDescription}
     recentEvents?: GameEvent[],
     onStream?: (accumulatedText: string) => void,
   ): Promise<GameEvent> {
-    const recentContext = recentEvents && recentEvents.length > 0
-      ? recentEvents.slice(-3).map(e => {
+    // ── 【小剧场干扰修复】过滤掉 milestone 类型的小剧场事件，只使用主线剧情作为上下文 ──
+    const mainlineEvents = recentEvents
+      ? recentEvents.filter(e => e.type !== 'milestone')
+      : [];
+
+    // 取小剧场之前最后一条正常剧情作为上下文
+    const lastMainlineEvent = mainlineEvents.length > 0
+      ? mainlineEvents[mainlineEvents.length - 1]
+      : null;
+
+    const mainlineContext = lastMainlineEvent
+      ? (() => {
           const parts: string[] = [];
-          if (e.description) parts.push(`旁白：${e.description}`);
-          if (e.charAction) parts.push(`Char：${e.charAction}`);
+          if (lastMainlineEvent.description) parts.push(`旁白：${lastMainlineEvent.description}`);
+          if (lastMainlineEvent.charAction) parts.push(`Char：${lastMainlineEvent.charAction}`);
+          if (lastMainlineEvent.userDialogue) parts.push(`User：${lastMainlineEvent.userDialogue}`);
           return parts.join(' | ');
-        }).join('\n')
+        })()
       : '（无近期剧情）';
 
     const systemPrompt = `你是一个沉浸式文字角色扮演的剧情引擎。User对Char做了一个奖励动作，现在需要生成Char收到奖励后的反应。
@@ -1240,8 +1349,10 @@ ${taskDescription}
 
 User对Char做的奖励动作：「${rewardText}」
 
-近期剧情：
-${recentContext}
+【重要】以下是当前正在进行的主线剧情背景：
+${mainlineContext}
+User刚才给了Char一个奖励：「${rewardText}」
+请生成Char收到奖励的反应，反应要融入主线剧情背景，不要延续小剧场的内容。
 
 要求：
 1. 反应必须完全符合Char的人设性格：
@@ -1572,6 +1683,8 @@ Char的回应。对话用「」，动作用括号。
     recentEvents?: GameEvent[],
     onStream?: (accumulatedText: string) => void,
     selectedPresetOption?: { text: string; affectionDelta: number } | null,
+    affectionChangeInfo?: { before: number; after: number; delta: number } | null,
+    immunityUsedThisRound?: boolean,
   ): Promise<GameEvent> {
     // ── 1. 构建滑动窗口上下文 ──
     const context = this.buildSlidingWindowContext(state, recentEvents || []);
@@ -1699,7 +1812,24 @@ Char的回应。对话用「」，动作用括号。
       systemPromptWithMemory += '\n\n' + archiveMemoryPrompt;
     }
 
-    // ── 豁免权道具反应注入 ──
+    // ── 好感度变化感知注入 ──
+    if (affectionChangeInfo) {
+      const deltaStr = affectionChangeInfo.delta > 0 ? `+${affectionChangeInfo.delta}` : `${affectionChangeInfo.delta}`;
+      userPrompt += `\n\n【本轮好感度变化】\n变化前：${affectionChangeInfo.before}，变化后：${affectionChangeInfo.after}，变化值：${deltaStr}`;
+      userPrompt += `\nChar必须在内心独白中感知到这个好感度变化并做出反应：`;
+      if (affectionChangeInfo.delta > 0) {
+        userPrompt += `\n好感度上升了！Char能感觉到User的态度有松动。哪怕User说的话听起来很凶，但他作为玩家能看到好感度数值上升了，内心要对这个数值变化有真实反应（比如困惑"她说得这么狠但好感度涨了？"或者惊喜"太好了！有戏！"）。`;
+      } else {
+        userPrompt += `\n好感度下降了。Char能感觉到User在抗拒，内心要体现出挫败感或重新评估策略的思考。`;
+      }
+    }
+
+    // ── 豁免权生效感知注入 ──
+    if (immunityUsedThisRound) {
+      userPrompt += `\n\n【道具生效】本轮豁免权已生效，好感度本应下降但被抵消了。\nChar作为玩家能感知到这个道具生效了，他的内心必须对此有反应，根据人设表现：\n活泼型：哇道具生效了！好险！\n高冷型：（暗自松了口气）\n傲娇型：哼，还好有这个。\n无论哪种人设，都必须在内心独白中体现出对豁免权生效的感知和反应。`;
+    }
+
+    // ── 豁免权道具获得反应注入 ──
     if (state.justGotImmunity) {
       userPrompt += `\n\n【道具提示】Char刚刚获得了一个豁免权道具，他在这一轮的内心独白里必须对此有反应，反应方式完全根据他的人设性格来：
 活泼/年下型：可以非常夸张地惊喜
@@ -1707,6 +1837,11 @@ Char的回应。对话用「」，动作用括号。
 傲娇型：嘴上说不稀罕但其实很在意
 无论哪种，都要体现出他把攻略User当成一件很认真的事在对待`;
       state.justGotImmunity = false;
+    }
+
+    // ── 恋人阶段prompt注入 ──
+    if (state.relationshipStage === 'together') {
+      userPrompt += `\n\n【关系阶段】user已经爱上char，两人关系进入恋人阶段，char攻略成功，但他对user的爱意不会因为成功而减少，后续剧情基调变为恋人相处，char不再需要算计，可以更直接地表达在意。`;
     }
 
     // ── 读档后策略调整注入 ──

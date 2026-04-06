@@ -196,6 +196,9 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   // 奖励后继续剧情提示
   const [showRewardContinueBar, setShowRewardContinueBar] = useState(false);
 
+  // 中断恢复提示
+  const [showInterruptRecoveryToast, setShowInterruptRecoveryToast] = useState(false);
+
   // 重新生成确认弹窗
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
 
@@ -403,12 +406,18 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     const targetSave = saves.find(s => s.id === saveId);
     const loadedState = npcGameService.loadFromSlot(saveId);
     if (loadedState) {
+      // ── 中断恢复检查 ──
+      const { recovered, state: checkedState } = npcGameService.checkAndRecoverInterrupt(loadedState);
+      if (recovered) {
+        setShowInterruptRecoveryToast(true);
+        setTimeout(() => setShowInterruptRecoveryToast(false), 3000);
+      }
       // 保留当前游戏的 immunityCount（如果有的话）
       const currentImmunity = gameState?.immunityCount ?? 0;
-      const loadedImmunity = loadedState.immunityCount ?? 0;
+      const loadedImmunity = checkedState.immunityCount ?? 0;
       const preservedImmunity = Math.max(currentImmunity, loadedImmunity);
-      loadedState.immunityCount = preservedImmunity;
-      setGameState(loadedState);
+      checkedState.immunityCount = preservedImmunity;
+      setGameState(checkedState);
       // 同步头像到独立存储
       if (loadedState.user.avatar) {
         setUserAvatar(loadedState.user.avatar);
@@ -417,20 +426,20 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       setCurrentSaveSlotId(saveId);
       setCurrentSaveName(targetSave?.name || '');
       setShowLoadModal(false);
-      if (loadedState.events && loadedState.events.length > 0) {
-        const restoredEvents = loadedState.events;
+      if (checkedState.events && checkedState.events.length > 0) {
+        const restoredEvents = checkedState.events;
         const lastEvent = restoredEvents[restoredEvents.length - 1];
         setCurrentEvent(lastEvent);
         setEventList(restoredEvents);
         setPresetOptions(extractPresetsFromEvent(lastEvent));
-      } else if (loadedState.currentEvent) {
+      } else if (checkedState.currentEvent) {
         console.warn('旧存档格式：仅包含最后一个事件，历史记录可能不完整。');
-        setCurrentEvent(loadedState.currentEvent);
-        const loadedEventList = [loadedState.currentEvent];
+        setCurrentEvent(checkedState.currentEvent);
+        const loadedEventList = [checkedState.currentEvent];
         setEventList(loadedEventList);
-        setPresetOptions(extractPresetsFromEvent(loadedState.currentEvent));
-      } else if (!loadedState.isGameOver) {
-        generateInitialEvent(loadedState);
+        setPresetOptions(extractPresetsFromEvent(checkedState.currentEvent));
+      } else if (!checkedState.isGameOver) {
+        generateInitialEvent(checkedState);
       }
     }
   };
@@ -444,31 +453,37 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
   const handleResumeCurrentGame = () => {
     const saved = npcGameService.loadGame();
     if (saved && !saved.isGameOver) {
+      // ── 中断恢复检查 ──
+      const { recovered, state: checkedState } = npcGameService.checkAndRecoverInterrupt(saved);
+      if (recovered) {
+        setShowInterruptRecoveryToast(true);
+        setTimeout(() => setShowInterruptRecoveryToast(false), 3000);
+      }
       // 保留豁免权（全局保留，不随读档恢复）
       const currentImmunity = gameState?.immunityCount ?? 0;
-      const savedImmunity = saved.immunityCount ?? 0;
-      saved.immunityCount = Math.max(currentImmunity, savedImmunity);
-      setGameState(saved);
+      const savedImmunity = checkedState.immunityCount ?? 0;
+      checkedState.immunityCount = Math.max(currentImmunity, savedImmunity);
+      setGameState(checkedState);
       // 同步头像到独立存储
-      if (saved.user.avatar) {
-        setUserAvatar(saved.user.avatar);
-        try { localStorage.setItem(AVATAR_KEY, saved.user.avatar); } catch {}
+      if (checkedState.user.avatar) {
+        setUserAvatar(checkedState.user.avatar);
+        try { localStorage.setItem(AVATAR_KEY, checkedState.user.avatar); } catch {}
       }
       setShowLoadModal(false);
-      if (saved.events && saved.events.length > 0) {
-        const restoredEvents = saved.events;
+      if (checkedState.events && checkedState.events.length > 0) {
+        const restoredEvents = checkedState.events;
         const lastEvent = restoredEvents[restoredEvents.length - 1];
         setCurrentEvent(lastEvent);
         setEventList(restoredEvents);
         setPresetOptions(extractPresetsFromEvent(lastEvent));
-      } else if (saved.currentEvent) {
+      } else if (checkedState.currentEvent) {
         console.warn('旧存档格式：仅包含最后一个事件，历史记录可能不完整。');
-        setCurrentEvent(saved.currentEvent);
-        const resumedEventList = [saved.currentEvent];
+        setCurrentEvent(checkedState.currentEvent);
+        const resumedEventList = [checkedState.currentEvent];
         setEventList(resumedEventList);
-        setPresetOptions(extractPresetsFromEvent(saved.currentEvent));
+        setPresetOptions(extractPresetsFromEvent(checkedState.currentEvent));
       } else {
-        generateInitialEvent(saved);
+        generateInitialEvent(checkedState);
       }
     } else {
       setShowSetup(true);
@@ -679,9 +694,27 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         // 小剧场内容插入后，立即自动加载预设选项
         setPresetOptions(extractPresetsFromEvent(milestoneEvent));
 
-        // 奖励提示条（100节点不弹奖励）
+        // 好感度100表白节点：不弹奖励面板，显示特殊标识
         if (milestone.type === 'confession') {
-          // confession 已在上方加载预设
+          // 设置 relationshipStage 为 together
+          updatedState = { ...updatedState, relationshipStage: 'together' as const };
+          setGameState({ ...updatedState });
+          npcGameService.saveGame(updatedState);
+
+          // 在事件流底部添加「命运已定」分隔线事件
+          const fateEvent: GameEvent = {
+            id: `fate_sealed_${Date.now()}`,
+            type: 'special',
+            description: '__FATE_SEALED__',
+            userDialogue: '',
+            charAction: '',
+            charThought: '',
+          };
+          updatedList = [...updatedList, fateEvent];
+          updatedState.events = updatedList;
+          setEventList(updatedList);
+          npcGameService.saveGame(updatedState);
+          // 不弹奖励面板，直接结束
         } else {
           const isLastMilestone = milestone === milestones[milestones.length - 1];
           if (isLastMilestone) {
@@ -830,6 +863,11 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     // 必须使用原始 inputState 的好感度，确保是更新前的值
     const oldAffection = inputState.user.affection;
 
+    // 跟踪豁免权是否在本轮生效
+    let immunityUsedThisRound = false;
+    // 跟踪好感度变化信息（用于传入AI prompt）
+    let affectionChangeInfo: { before: number; after: number; delta: number } | null = null;
+
     if (customAffectionDelta !== undefined && customAffectionDelta !== 0 && currentEvent?.type !== 'daily') {
       // ── 豁免权检查：好感度下降时，如果有豁免权则消耗一次并跳过扣减 ──
       if (customAffectionDelta < 0 && (newState.immunityCount ?? 0) > 0) {
@@ -837,10 +875,17 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
         newState.immunityCount = remaining;
         setImmunityMessage(`他似乎察觉到了什么，这次没有扣除好感度\n（豁免权已使用，剩余：${remaining}次）`);
         setShowImmunityConfirm(true);
+        immunityUsedThisRound = true;
         // 不修改好感度，跳过 affectionDelta 应用
         customAffectionDelta = 0;
       } else {
         newState.user.affection = Math.min(100, Math.max(-100, newState.user.affection + customAffectionDelta));
+        // 记录好感度变化信息
+        affectionChangeInfo = {
+          before: oldAffection,
+          after: newState.user.affection,
+          delta: customAffectionDelta,
+        };
       }
       const newAffection = newState.user.affection;
       console.log('好感度变化:', '新值:', newAffection);
@@ -934,11 +979,18 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
     setError('');
     setPresetOptions([]);
     setStreamingEvent(null);
+
+    // ── 标记生成开始（中断恢复用） ──
+    newState = npcGameService.markGenerationStart(newState);
+    setGameState(JSON.parse(JSON.stringify(newState)));
+
     try {
       const nextEvent = await npcGameService.generateNextEvent(
         apiConfig, newState, undefined, undefined, customInput, eventsForHistory,
         handleStreamChunk,
         selectedPresetOption,
+        affectionChangeInfo,
+        immunityUsedThisRound,
       );
       setStreamingEvent(null);
 
@@ -1038,6 +1090,14 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
       }
       setError('生成失败，点击重试');
     } finally {
+      // ── 标记生成结束（中断恢复用） ──
+      setGameState(prev => {
+        if (prev) {
+          const ended = npcGameService.markGenerationEnd(prev);
+          return { ...ended };
+        }
+        return prev;
+      });
       setIsGenerating(false);
       setIsProcessingOption(false);
     }
@@ -1606,6 +1666,20 @@ export function HeartbeatNPC({ apiConfig, setScreen }: HeartbeatNPCProps) {
             canOverwrite={!!currentSaveSlotId}
             currentSaveSlotId={currentSaveSlotId}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ====== 中断恢复提示 Toast ====== */}
+      <AnimatePresence>
+        {showInterruptRecoveryToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -20, x: '-50%' }}
+            className="absolute top-20 left-1/2 z-50 px-5 py-2.5 bg-zinc-500/80 text-zinc-200 backdrop-blur-md rounded-full text-xs font-normal shadow-lg"
+          >
+            上次游戏被中断，已恢复到中断前状态
+          </motion.div>
         )}
       </AnimatePresence>
 

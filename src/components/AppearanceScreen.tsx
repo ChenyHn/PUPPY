@@ -388,19 +388,6 @@ export const AppearanceScreen = ({
       </div>
 
       <div className="flex-1 overflow-x-hidden overflow-y-auto p-6 flex flex-col gap-6">
-        <AnimatePresence>
-          {success && (
-    <motion.div 
-      initial={{ x: 0 }}
-      animate={{ x: 0 }}
-      exit={{ x: 0 }}
-      transition={{ duration: 0 }}
-      className="absolute inset-0 bg-neutral-50 dark:bg-black z-50 flex flex-col"
-    >
-              {success}
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <AnimatePresence mode="wait">
           {activeView === 'home' && (
@@ -416,11 +403,11 @@ export const AppearanceScreen = ({
                 
                 {/* 顶部满宽卡片1：隐私防护 (附带主题切换) */}
                 <motion.div
-                  className="animate-float flex flex-row items-center justify-between px-5 py-4 bg-[#1c1c1e] dark:bg-black rounded-[26px] w-full shrink-0 min-h-[76px] border border-transparent dark:border-zinc-800"
+                  className="animate-float flex flex-row items-center justify-between px-5 py-4 bg-[#1c1c1e] dark:bg-black rounded-[26px] w-full shrink-0 min-h-[76px] border border-transparent dark:border-zinc-800 cursor-pointer"
+                  onClick={() => setActiveView('privacy')}
                 >
                   <div 
-                    className="flex items-center gap-[12px] cursor-pointer"
-                    onClick={() => setActiveView('privacy')}
+                    className="flex items-center gap-[12px]"
                   >
                     <ShieldCheck size={22} strokeWidth={1.5} className="text-white" />
                     <div className="flex flex-col">
@@ -1189,6 +1176,24 @@ export const AppearanceScreen = ({
                 </button>
               </div>
             </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Bottom Toast Notification */}
+      <AnimatePresence>
+        {success && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.25 }}
+            className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[200] pointer-events-none"
+          >
+            <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-800/90 dark:bg-zinc-200/90 backdrop-blur-md shadow-lg">
+              <Check size={14} className="text-green-400 dark:text-green-600" />
+              <span className="text-xs font-bold text-white dark:text-zinc-900 whitespace-nowrap">{success}</span>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

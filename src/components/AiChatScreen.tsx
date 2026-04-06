@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
+  ArrowLeft,
   Delete,
   SlidersHorizontal,
   RefreshCw,
@@ -34,6 +35,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Persona, ApiConfig, WorldBook, Screen, ChatMessage, ChatSettings, MemoryEntry, FavoriteItem } from '../types';
+
+import { mediaService } from '../services/mediaService';
+import { RedPacketModal } from './chat/RedPacketModal';
+import { GiftModal } from './chat/GiftModal';
+import { ImageMessage } from './chat/ImageMessage';
+import { RedPacketMessage } from './chat/RedPacketMessage';
+import { GiftMessage } from './chat/GiftMessage';
+import LocationModal from './chat/LocationModal';
+import { LocationMessage } from './chat/LocationMessage';
 
 // --- Helpers ---
 
@@ -161,6 +171,11 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Special message modals
+  const [showRedPacketModal, setShowRedPacketModal] = useState(false);
+  const [showGiftModal, setShowGiftModal] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const isSummarizingRef = useRef<Record<string, boolean>>({});
@@ -293,33 +308,71 @@ export function AiChatScreen(props: AiChatScreenProps) {
   };
 
   // --- Add user message ---
-  const addUserMessage = () => {
-    if (!chatInput.trim()) return;
-    const newMsg: ChatMessage = { id: generateMsgId(), role: 'user', content: chatInput.trim(), timestamp: Date.now() };
-    if (quoteToReply) newMsg.quote = quoteToReply;
+  const addUserMessage = (content?: string, type: ChatMessage['messageType'] = 'text', specialData?: any, locationData?: ChatMessage['locationData']) => {
+    const textContent = content !== undefined ? content : chatInput.trim();
+    if (!textContent && type === 'text') return;
+    
+    const newMsg: ChatMessage = { 
+      id: generateMsgId(), 
+      role: 'user', 
+      content: textContent, 
+      timestamp: Date.now(),
+      messageType: type,
+      specialData,
+      locationData
+    };
+    
+    if (quoteToReply && type === 'text') newMsg.quote = quoteToReply;
+    
     const newMsgs = [...currentMessages, newMsg];
     if (activeChatContact) setChatHistories(prev => ({ ...prev, [activeChatContact.id]: newMsgs }));
     else setChatMessages(newMsgs);
-    setChatInput(''); setQuoteToReply(null);
-    setTimeout(() => { if (chatInputRef.current) chatInputRef.current.style.height = '48px'; }, 10);
+    
+    if (type === 'text') {
+      setChatInput(''); setQuoteToReply(null);
+      setTimeout(() => { if (chatInputRef.current) chatInputRef.current.style.height = '40px'; }, 10);
+    }
+
+    // Trigger AI reply after sending special message
+    if (type !== 'text') {
+      setTimeout(() => generateAiReply(), 500);
+    }
+  };
+
+  const handleSendSpecialMessage = async (actionType: string) => {
+    setShowFunctionPanel(false);
+    try {
+      if (actionType === 'album') {
+        const imgUrl = await mediaService.selectImageFromAlbum();
+        addUserMessage('[图片]', 'image', { imageUrl: imgUrl });
+      } else if (actionType === 'camera') {
+        const imgUrl = await mediaService.takePhoto();
+        addUserMessage('[图片]', 'image', { imageUrl: imgUrl });
+      } else if (actionType === 'redpacket') {
+        setShowRedPacketModal(true);
+      } else if (actionType === 'gift') {
+        setShowGiftModal(true);
+      } else if (actionType === 'location') {
+        setShowLocationModal(true);
+      } else {
+        showToast('功能开发中');
+      }
+    } catch (err: any) {
+      if (err.message !== 'No file selected' && err.message !== 'No photo taken') {
+        showToast(err.message || '操作失败');
+      }
+    }
   };
 
   // --- Generate AI Reply ---
-  const generateAiReply = async (regenerateIdOrIndex?: string | number) => {
+  const generateAiReply = async (regenerateSegmentStart?: number, regenerateSegmentEnd?: number) => {
     const msgs = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
     let messagesToSend = msgs;
     let isRegenerating = false;
     let regenerateStartIndex = -1;
-    let targetGroupId: string | undefined;
 
-    if (regenerateIdOrIndex !== undefined) {
-      if (typeof regenerateIdOrIndex === 'string') {
-        targetGroupId = regenerateIdOrIndex;
-        regenerateStartIndex = msgs.findIndex(m => m.groupId === targetGroupId);
-      } else {
-        regenerateStartIndex = regenerateIdOrIndex;
-        targetGroupId = msgs[regenerateStartIndex]?.groupId;
-      }
+    if (regenerateSegmentStart !== undefined) {
+      regenerateStartIndex = regenerateSegmentStart;
       if (regenerateStartIndex !== -1 && regenerateStartIndex < msgs.length) {
         messagesToSend = msgs.slice(0, regenerateStartIndex);
         isRegenerating = true;
@@ -327,16 +380,18 @@ export function AiChatScreen(props: AiChatScreenProps) {
     }
     if (messagesToSend.length === 0) return;
 
+    const segEnd = regenerateSegmentEnd !== undefined ? regenerateSegmentEnd : (regenerateStartIndex !== -1 ? regenerateStartIndex + 1 : -1);
+
     const newGroupId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
 
-    const appendSeq = async (texts: string[], isErr = false) => {
+    const appendSeq = async (texts: string[], isErr = false): Promise<ChatMessage[]> => {
       let insertBase = regenerateStartIndex;
       let localMsgs = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
       if (isRegenerating && insertBase !== -1) {
         if (activeChatContact) {
-          setChatHistories(prev => { const h = prev[activeChatContact.id] || []; const n = targetGroupId ? h.filter(m => m.groupId !== targetGroupId) : [...h.slice(0, insertBase), ...h.slice(insertBase + 1)]; localMsgs = n; return { ...prev, [activeChatContact.id]: n }; });
+          setChatHistories(prev => { const h = prev[activeChatContact.id] || []; const n = [...h.slice(0, insertBase), ...h.slice(segEnd)]; localMsgs = n; return { ...prev, [activeChatContact.id]: n }; });
         } else {
-          setChatMessages(prev => { const n = targetGroupId ? prev.filter(m => m.groupId !== targetGroupId) : [...prev.slice(0, insertBase), ...prev.slice(insertBase + 1)]; localMsgs = n; return n; });
+          setChatMessages(prev => { const n = [...prev.slice(0, insertBase), ...prev.slice(segEnd)]; localMsgs = n; return n; });
         }
       }
       let final2: ChatMessage[] = localMsgs;
@@ -406,7 +461,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
       const data = await resp.json();
       if (data.choices?.[0]?.message?.content) {
         const final3 = await appendSeq(splitTextIntoMessages(data.choices[0].message.content));
-        checkAndTriggerAutoSummary(activeChatContact ? activeChatContact.id : 'ai_assistant', final3);
+        checkAndTriggerAutoSummary(activeChatContact ? activeChatContact.id : 'ai_assistant', final3 as ChatMessage[]);
       } else throw new Error('返回数据格式不正确');
     } catch (err: any) {
       let eMsg = err.message || '未知错误';
@@ -439,7 +494,24 @@ export function AiChatScreen(props: AiChatScreenProps) {
     else setChatHistories(prev => ({ ...prev, [currentChatId]: (prev[currentChatId] || []).map((m, i) => i === editingMessageIndex ? { ...m, content: editingMessageContent } : m) }));
     setEditingMessageIndex(null);
   };
-  const handleRegenerateMessage = () => { if (contextMenu.messageIndex === -1) return; generateAiReply(contextMenu.messageGroupId || contextMenu.messageIndex); closeCtx(); };
+  const handleRegenerateMessage = () => {
+    if (contextMenu.messageIndex === -1) return;
+    const msgs = activeChatContact ? (chatHistories[activeChatContact.id] || []) : chatMessages;
+    const selectedIndex = contextMenu.messageIndex;
+    // Find the start of the AI segment (first AI message after last user message before selected)
+    let segmentStart = selectedIndex;
+    for (let i = selectedIndex - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') break;
+      segmentStart = i;
+    }
+    // Find the end of the AI segment (next user message or end of list)
+    let segmentEnd = msgs.length;
+    for (let i = selectedIndex + 1; i < msgs.length; i++) {
+      if (msgs[i].role === 'user') { segmentEnd = i; break; }
+    }
+    generateAiReply(segmentStart, segmentEnd);
+    closeCtx();
+  };
   const handleDeleteMessage = () => {
     if (contextMenu.messageIndex === -1) return;
     if (currentChatId === 'ai_assistant') setChatMessages(prev => prev.filter((_, i) => i !== contextMenu.messageIndex));
@@ -698,10 +770,14 @@ export function AiChatScreen(props: AiChatScreenProps) {
           <button onClick={exitMultiSelectMode} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm">完成</button>
         </div>
       ) : (
-        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-gray-900 border-b border-neutral-200 dark:border-zinc-800">
-          <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">← 返回</button>
-          <h2 className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100">{displayChatName}</h2>
-          <button onClick={() => setIsChatSettingsOpen(true)} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 active:text-zinc-700 dark:active:text-zinc-300 transition-colors"><SlidersHorizontal size={20} strokeWidth={1.5} /></button>
+        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-gray-900 border-b border-neutral-200 dark:border-zinc-800 relative">
+          <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors p-1 -ml-1">
+            <ArrowLeft className="w-5 h-5" strokeWidth={2} />
+          </button>
+          <h2 className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100 absolute left-1/2 -translate-x-1/2 w-fit max-w-[60%] truncate text-center">{displayChatName}</h2>
+          <button onClick={() => setIsChatSettingsOpen(true)} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 active:text-zinc-700 dark:active:text-zinc-300 transition-colors p-1 -mr-1">
+            <SlidersHorizontal size={20} strokeWidth={1.5} />
+          </button>
         </div>
       )}
 
@@ -752,21 +828,33 @@ export function AiChatScreen(props: AiChatScreenProps) {
             <div
               onContextMenu={(e) => handleContextMenu(e, globalIndex, msg)}
               onClick={() => { if (isMultiSelectMode) toggleMessageSelection(msg.id); else if (msg.isMergedForward) setMergedMessageDetails(msg.originalMessages!); }}
-              className={`max-w-[80%] p-4 rounded-2xl text-sm relative transition-transform duration-200 select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-zinc-800 text-white rounded-tr-none dark:bg-zinc-800 dark:text-zinc-100' : 'bg-white dark:bg-[#1c1c1e] text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-[#1c1c1e] dark:!text-zinc-200 shadow-none' : ''} ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black' : ''} ${isMultiSelectMode || msg.isMergedForward ? 'cursor-pointer' : ''}`}
+              className={`relative transition-transform duration-200 ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black rounded-2xl' : ''}`}
             >
-              {msg.isMergedForward ? (
-                 <div className="flex flex-col gap-1">
-                   <div className="font-bold text-[13px] border-b border-black/10 dark:border-white/10 pb-1.5 mb-1 flex items-center gap-1.5">
-                     <span className="w-1 h-3 bg-zinc-400 dark:bg-zinc-500 rounded-full" />
-                     [合并转发] 共 {msg.originalMessages?.length} 条消息
-                   </div>
-                   <span className="line-clamp-3 text-xs opacity-80 whitespace-pre-wrap break-words">{msg.content}</span>
-                 </div>
+              {msg.messageType === 'image' && msg.specialData?.imageUrl ? (
+                <ImageMessage imageUrl={msg.specialData.imageUrl} isSelf={msg.role === 'user'} />
+              ) : msg.messageType === 'redpacket' && msg.specialData ? (
+                <RedPacketMessage data={msg.specialData} isSelf={msg.role === 'user'} />
+              ) : msg.messageType === 'gift' && msg.specialData ? (
+                <GiftMessage data={msg.specialData} isSelf={msg.role === 'user'} />
+              ) : msg.messageType === 'location' && msg.locationData ? (
+                <LocationMessage data={msg.locationData!} isSelf={msg.role === 'user'} />
               ) : (
-                <>
-                  {msg.quote && (<div className={`p-2 rounded-lg text-xs border-l-[3px] flex flex-col gap-0.5 ${msg.role === 'user' ? 'bg-white/10 border-white/30 text-white/80' : 'bg-zinc-100 dark:bg-[#2c2c2e] border-zinc-300 dark:border-zinc-500 text-zinc-500 dark:text-zinc-400'}`}><span className="font-bold">{msg.quote.sender}</span><span className="line-clamp-3 break-words whitespace-pre-wrap">{msg.quote.content}</span></div>)}
-                  <span className="whitespace-pre-wrap break-words">{msg.content}</span>
-                </>
+                <div className={`max-w-[80%] p-4 rounded-2xl text-sm relative select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-zinc-800 text-white rounded-tr-none dark:bg-zinc-800 dark:text-zinc-100' : 'bg-white dark:bg-[#1c1c1e] text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-[#1c1c1e] dark:!text-zinc-200 shadow-none cursor-pointer' : ''} ${isMultiSelectMode ? 'cursor-pointer' : ''}`}>
+                  {msg.isMergedForward ? (
+                    <div className="flex flex-col gap-1">
+                      <div className="font-bold text-[13px] border-b border-black/10 dark:border-white/10 pb-1.5 mb-1 flex items-center gap-1.5">
+                        <span className="w-1 h-3 bg-zinc-400 dark:bg-zinc-500 rounded-full" />
+                        [合并转发] 共 {msg.originalMessages?.length} 条消息
+                      </div>
+                      <span className="line-clamp-3 text-xs opacity-80 whitespace-pre-wrap break-words">{msg.content}</span>
+                    </div>
+                  ) : (
+                    <>
+                      {msg.quote && (<div className={`p-2 rounded-lg text-xs border-l-[3px] flex flex-col gap-0.5 ${msg.role === 'user' ? 'bg-white/10 border-white/30 text-white/80' : 'bg-zinc-100 dark:bg-[#2c2c2e] border-zinc-300 dark:border-zinc-500 text-zinc-500 dark:text-zinc-400'}`}><span className="font-bold">{msg.quote.sender}</span><span className="line-clamp-3 break-words whitespace-pre-wrap">{msg.quote.content}</span></div>)}
+                      <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -866,7 +954,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Normal Input Area (hidden in multi-select mode) */}
       {!isMultiSelectMode && (
-        <div className="absolute bottom-6 left-4 right-4 p-3 bg-white/95 dark:bg-gray-900/95 rounded-[28px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] flex flex-col gap-3 z-30 border border-black/5 dark:border-white/10 backdrop-blur-2xl">
+        <div className="absolute bottom-6 left-4 right-4 px-2 py-2.5 bg-white/95 dark:bg-gray-900/95 rounded-[32px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] flex flex-col gap-2 z-30 border border-black/5 dark:border-white/10 backdrop-blur-2xl">
           
           {/* Function Panel */}
           <AnimatePresence>
@@ -887,18 +975,18 @@ export function AiChatScreen(props: AiChatScreenProps) {
                 >
                   <div className="grid grid-cols-4 gap-4">
                     {[
-                      { icon: ImageIcon, label: '相册', log: '相册功能待实现' },
-                      { icon: Camera, label: '拍摄', log: '拍摄功能待实现' },
-                      { icon: Phone, label: '语音/视频', log: '语音/视频功能待实现' },
-                      { icon: MapPin, label: '位置', log: '位置功能待实现' },
-                      { icon: Wallet, label: '红包', log: '红包功能待实现' },
-                      { icon: Gift, label: '礼物', log: '礼物功能待实现' },
-                      { icon: Banknote, label: '转账', log: '转账功能待实现' },
-                      { icon: Contact, label: '发送名片', log: '发送名片功能待实现' },
+                      { icon: ImageIcon, label: '相册', id: 'album' },
+                      { icon: Camera, label: '拍摄', id: 'camera' },
+                      { icon: Phone, label: '语音/视频', id: 'phone' },
+                      { icon: MapPin, label: '位置', id: 'location' },
+                      { icon: Wallet, label: '红包', id: 'redpacket' },
+                      { icon: Gift, label: '礼物', id: 'gift' },
+                      { icon: Banknote, label: '转账', id: 'transfer' },
+                      { icon: Contact, label: '查岗', id: 'check' },
                     ].map((item, idx) => (
                       <button 
                         key={idx} 
-                        onClick={() => console.log(item.log)}
+                        onClick={() => handleSendSpecialMessage(item.id)}
                         className="flex flex-col items-center gap-2 group"
                       >
                         <div className="w-[52px] h-[52px] bg-gray-50 dark:bg-gray-800 rounded-[18px] flex items-center justify-center text-gray-600 dark:text-gray-200 group-active:scale-95 transition-transform">
@@ -926,20 +1014,20 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   <button onClick={() => setQuoteToReply(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"><Delete size={14} /></button>
                 </div>
               )}
-              <div className="flex items-end gap-1 sm:gap-2 relative z-20 w-full">
+              <div className="flex items-end gap-2 relative z-20 w-full px-1">
                 <button 
                   onClick={() => setShowFunctionPanel(!showFunctionPanel)}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0 self-end mb-1"
+                  className="w-8 h-8 mb-1 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0"
                 >
-                  <Plus size={24} strokeWidth={1.5} />
+                  <Plus size={22} strokeWidth={1.5} />
                 </button>
                 
-                <div className="flex-1 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-end relative overflow-hidden min-w-0">
+                <div className="flex-1 bg-gray-100 dark:bg-gray-800 rounded-[20px] flex items-end relative overflow-hidden min-w-0">
                   <textarea 
                     rows={1}
                     ref={chatInputRef} 
                     placeholder="输入消息..." 
-                    className="flex-1 bg-transparent py-3 pl-3 pr-10 text-sm text-zinc-800 dark:text-zinc-100 outline-none resize-none overflow-hidden leading-tight w-full" 
+                    className="flex-1 bg-transparent py-[10px] pl-4 pr-11 text-[15px] text-zinc-800 dark:text-zinc-100 outline-none resize-none overflow-hidden leading-tight w-full" 
                     style={{ height: '40px', minHeight: '40px', maxHeight: '120px' }} 
                     value={chatInput} 
                     onChange={(e) => { setChatInput(e.target.value); e.target.style.height = '40px'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }} 
@@ -952,7 +1040,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   />
                   <button 
                     onClick={() => console.log('语音输入待实现')}
-                    className="absolute right-1.5 bottom-1 w-8 h-8 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors z-10 bg-transparent"
+                    className="absolute right-1 bottom-1 w-8 h-8 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all z-10 bg-transparent rounded-full"
                   >
                     <Mic size={20} strokeWidth={1.5} />
                   </button>
@@ -960,9 +1048,9 @@ export function AiChatScreen(props: AiChatScreenProps) {
                 
                 <button 
                   onClick={() => console.log('表情包功能待实现')}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0 self-end mb-1"
+                  className="w-8 h-8 mb-1 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0"
                 >
-                  <Smile size={24} strokeWidth={1.5} />
+                  <Smile size={22} strokeWidth={1.5} />
                 </button>
                 
                 <button 
@@ -974,14 +1062,10 @@ export function AiChatScreen(props: AiChatScreenProps) {
                     }
                   }} 
                   disabled={isAiLoading && !chatInput.trim()} 
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all flex-shrink-0 self-end mb-1 shadow-sm ${
-                    chatInput.trim() 
-                      ? 'bg-[#1E1E1E] text-white active:bg-[#333333] dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-white dark:active:bg-zinc-300'
-                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-95'
-                  }`}
+                  className="w-8 h-8 mb-1 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0 bg-transparent"
                   title={chatInput.trim() ? "发送" : "请求AI回复"}
                 >
-                  {chatInput.trim() ? <ArrowUp size={18} strokeWidth={2.5} /> : <Zap size={16} strokeWidth={2} />}
+                  {chatInput.trim() ? <ArrowUp size={22} strokeWidth={1.5} /> : <Zap size={22} strokeWidth={1.5} />}
                 </button>
               </div>
             </>
@@ -1100,6 +1184,25 @@ export function AiChatScreen(props: AiChatScreenProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Modals */}
+      <RedPacketModal 
+        isOpen={showRedPacketModal} 
+        onClose={() => setShowRedPacketModal(false)} 
+        onSend={(data) => addUserMessage(`[红包] ${data.message}`, 'redpacket', data)} 
+      />
+      
+      <GiftModal 
+        isOpen={showGiftModal} 
+        onClose={() => setShowGiftModal(false)} 
+        onSend={(data) => addUserMessage(`[礼物] ${data.giftInfo.name}`, 'gift', data)} 
+      />
+      
+      <LocationModal
+        isOpen={showLocationModal}
+        onClose={() => setShowLocationModal(false)}
+        onConfirm={(locationData) => addUserMessage(`[位置] ${locationData.name}`, 'location', undefined, locationData)}
+      />
 
       {/* Chat Settings Panel */}
       {isChatSettingsOpen && <ChatSettingsPanel
@@ -1278,10 +1381,14 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
 
   return (
     <div className="absolute inset-0 z-[60] bg-neutral-50 dark:bg-black flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-      <div className="px-6 py-4 flex items-center justify-between border-b border-neutral-200 dark:border-zinc-800 bg-neutral-50 dark:bg-[#1c1c1e]">
-        <button onClick={onClose} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">← 返回</button>
-        <span className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100">{displayChatName} 设置</span>
-        <button onClick={handleSave} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm flex items-center gap-1"><Check size={14} />保存</button>
+      <div className="px-6 py-4 flex items-center justify-between border-b border-neutral-200 dark:border-zinc-800 bg-neutral-50 dark:bg-[#1c1c1e] relative">
+        <button onClick={onClose} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors p-1 -ml-1">
+          <ArrowLeft className="w-5 h-5" strokeWidth={2} />
+        </button>
+        <span className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100 absolute left-1/2 -translate-x-1/2 w-fit max-w-[50%] truncate text-center">{displayChatName} 设置</span>
+        <button onClick={handleSave} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm flex items-center gap-1">
+          <Check size={14} />保存
+        </button>
       </div>
 
         {/* Tabs */}

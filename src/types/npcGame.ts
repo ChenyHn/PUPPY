@@ -106,6 +106,11 @@ export interface NPCGameState {
   lastReloadAffection?: number;           // 上次读档时的好感度（用于下限保护：高于此值禁止触发读档）
   immunityCount?: number;                 // 好感度下降豁免权次数
   justGotImmunity?: boolean;              // 是否刚刚获得豁免权（用于下一轮prompt注入道具反应）
+
+  // ═══ 中断恢复系统 ═══
+  isGenerating?: boolean;                 // 是否正在生成中（用于中断恢复检测）
+  preGenerationAffection?: number;        // 生成开始前的好感度（中断时用于回退）
+  preGenerationMilestones?: AffectionMilestone[];  // 生成开始前的节点状态（中断时用于回退）
 }
 
 export interface GameEvent {

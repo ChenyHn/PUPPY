@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { renderInPhoneContainer } from '../utils/portal';
 import { Save, Copy, X, AlertCircle } from 'lucide-react';
 import { npcGameService } from '../utils/npcGameService';
 
@@ -69,7 +70,7 @@ export function NPCSaveNameModal({
     onSaveAsNew(finalName);
   };
 
-  return (
+  const modalContent = (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -159,4 +160,6 @@ export function NPCSaveNameModal({
       </motion.div>
     </motion.div>
   );
+
+  return renderInPhoneContainer(modalContent);
 }
