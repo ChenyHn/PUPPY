@@ -24,12 +24,13 @@ export const Profile: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-transparent relative">
-      {/* 顶部标题栏 - 更紧凑 */}
-      <div className="flex items-center justify-between px-4 pt-3 pb-2 relative z-10">
-        <div className="w-10" />
-        <h2 className="text-sm font-bold opacity-80 text-[#1a1a1a] dark:text-[#f0f0f3] absolute left-1/2 -translate-x-1/2">我的</h2>
-        <div className="w-10" />
+    <div className="flex flex-col h-full w-full bg-transparent relative pt-6">
+      {/* 顶部标题栏 */}
+      <div className="flex justify-between items-center px-4 pt-4 pb-2 z-10">
+        {/* 这里由外部控制返回按钮，为了对齐保持结构一致 */}
+        <div className="w-8 h-8 flex items-center justify-center"></div>
+        <h1 className="text-lg font-medium text-[#1a1a1a] dark:text-[#f0f0f3]">我的</h1>
+        <div className="w-8 h-8 flex items-center justify-center"></div> {/* 占位保持平衡 */}
       </div>
 
       {/* 头部信息 */}
@@ -65,7 +66,7 @@ export const Profile: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4" style={{ paddingBottom: '70px' }}>
+      <div className="flex-1 overflow-y-auto px-4 pb-32">
         {activeTab === 'orders' ? (
           <div className="space-y-4">
             {/* 常用功能 */}

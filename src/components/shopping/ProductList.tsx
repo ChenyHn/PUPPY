@@ -1,25 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Check, Package, Search, RefreshCw, Tag } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Check, Package, Search, RefreshCw, Tag } from 'lucide-react';
 import { getAllProducts, fetchDummyProducts, addToCart } from '../../services/shoppingService';
 import type { CartItem, Product } from '../../types/shopping';
 
-// 商品占位图颜色
-const PLACEHOLDER_COLORS = [
-  'from-rose-100 to-rose-200 dark:from-rose-900/30 dark:to-rose-800/30',
-  'from-blue-100 to-blue-200 dark:from-blue-900/30 dark:to-blue-800/30',
-  'from-amber-100 to-amber-200 dark:from-amber-900/30 dark:to-amber-800/30',
-  'from-emerald-100 to-emerald-200 dark:from-emerald-900/30 dark:to-emerald-800/30',
-  'from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30',
-  'from-cyan-100 to-cyan-200 dark:from-cyan-900/30 dark:to-cyan-800/30',
-];
-
-const PLACEHOLDER_ICONS = ['👕', '🎧', '📓', '🥤', '🎒', '💡'];
-
 interface ProductListProps {
   onCartUpdate: (cart: CartItem[]) => void;
+  onBack: () => void;
 }
 
-export const ProductList: React.FC<ProductListProps> = ({ onCartUpdate }) => {
+export const ProductList: React.FC<ProductListProps> = ({ onCartUpdate, onBack }) => {
   const [addedMap, setAddedMap] = useState<Record<string, boolean>>({});
   const [activeCategory, setActiveCategory] = useState<'shopping' | 'food'>('shopping');
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,127 +59,117 @@ export const ProductList: React.FC<ProductListProps> = ({ onCartUpdate }) => {
     setAddedMap(prev => ({ ...prev, [productId]: true }));
     setTimeout(() => {
       setAddedMap(prev => ({ ...prev, [productId]: false }));
-    }, 1200);
+    }, 500);
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-transparent">
-      {/* 顶部区域：紧凑排列，避免多余留白 */}
-      <div className="px-4 pt-2 pb-2 flex flex-col gap-2 relative z-10">
-        {/* 第一行：分类切换，水平居中 */}
-        <div className="flex items-center justify-center w-full mt-1">
-          <div className="glass-tabs-container flex w-[180px]">
-            <button
-              onClick={() => setActiveCategory('shopping')}
-              className={`flex-1 py-1.5 text-xs font-bold transition-all z-10 ${
-                activeCategory === 'shopping' ? 'glass-tab-active' : 'opacity-60 text-[#1a1a1a] dark:text-[#f0f0f3]'
-              }`}
-            >
-              购物
-            </button>
-            <button
-              onClick={() => setActiveCategory('food')}
-              className={`flex-1 py-1.5 text-xs font-bold transition-all z-10 ${
-                activeCategory === 'food' ? 'glass-tab-active' : 'opacity-60 text-[#1a1a1a] dark:text-[#f0f0f3]'
-              }`}
-            >
-              外卖
-            </button>
+    <div className="flex flex-col h-full w-full bg-transparent pt-6">
+      {/* 顶部区域 */}
+      <div className="px-4 pt-2 pb-2 flex flex-col gap-3 relative z-10">
+        {/* 第一行：返回按钮与切换条 */}
+        <div className="flex items-center justify-between w-full h-10">
+          <button
+            onClick={onBack}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-[#1a1a1a] dark:text-[#f0f0f3] active:scale-90 transition-all p-0 bg-transparent shrink-0 -ml-2"
+          >
+            <ArrowLeft size={20} strokeWidth={2} />
+          </button>
+          
+          <div className="flex-1 flex justify-center">
+            <div className="glass-tabs-container w-[160px] h-9 flex items-center">
+              <button
+                onClick={() => setActiveCategory('shopping')}
+                className={`flex-1 h-full text-xs font-bold rounded-full transition-all flex items-center justify-center ${
+                  activeCategory === 'shopping' 
+                    ? 'glass-tab-active text-gray-900 dark:text-gray-100' 
+                    : 'text-gray-500 dark:text-gray-400 bg-transparent'
+                }`}
+              >
+                购物
+              </button>
+              <button
+                onClick={() => setActiveCategory('food')}
+                className={`flex-1 h-full text-xs font-bold rounded-full transition-all flex items-center justify-center ${
+                  activeCategory === 'food' 
+                    ? 'glass-tab-active text-gray-900 dark:text-gray-100' 
+                    : 'text-gray-500 dark:text-gray-400 bg-transparent'
+                }`}
+              >
+                外卖
+              </button>
+            </div>
           </div>
+          
+          <div className="w-9 h-9 shrink-0"></div> {/* 右侧留空占位，保持居中平衡 */}
         </div>
 
         {/* 第二行：搜索和换一批 */}
-        <div className="flex gap-2">
-          <form onSubmit={handleSearch} className="flex-1 relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索商品..."
-              className="w-full neumorph-input pl-9 pr-3 py-1.5 text-sm"
-            />
-            <Search className="absolute left-3 top-2.5 w-4 h-4 opacity-50" />
+        <div className="flex gap-2 items-center">
+          <form onSubmit={handleSearch} className="flex-1">
+            <div className="neumorph-input flex items-center w-full !py-2 !px-3 !border-transparent !ring-0 !outline-none shadow-none focus-within:!border-transparent focus-within:!ring-0">
+              <Search className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索商品..."
+                className="w-full bg-transparent border-none outline-none ring-0 focus:ring-0 focus:outline-none pl-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+              />
+            </div>
           </form>
           <button
             onClick={handleRefresh}
             disabled={isLoading}
-            className="glass-btn-secondary px-3 py-1.5 flex items-center justify-center gap-1 min-w-fit"
+            className="glass-btn-secondary p-2 flex items-center justify-center shrink-0 w-[38px] h-[38px] !px-0"
           >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            <span className="text-xs">换一批</span>
+            <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
       {/* 商品列表 */}
-      <div className="flex-1 overflow-y-auto px-4" style={{ paddingBottom: '70px' }}>
-        <div className="grid grid-cols-2 gap-3 pb-4">
-          {products.map((product, index) => (
+      <div className="flex-1 overflow-y-auto px-4 pb-32">
+        <div className="grid grid-cols-1 gap-4 pb-4">
+          {products.map((product) => (
             <div
               key={product.id}
-              className="glass-card overflow-hidden flex flex-col relative p-0"
+              className="glass-card flex justify-between items-center relative"
             >
               {product.isSecondHand && (
-                <div className="absolute top-2 left-2 bg-[#1a1a1a]/70 text-[#f0f0f3] text-[10px] px-2 py-0.5 rounded-full backdrop-blur-md z-10 flex items-center gap-1">
+                <div className="absolute top-2 right-2 bg-gray-800/80 text-white text-[10px] px-2 py-0.5 rounded-full z-10 flex items-center gap-1">
                   <Tag size={10} /> 二手
                 </div>
               )}
               
-              {/* 商品图片 */}
-              <div className={`aspect-square w-full relative overflow-hidden rounded-t-[16px] ${!product.imageUrl ? `bg-gradient-to-br ${PLACEHOLDER_COLORS[index % PLACEHOLDER_COLORS.length]}` : ''}`}>
-                {product.imageUrl ? (
-                  <img 
-                    src={product.imageUrl} 
-                    alt={product.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-4xl">
-                    {PLACEHOLDER_ICONS[index % PLACEHOLDER_ICONS.length]}
-                  </div>
-                )}
-                {/* 光泽叠加层 */}
-                <div
-                  className="absolute inset-0 pointer-events-none rounded-[inherit]"
-                  style={{
-                    background: 'radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.4) 0%, transparent 60%)',
-                  }}
-                />
-              </div>
-
-              {/* 商品信息 */}
-              <div className="p-2 flex flex-col gap-1 flex-1">
-                <h3 className="text-sm font-bold text-[#1a1a1a] dark:text-[#f0f0f3] truncate leading-tight">{product.name}</h3>
-                <p className="text-[10px] text-[#999999] dark:text-[#aaaaaa] line-clamp-2 leading-snug min-h-[28px]">
+              {/* 商品信息（左侧） */}
+              <div className="flex flex-col gap-1 flex-1 min-w-0 pr-4 pb-4">
+                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate">{product.name}</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-snug">
                   {product.description}
                 </p>
-                <div className="flex items-center justify-between mt-auto pt-1">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-[#1a1a1a] dark:text-[#f0f0f3] leading-none">
-                      ¥{product.price.toFixed(0)}
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-base font-bold text-gray-900 dark:text-gray-100">
+                    ¥{product.price.toFixed(0)}
+                  </span>
+                  {product.originalPrice && (
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 line-through">
+                      ¥{product.originalPrice.toFixed(0)}
                     </span>
-                    {product.originalPrice && (
-                      <span className="text-[9px] text-[#999999] dark:text-[#aaaaaa] line-through mt-0.5">
-                        ¥{product.originalPrice.toFixed(0)}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handleAddToCart(product.id)}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                      addedMap[product.id]
-                        ? 'glass-btn-primary p-0'
-                        : 'glass-btn-secondary p-0'
-                    }`}
-                  >
-                    {addedMap[product.id] ? (
-                      <Check size={14} strokeWidth={2.5} />
-                    ) : (
-                      <ShoppingCart size={14} strokeWidth={2} />
-                    )}
-                  </button>
+                  )}
                 </div>
               </div>
+
+              {/* 购物车按钮（右侧底部） */}
+              <button
+                onClick={() => handleAddToCart(product.id)}
+                className="cart-add-btn flex items-center justify-center shrink-0 absolute bottom-3 right-3"
+              >
+                {addedMap[product.id] ? (
+                  <Check size={20} strokeWidth={2.5} className="text-[#1a1a1a] dark:text-[#f0f0f3]" />
+                ) : (
+                  <ShoppingCart size={20} strokeWidth={2} className="text-[#1a1a1a] dark:text-[#f0f0f3]" />
+                )}
+              </button>
             </div>
           ))}
         </div>
