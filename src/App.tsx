@@ -1120,7 +1120,7 @@ export default function App() {
       }}
     >
       {/* Mobile Frame */}
-      <div id="phone-container" className={`relative w-full h-full max-w-[390px] max-h-[844px] sm:h-[844px] sm:rounded-[44px] sm:border-[12px] sm:border-white dark:sm:border-zinc-800 sm:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:sm:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup relative ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}>
+      <div id="phone-container" className={`relative w-full h-full lg:max-w-[390px] lg:max-h-[844px] lg:h-[844px] lg:rounded-[44px] lg:border-[12px] lg:border-white dark:lg:border-zinc-800 lg:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:lg:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}>
         
         <AnimatePresence mode="wait">
           {/* 1. Splash Screen */}
