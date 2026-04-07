@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Camera, Image as ImageIcon, X, ArrowLeft } from 'lucide-react';
 import { saveLocalProduct } from '../../services/shoppingService';
 import type { Product } from '../../types/shopping';
+import { Toast } from './Toast';
 
 interface SellScreenProps {
   onBack: () => void;
@@ -10,6 +11,13 @@ interface SellScreenProps {
 
 export function SellScreen({ onBack, onSuccess }: SellScreenProps) {
   const [name, setName] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+  const [isToastOpen, setIsToastOpen] = useState(false);
+  
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setIsToastOpen(true);
+  };
   const [price, setPrice] = useState('');
   const [originalPrice, setOriginalPrice] = useState('');
   const [description, setDescription] = useState('');
@@ -45,7 +53,10 @@ export function SellScreen({ onBack, onSuccess }: SellScreenProps) {
     };
 
     saveLocalProduct(newProduct);
-    onSuccess();
+    showToast('发布成功！');
+    setTimeout(() => {
+        onSuccess();
+    }, 1500);
   };
 
   return (
@@ -54,12 +65,14 @@ export function SellScreen({ onBack, onSuccess }: SellScreenProps) {
       <div className="flex justify-between items-center px-4 pt-4 pb-2 z-10">
         <button 
           onClick={onBack}
-          className="w-8 h-8 flex items-center justify-center text-[#1a1a1a] dark:text-[#f0f0f3] bg-transparent p-0 active:scale-90 transition-transform"
+          className="w-5 h-5 shrink-0 flex items-center justify-center text-[#1a1a1a] dark:text-[#f0f0f3] bg-transparent p-0 border-none shadow-none active:scale-90 transition-transform"
         >
           <ArrowLeft size={20} strokeWidth={2} />
         </button>
-        <h1 className="text-lg font-medium text-[#1a1a1a] dark:text-[#f0f0f3]">发布闲置</h1>
-        <div className="w-8" /> {/* 占位保持平衡 */}
+        <div className="flex-1 flex justify-center items-center h-9">
+          <h1 className="text-lg font-medium text-[#1a1a1a] dark:text-[#f0f0f3]">发布闲置</h1>
+        </div>
+        <div className="w-5 h-5 shrink-0" /> {/* 占位保持平衡 */}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-32">
@@ -177,6 +190,7 @@ export function SellScreen({ onBack, onSuccess }: SellScreenProps) {
           </button>
         </form>
       </div>
+      <Toast message={toastMessage} isOpen={isToastOpen} onClose={() => setIsToastOpen(false)} />
     </div>
   );
 }

@@ -31,7 +31,7 @@ export const PhoneListScreen = ({ onBack, time, personas, onEditPersona, onAddPe
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto flex flex-col">
+      <div className="flex-1 overflow-y-auto flex flex-col bg-[#F5F5F5] dark:bg-black">
         {personas.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-zinc-300 dark:text-zinc-600 py-20">
             <Users size={64} strokeWidth={1} />
@@ -46,20 +46,28 @@ export const PhoneListScreen = ({ onBack, time, personas, onEditPersona, onAddPe
         ) : (
           <div className="flex flex-col p-4">
             {personas.map((p: Persona) => (
-              <div key={p.id} className="bg-white dark:bg-gray-800 shadow-[0_1px_3px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_3px_0_rgba(0,0,0,0.2)] rounded-2xl p-4 mb-3 flex items-center justify-between">
+              <div 
+                key={p.id} 
+                className="rounded-[16px] p-3 mb-3 flex items-center justify-between"
+                style={{
+                  background: document.documentElement.classList.contains('dark') ? 'rgba(40, 40, 45, 0.85)' : 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  border: document.documentElement.classList.contains('dark') ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(255, 255, 255, 0.9)',
+                  boxShadow: 'none',
+                }}
+              >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-gray-700 flex items-center justify-center text-gray-300 dark:text-gray-500 overflow-hidden shrink-0">
                     {p.avatar ? (
-                      <img src={p.avatar} alt={p.name} className="w-full h-full object-cover" />
+                      <img src={p.avatar} alt={p.chatName || p.name} className="w-full h-full object-cover rounded-full" />
                     ) : (
                       <CircleUserRound size={24} strokeWidth={1} />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <span className="text-base font-medium text-gray-900 dark:text-gray-100 truncate block">{p.chatName || p.name || '未命名'}</span>
-                    {p.occupation && (
-                      <span className="text-xs text-gray-500 dark:text-gray-400 truncate block mt-0.5">{p.occupation}</span>
-                    )}
+                    <span className="text-xs text-gray-500 dark:text-gray-400 truncate block mt-0.5">{p.chatId || '未设置 ID'}</span>
                   </div>
                 </div>
                 <div className="flex gap-2 shrink-0 ml-3">

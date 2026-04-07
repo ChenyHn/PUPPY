@@ -33,45 +33,45 @@ export const RedPacketModal: React.FC<RedPacketModalProps> = ({ isOpen, onClose,
 
   const modalContent = (
     <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-[#ffe8ee] dark:bg-gray-800 w-[300px] max-w-[90%] rounded-2xl overflow-hidden p-5 relative flex flex-col gap-4 shadow-[0_0_12px_rgba(255,188,205,0.6)] dark:shadow-none">
+      <div className="bg-white/85 dark:bg-[#1e1e23]/85 backdrop-blur-md w-[300px] max-w-[90%] rounded-2xl overflow-hidden p-5 relative flex flex-col gap-4 shadow-[0_0_12px_rgba(255,255,255,0.6)] dark:shadow-[0_0_12px_rgba(255,188,205,0.2)]">
         {/* Header */}
         <div className="flex justify-center items-center relative pb-2">
-          <h3 className="text-lg font-bold text-[#403f44] dark:text-gray-100">发红包</h3>
-          <button onClick={onClose} className="absolute right-0 text-[#403f44]/60 hover:text-[#403f44] dark:text-gray-500 dark:hover:text-gray-300 transition-colors">
+          <h3 className="text-lg font-bold text-[#1a1a1a] dark:text-gray-100">发红包</h3>
+          <button onClick={onClose} className="absolute right-0 text-[#1a1a1a]/60 hover:text-[#1a1a1a] dark:text-gray-500 dark:hover:text-gray-300 transition-colors">
             <X size={20} />
           </button>
         </div>
 
         {/* Content */}
         <div className="space-y-4">
-          <div className="bg-white dark:bg-gray-700 rounded-xl p-3 flex items-center transition-all focus-within:ring-2 focus-within:ring-[#ffbccd] dark:focus-within:ring-pink-900">
-            <span className="text-[#403f44] dark:text-gray-300 font-medium mr-3 text-sm shrink-0">金额</span>
+          <div className="bg-white/60 dark:bg-gray-700/50 rounded-xl p-3 flex items-center transition-all focus-within:ring-2 focus-within:ring-[#ffbccd] dark:focus-within:ring-pink-900">
+            <span className="text-[#1a1a1a] dark:text-gray-300 font-medium mr-3 text-sm shrink-0">金额</span>
             <input 
               type="number" 
               step="0.01"
               placeholder="0.00"
-              className="flex-1 min-w-0 w-full bg-transparent outline-none text-right text-lg text-[#403f44] dark:text-gray-100 placeholder-gray-400 pr-2 text-ellipsis overflow-hidden whitespace-nowrap"
+              className="flex-1 min-w-0 w-full bg-transparent outline-none text-right text-lg text-[#1a1a1a] dark:text-gray-100 placeholder-gray-400 pr-2 text-ellipsis overflow-hidden whitespace-nowrap"
               value={amount}
               onChange={(e) => {
                 const val = e.target.value;
                 if (val.length <= 9) setAmount(val);
               }}
             />
-            <span className="ml-1 text-[#403f44] dark:text-gray-300 font-medium text-sm shrink-0">元</span>
+            <span className="ml-1 text-[#1a1a1a] dark:text-gray-300 font-medium text-sm shrink-0">元</span>
           </div>
 
-          <div className="bg-white dark:bg-gray-700 rounded-xl p-3 flex items-center transition-all focus-within:ring-2 focus-within:ring-[#ffbccd] dark:focus-within:ring-pink-900">
+          <div className="bg-white/60 dark:bg-gray-700/50 rounded-xl p-3 flex items-center transition-all focus-within:ring-2 focus-within:ring-[#ffbccd] dark:focus-within:ring-pink-900">
             <input 
               type="text" 
               placeholder="恭喜发财，大吉大利"
-              className="w-full bg-transparent outline-none text-[#403f44] dark:text-gray-100 text-sm placeholder-gray-400"
+              className="w-full bg-transparent outline-none text-[#1a1a1a] dark:text-gray-100 text-sm placeholder-gray-400"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />
           </div>
 
           <div className="text-center py-4 overflow-hidden px-2">
-            <div className="text-3xl font-bold text-[#403f44] dark:text-gray-100 truncate">
+            <div className="text-3xl font-bold text-[#1a1a1a] dark:text-gray-100 truncate">
               ¥ {amount ? parseFloat(amount).toFixed(2) : '0.00'}
             </div>
           </div>

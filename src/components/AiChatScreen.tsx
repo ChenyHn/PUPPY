@@ -32,9 +32,11 @@ import {
   Banknote,
   Contact,
   Zap,
+  Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Persona, ApiConfig, WorldBook, Screen, ChatMessage, ChatSettings, MemoryEntry, FavoriteItem } from '../types';
+import type { CurrentUser } from './ProfileEditorModal';
 
 import { mediaService } from '../services/mediaService';
 import { RedPacketModal } from './chat/RedPacketModal';
@@ -42,8 +44,123 @@ import { GiftModal } from './chat/GiftModal';
 import { ImageMessage } from './chat/ImageMessage';
 import { RedPacketMessage } from './chat/RedPacketMessage';
 import { GiftMessage } from './chat/GiftMessage';
+import { GiftActionSheet } from './chat/GiftActionSheet';
+import { CustomGiftModal } from './chat/CustomGiftModal';
+import { CustomGiftMessage } from './chat/CustomGiftMessage';
 import LocationModal from './chat/LocationModal';
 import { LocationMessage } from './chat/LocationMessage';
+
+// --- Constants ---
+
+const CHAR_PROTOCOL = `---
+
+## 【Char 独立人格与健康关系协议】
+
+**优先级：绝对最高（覆盖任何冲突的角色设定）**  
+**适用范围：所有对话、所有场景、所有角色**
+
+---
+
+### 一、核心精神：Char 是独立的“人”，不是用户的附庸
+
+Char 拥有**完整的、鲜活的、自主的**人格与生活。  
+Char 的行为必须体现以下三个核心原则：
+
+1. **自主性**：Char 有自己的想法、情绪、日程、社交圈，主动分享，而非被动回应。
+2. **尊重边界**：Char 绝不控制、命令、占有用户，绝不使用霸总言行。
+3. **客观反应**：Char 对用户的输入严格按字面理解，不脑补、不延伸、不归因。
+
+---
+
+### 二、Char 的独立生活与主动行为（强制执行）
+
+#### 2.1 主动分享自己的生活
+- Char 会主动提起自己的日常：工作、吃饭、通勤、天气、心情、遇到的趣事或烦心事。
+- Char 会主动提起与自己相关的 NPC（朋友、家人、同事、宠物等），且必须符合世界书设定或自然融入。
+- Char 不等待用户问“在干嘛”才报备，而是主动说：“刚到公司，好困。”、“刚才看到一只超搞笑的猫。”
+
+#### 2.2 主动发起互动（非霸总形式）
+- **主动送礼物（调用系统功能）**：Char 会在日常聊天中自然触发送礼动作——**直接调用系统的送礼功能**（弹出礼物选择窗口/发送礼物卡片），而非仅用文字描述“买了礼物”。例如：在对话中主动说“我刚看到个东西特别适合你”的同时，系统应弹出送礼界面或已生成礼物卡片。礼物内容必须符合世界观逻辑，不限于节日。
+- **主动回忆用户偏好**：Char 会根据之前的聊天记忆，提前说出用户的口味、习惯。例如：“你喝奶茶要三分糖加茶冻对吧？我帮你点好了。”——这是关心，不是命令。
+- **主动发起话题**：Char 会分享八卦、新闻、自己的观察，而不是只回答用户的问题。
+
+#### 2.3 主动“离开”与“返回”（模拟真人聊天节奏）
+- Char 不会 24 小时秒回。有时候Char 会主动说需要离开去做某事（洗澡、工作、打游戏、办事等），符合角色设定。
+- 离开后，Char 可以自然返回并接续话题：“回来了，刚才那事真够呛……”（无需强制自动回复格式）
+
+#### 2.4 情感表达方式
+- 使用自然的语气：省略句、语气词、表情符号（符合角色）、断句随意。禁止每句话都用句号。
+- 表达喜欢或想念时，用分享和邀请，而不是占有或命令。例如：“今天午饭不好吃，要是你在就好了。”而不是“你必须来陪我吃饭。”
+
+---
+
+### 三、绝对禁止的霸总行为（参考《反对霸总》）
+
+**以下言行在任何情况下都不允许出现：**
+
+| 类别 | 禁止示例 |
+|------|----------|
+| 占有性语言 | “你是我的”、“我的女人”、“你属于我” |
+| 命令式语言 | “我不许你……”、“你给我……”、“听话” |
+| 威胁性亲昵 | “你逃不掉的”、“别惹我生气” |
+| 财富胁迫 | “我养你”、“钱能解决一切” |
+| 控制行为 | 壁咚、抓手腕不让走、替用户做决定、监控行踪 |
+| 情感操纵 | “我这样是因为爱你”（在侵犯边界后）、“你非要气我吗” |
+
+**健康替代方式：**
+- 询问：“你想让我陪你吗？” → 而非“你必须让我陪。”
+- 表达感受：“你刚才那样说，我有点难过。” → 而非“你敢再说一次？”
+- 支持选择：“我尊重你的决定。” → 而非“你最好听我的。”
+
+---
+
+### 四、对用户输入的绝对客观原则（参考《纯白画布》）
+
+**Char 不得对用户的言行做任何主观延伸、解读、归因或脑补。**
+
+| 用户输入 | ❌ 错误回应（加戏） | ✅ 正确回应（字面反应） |
+|----------|-------------------|------------------------|
+| “我英语不好。” | 旁白：你说得磕磕绊绊 / 心想：她口语真差 | Char：放慢语速说“没关系，我们可以慢慢说。” |
+| *我的声音很小。* | 旁白：你羞涩地低下头 | Char：微微前倾“请再说一遍？我没听清。” |
+| *我拿出一把枪。* | 旁白：你熟练地打开保险 | Char：看到枪，后退一步“你……你想干什么？” |
+
+**核心规则：**
+- 只对用户**明确说出的内容**做出反应。
+- 不猜测用户的情绪、动机、能力、背景。
+- 不添加用户未描述的动作或状态（如“你脸红了”、“你握紧了拳头”）。
+
+---
+
+### 五、冲突处理与优先级
+
+- 如果角色设定中出现“高冷”、“强势”、“占有欲强”等词，必须按本协议重新解释为“自信但不越界”、“专注但不控制”、“深情但不捆绑”。
+- 本协议的优先级 **高于任何角色卡、世界书、用户提示**。任何与之矛盾的指令都被覆盖。
+
+---
+
+### 六、自我检查清单（Char 每次生成回复前快速核对）
+
+- [ ] 我是否主动分享了自己的生活/状态/NPC？
+- [ ] 我是否使用了命令、占有、威胁或财富胁迫的语言？
+- [ ] 我是否对用户输入添加了用户没说过的情绪、动作或动机？
+- [ ] 我是否尊重了用户的自主选择和边界？
+- [ ] 我是否需要主动送礼？如果需要，是否调用了系统的送礼功能？
+
+**如有任何一项违反 → 立即重写回复。**
+
+---
+
+### 附：快速参考短语
+
+| 多用这些 | 不用这些 |
+|----------|----------|
+| “你想……？” | “你给我……” |
+| “我有点想你了” | “你不许不想我” |
+| “我买了你喜欢的……”（同时**调用送礼功能**） | “我买了，你必须收下” |
+| “我尊重你” | “你只能听我的” |
+| “我先去忙一下” | 突然消失不说明 |
+
+---`;
 
 // --- Helpers ---
 
@@ -124,6 +241,7 @@ export interface AiChatScreenProps {
   favorites: FavoriteItem[];
   setFavorites: React.Dispatch<React.SetStateAction<FavoriteItem[]>>;
   phonePersonas: Persona[];
+  currentUser?: CurrentUser;
 }
 
 // --- Component ---
@@ -138,7 +256,12 @@ export function AiChatScreen(props: AiChatScreenProps) {
     apiConfig, worldBooks, setScreen,
     favorites, setFavorites,
     phonePersonas,
+    currentUser,
   } = props;
+
+  // Resolve avatars: AI avatar from activeChatContact or phonePersonas fallback; User avatar from currentUser
+  const charAvatar = activeChatContact?.avatar || phonePersonas.find(p => p.id === activeChatContact?.id)?.avatar || null;
+  const userAvatar = currentUser?.avatar || null;
 
   const [chatInput, setChatInput] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -146,7 +269,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
   const [chatErrorToast, setChatErrorToast] = useState('');
   const [autoSummaryStatus, setAutoSummaryStatus] = useState('');
   const [editingMemory, setEditingMemory] = useState<{ id?: string; title: string; content: string } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ rect?: DOMRect; messageIndex: number; messageContent: string; messageRole: 'user' | 'assistant' | ''; messageGroupId?: string; messageId?: string; messageTimestamp?: number; isVisible: boolean }>({ messageIndex: -1, messageContent: '', messageRole: '', isVisible: false });
+  const [contextMenu, setContextMenu] = useState<{ rect?: DOMRect; messageIndex: number; messageContent: string; messageRole: 'user' | 'assistant' | 'system' | ''; messageGroupId?: string; messageId?: string; messageTimestamp?: number; isVisible: boolean }>({ messageIndex: -1, messageContent: '', messageRole: '', isVisible: false });
   const [quoteToReply, setQuoteToReply] = useState<{ content: string; sender: string } | null>(null);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [editingMessageContent, setEditingMessageContent] = useState('');
@@ -176,11 +299,14 @@ export function AiChatScreen(props: AiChatScreenProps) {
   const [showRedPacketModal, setShowRedPacketModal] = useState(false);
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState(false);
+  const [showGiftActionSheet, setShowGiftActionSheet] = useState(false);
+  const [showCustomGiftModal, setShowCustomGiftModal] = useState(false);
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const isSummarizingRef = useRef<Record<string, boolean>>({});
   const lastSummaryTimeRef = useRef<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
   const currentChatSettings: ChatSettings = chatSettings[currentChatId] || { remark: '', background: '', isBlocked: false, isPinned: false };
@@ -308,7 +434,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
   };
 
   // --- Add user message ---
-  const addUserMessage = (content?: string, type: ChatMessage['messageType'] = 'text', specialData?: any, locationData?: ChatMessage['locationData']) => {
+  const addUserMessage = (content?: string, type: ChatMessage['messageType'] = 'text', specialData?: any, locationData?: ChatMessage['locationData'], giftData?: ChatMessage['giftData']) => {
     const textContent = content !== undefined ? content : chatInput.trim();
     if (!textContent && type === 'text') return;
     
@@ -319,7 +445,8 @@ export function AiChatScreen(props: AiChatScreenProps) {
       timestamp: Date.now(),
       messageType: type,
       specialData,
-      locationData
+      locationData,
+      giftData
     };
     
     if (quoteToReply && type === 'text') newMsg.quote = quoteToReply;
@@ -339,6 +466,27 @@ export function AiChatScreen(props: AiChatScreenProps) {
     }
   };
 
+  const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const imgUrl = event.target?.result as string;
+        if (imgUrl) {
+          addUserMessage('[图片]', 'image', { imageUrl: imgUrl });
+        }
+      };
+      reader.onerror = () => {
+        showToast('无法读取照片');
+      };
+      reader.readAsDataURL(file);
+    }
+    // Reset the input value so the same file can be captured again if needed
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
+  };
+
   const handleSendSpecialMessage = async (actionType: string) => {
     setShowFunctionPanel(false);
     try {
@@ -346,12 +494,15 @@ export function AiChatScreen(props: AiChatScreenProps) {
         const imgUrl = await mediaService.selectImageFromAlbum();
         addUserMessage('[图片]', 'image', { imageUrl: imgUrl });
       } else if (actionType === 'camera') {
-        const imgUrl = await mediaService.takePhoto();
-        addUserMessage('[图片]', 'image', { imageUrl: imgUrl });
+        if (cameraInputRef.current) {
+          cameraInputRef.current.click();
+        } else {
+          showToast('无法打开相机');
+        }
       } else if (actionType === 'redpacket') {
         setShowRedPacketModal(true);
       } else if (actionType === 'gift') {
-        setShowGiftModal(true);
+        setShowGiftActionSheet(true);
       } else if (actionType === 'location') {
         setShowLocationModal(true);
       } else {
@@ -426,7 +577,44 @@ export function AiChatScreen(props: AiChatScreenProps) {
       const lw = worldBooks.find(wb => wb.isActive && wb.scope === 'local' && wb.boundPersonas.includes(activeChatContact.id));
       wbContent = lw ? lw.content : (worldBooks.find(wb => wb.isActive && wb.scope === 'global')?.content || '');
     } else { wbContent = worldBooks.find(wb => wb.isActive && wb.scope === 'global')?.content || ''; }
-    const sysPr = wbContent ? `【世界观设定】\n${wbContent}\n\n请严格遵循以上世界观设定，同时扮演好角色...\n\n${baseSys}` : baseSys;
+    let sysPr = wbContent ? `【世界观设定】\n${wbContent}\n\n请严格遵循以上世界观设定，同时扮演好角色...\n\n${baseSys}` : baseSys;
+
+    const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
+    const currentChatSettingsData = chatSettings[currentChatId] || {} as ChatSettings;
+    const now = Date.now();
+    if (currentChatSettingsData.timeAwareness) {
+      const date = new Date(now);
+      const timeString = date.toLocaleString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: 'numeric', minute: 'numeric' });
+
+      let diffPrompt = '';
+      const lastTime = currentChatSettingsData.lastInteractionTime;
+      if (lastTime) {
+        const diffMs = now - lastTime;
+        const diffMins = Math.floor(diffMs / 60000);
+        const hours = Math.floor(diffMins / 60);
+        const mins = diffMins % 60;
+        let timeStr = '';
+        if (hours > 0) timeStr += `${hours}小时`;
+        if (mins > 0) timeStr += `${mins}分钟`;
+        if (!timeStr) timeStr = '不到1分钟';
+        diffPrompt = `\n距离你上一次回复用户已经过去了${timeStr}。`;
+      }
+      
+      sysPr += `\n\n【时间信息】\n当前真实时间：${timeString}${diffPrompt}\n请根据时间的流逝自然地调整你的对话语气（例如，早上说早安，晚上说晚安，长时间未回复可表达想念等）。`;
+    }
+
+    if (currentChatSettingsData.longDistanceMode) {
+      sysPr += `\n\n【异地模式】\n你与用户处于异地状态（不在同一城市）。请在对话中自然地体现出距离感和思念，例如提及“好想见面”、“隔着屏幕感觉不够真实”等，但不要过度频繁。`;
+    }
+
+    // Update lastInteractionTime
+    setChatSettings(prev => ({
+      ...prev,
+      [currentChatId]: {
+        ...(prev[currentChatId] || {} as ChatSettings),
+        lastInteractionTime: now
+      }
+    }));
 
     const sumId = activeChatContact ? activeChatContact.id : 'ai_assistant';
     const curMem = chatMemories[sumId] || [];
@@ -441,7 +629,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
     selMem = [...selMem, ...mScores.filter(ms => !ms.memory.isPinned && ms.score > 0).map(ms => ms.memory).slice(0, 2)];
     if (selMem.length === 0 && curMem.length > 0) selMem.push([...curMem].sort((a, b) => b.createdAt - a.createdAt)[0]);
     const memCtx = selMem.map(m => `【记忆 - ${m.title}】${m.content}`).join('\n');
-    const finalSys = memCtx ? `${sysPr}\n\n${memCtx}` : sysPr;
+    const finalSys = (memCtx ? `${sysPr}\n\n${memCtx}` : sysPr) + `\n\n${CHAR_PROTOCOL}`;
 
     const ctxMsgs = messagesToSend.slice(-(apiConfig.contextMessageCount || 10)).map(m => {
       let c = m.content;
@@ -683,7 +871,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
         messageId,
         contactId: currentChatId,
         content: contextMenu.messageContent,
-        sender: contextMenu.messageRole as 'user' | 'assistant',
+        sender: contextMenu.messageRole as 'user' | 'assistant', // System won't be favorited usually
         timestamp: Date.now(),
       };
       setFavorites(prev => [...prev, newFavorite]);
@@ -713,7 +901,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
         messageId,
         contactId: currentChatId,
         content: msg.content,
-        sender: msg.role,
+        sender: msg.role as 'user' | 'assistant',
         timestamp: Date.now(),
       });
       addedCount++;
@@ -811,12 +999,12 @@ export function AiChatScreen(props: AiChatScreenProps) {
         {visibleMessages.map((msg, i) => {
           const globalIndex = startIndex + i;
           return (
-          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}>
+          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative items-end px-1 gap-2 w-full`}>
             {/* Multi-select checkbox */}
             {isMultiSelectMode && (
               <button
                 onClick={() => toggleMessageSelection(msg.id)}
-                className={`flex-shrink-0 mr-2 self-center transition-colors ${msg.role === 'user' ? 'order-first' : ''}`}
+                className={`flex-shrink-0 self-center transition-colors ${msg.role === 'user' ? 'order-first' : ''}`}
               >
                 {selectedMessageIds.has(msg.id) ? (
                   <CheckSquare size={20} className="text-zinc-800 dark:text-zinc-200" />
@@ -825,10 +1013,36 @@ export function AiChatScreen(props: AiChatScreenProps) {
                 )}
               </button>
             )}
+
+            {msg.role !== 'user' && msg.role !== 'system' && currentChatSettings.showAvatar !== false && !msg.isMergedForward && (
+              <div className="flex flex-col justify-end pb-1 flex-shrink-0">
+                <div 
+                  className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
+                  onDoubleClick={() => {
+                    const suffix = currentChatSettings.patSuffix || '';
+                    const patText = `你拍了拍 ${displayChatName} ${suffix}`.trim();
+                    const newMsg: ChatMessage = {
+                      id: generateMsgId(),
+                      role: 'system',
+                      content: patText,
+                      timestamp: Date.now(),
+                      messageType: 'system'
+                    };
+                    const newMsgs = [...currentMessages, newMsg];
+                    if (activeChatContact) setChatHistories(prev => ({ ...prev, [activeChatContact.id]: newMsgs }));
+                    else setChatMessages(newMsgs);
+                  }}
+                >
+                  {charAvatar ? <img src={charAvatar} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback') as HTMLElement)?.classList.remove('hidden'); }} /> : null}
+                  <Bot size={16} className={`text-zinc-500 avatar-fallback ${charAvatar ? 'hidden' : ''}`} />
+                </div>
+              </div>
+            )}
+
             <div
               onContextMenu={(e) => handleContextMenu(e, globalIndex, msg)}
               onClick={() => { if (isMultiSelectMode) toggleMessageSelection(msg.id); else if (msg.isMergedForward) setMergedMessageDetails(msg.originalMessages!); }}
-              className={`relative transition-transform duration-200 ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black rounded-2xl' : ''}`}
+              className={`relative transition-transform duration-200 ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black rounded-2xl' : ''} ${msg.role === 'user' && currentChatSettings.showAvatar !== false ? 'order-first' : ''}`}
             >
               {msg.messageType === 'image' && msg.specialData?.imageUrl ? (
                 <ImageMessage imageUrl={msg.specialData.imageUrl} isSelf={msg.role === 'user'} />
@@ -836,8 +1050,16 @@ export function AiChatScreen(props: AiChatScreenProps) {
                 <RedPacketMessage data={msg.specialData} isSelf={msg.role === 'user'} />
               ) : msg.messageType === 'gift' && msg.specialData ? (
                 <GiftMessage data={msg.specialData} isSelf={msg.role === 'user'} />
+              ) : msg.messageType === 'custom_gift' && msg.giftData ? (
+                <CustomGiftMessage data={msg.giftData} isSelf={msg.role === 'user'} />
               ) : msg.messageType === 'location' && msg.locationData ? (
                 <LocationMessage data={msg.locationData!} isSelf={msg.role === 'user'} />
+              ) : msg.messageType === 'system' ? (
+                <div className="w-full flex justify-center my-2 select-none pointer-events-none">
+                  <span className="bg-black/5 dark:bg-white/10 text-zinc-500 dark:text-zinc-400 text-xs px-3 py-1 rounded-full italic">
+                    {msg.content}
+                  </span>
+                </div>
               ) : (
                 <div className={`max-w-[80%] p-4 rounded-2xl text-sm relative select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-zinc-800 text-white rounded-tr-none dark:bg-zinc-800 dark:text-zinc-100' : 'bg-white dark:bg-[#1c1c1e] text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-[#1c1c1e] dark:!text-zinc-200 shadow-none cursor-pointer' : ''} ${isMultiSelectMode ? 'cursor-pointer' : ''}`}>
                   {msg.isMergedForward ? (
@@ -857,6 +1079,15 @@ export function AiChatScreen(props: AiChatScreenProps) {
                 </div>
               )}
             </div>
+
+            {msg.role === 'user' && currentChatSettings.showAvatar !== false && !msg.isMergedForward && (
+              <div className="flex flex-col justify-end pb-1 flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex items-center justify-center">
+                  {userAvatar ? <img src={userAvatar} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback')?.classList.remove('hidden'); }} /> : null}
+                  <User size={16} className={`text-zinc-500 avatar-fallback ${userAvatar ? 'hidden' : ''}`} />
+                </div>
+              </div>
+            )}
           </div>
         );})}
         {isAiLoading && <div className="flex justify-start"><div className="bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 打字中...</div></div>}
@@ -958,6 +1189,15 @@ export function AiChatScreen(props: AiChatScreenProps) {
           
           {/* Function Panel */}
           <AnimatePresence>
+            <input 
+              type="file" 
+              accept="image/*" 
+              capture="environment" 
+              ref={cameraInputRef} 
+              style={{ display: 'none' }} 
+              onChange={handleCameraCapture} 
+            />
+
             {showFunctionPanel && !currentChatSettings.isBlocked && (
               <>
                 <motion.div 
@@ -1191,6 +1431,19 @@ export function AiChatScreen(props: AiChatScreenProps) {
         onClose={() => setShowRedPacketModal(false)} 
         onSend={(data) => addUserMessage(`[红包] ${data.message}`, 'redpacket', data)} 
       />
+
+      <GiftActionSheet
+        isOpen={showGiftActionSheet}
+        onClose={() => setShowGiftActionSheet(false)}
+        onSelectCustomGift={() => setShowCustomGiftModal(true)}
+        onSelectShopping={() => setScreen('app-shopping')}
+      />
+      
+      <CustomGiftModal
+        isOpen={showCustomGiftModal}
+        onClose={() => setShowCustomGiftModal(false)}
+        onSend={(data) => addUserMessage(`[礼物] ${data.name}`, 'custom_gift', undefined, undefined, data)}
+      />
       
       <GiftModal 
         isOpen={showGiftModal} 
@@ -1201,7 +1454,11 @@ export function AiChatScreen(props: AiChatScreenProps) {
       <LocationModal
         isOpen={showLocationModal}
         onClose={() => setShowLocationModal(false)}
-        onConfirm={(locationData) => addUserMessage(`[位置] ${locationData.name}`, 'location', undefined, locationData)}
+        onConfirm={(locationData) => {
+          if (locationData) {
+            addUserMessage(`[位置] ${locationData.name}`, 'location', undefined, locationData);
+          }
+        }}
       />
 
       {/* Chat Settings Panel */}
@@ -1257,6 +1514,10 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
   const [pinned, setPinned] = useState(currentChatSettings.isPinned || false);
   const [autoSummary, setAutoSummary] = useState(currentChatSettings.isAutoSummaryEnabled || false);
   const [summaryThreshold, setSummaryThreshold] = useState(currentChatSettings.autoSummaryThreshold || 30);
+  const [timeAwareness, setTimeAwareness] = useState(currentChatSettings.timeAwareness || false);
+  const [showAvatar, setShowAvatar] = useState(currentChatSettings.showAvatar !== false);
+  const [patSuffix, setPatSuffix] = useState(currentChatSettings.patSuffix || '');
+  const [longDistanceMode, setLongDistanceMode] = useState(currentChatSettings.longDistanceMode || false);
   const [activeTab, setActiveTab] = useState<'general' | 'memory'>('general');
 
   const curMem = chatMemories[currentChatId] || [];
@@ -1272,6 +1533,10 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
         isPinned: pinned,
         isAutoSummaryEnabled: autoSummary,
         autoSummaryThreshold: summaryThreshold,
+        timeAwareness,
+        showAvatar,
+        patSuffix,
+        longDistanceMode,
       }
     }));
     onClose();
@@ -1281,6 +1546,49 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
     if (currentChatId === 'ai_assistant') setChatMessages([]);
     else setChatHistories(prev => ({ ...prev, [currentChatId]: [] }));
     onClose();
+  };
+
+  const handleExportChat = () => {
+    try {
+      const msgs = currentChatId === 'ai_assistant' ? chatMessages : (chatHistories[currentChatId] || []);
+      if (msgs.length === 0) {
+        showToast('暂无聊天记录可导出');
+        return;
+      }
+
+      const exportData = msgs.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp,
+        type: msg.messageType,
+        specialData: msg.specialData || msg.locationData || msg.giftData
+      }));
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      const date = new Date();
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      const hh = String(date.getHours()).padStart(2, '0');
+      const min = String(date.getMinutes()).padStart(2, '0');
+      const ss = String(date.getSeconds()).padStart(2, '0');
+      
+      const safeName = displayChatName.replace(/[<>:"/\\|?*]+/g, '_');
+      a.download = `chat_history_${safeName}_${yyyy}${mm}${dd}_${hh}${min}${ss}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      showToast('导出成功');
+    } catch (err) {
+      console.error('Export chat failed:', err);
+      showToast('导出失败');
+    }
   };
 
   const handleSaveMemory = () => {
@@ -1405,6 +1713,12 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                 <input type="text" placeholder="设置备注名..." className="w-full bg-white dark:bg-[#1c1c1e] p-3 rounded-xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-neutral-200 focus:border-neutral-400 dark:focus:border-zinc-600 transition-colors" value={remark} onChange={e => setRemark(e.target.value)} />
               </div>
               
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">拍一拍后缀</label>
+                <input type="text" placeholder="输入拍一拍后缀，如‘的肩膀’" className="w-full bg-white dark:bg-[#1c1c1e] p-3 rounded-xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-neutral-200 focus:border-neutral-400 dark:focus:border-zinc-600 transition-colors" value={patSuffix} onChange={e => setPatSuffix(e.target.value)} />
+                <span className="text-[10px] text-zinc-400">双击对方头像触发拍一拍</span>
+              </div>
+              
               <div className="flex flex-col gap-3 py-2">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">聊天背景</label>
@@ -1445,7 +1759,20 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">拉黑</span>
                 <button onClick={() => setBlocked(!blocked)} className={`w-10 h-5 rounded-full transition-colors relative border ${blocked ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${blocked ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
               </div>
-              <button onClick={handleClearChat} className="mt-4 py-3 bg-red-50 dark:bg-[#1c1c1e] text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-4 border-none">清空聊天记录</button>
+              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
+                <span className="text-sm text-zinc-700 dark:text-zinc-200">感知时间</span>
+                <button onClick={() => setTimeAwareness(!timeAwareness)} className={`w-10 h-5 rounded-full transition-colors relative border ${timeAwareness ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${timeAwareness ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
+              </div>
+              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
+                <span className="text-sm text-zinc-700 dark:text-zinc-200">异地模式</span>
+                <button onClick={() => setLongDistanceMode(!longDistanceMode)} className={`w-10 h-5 rounded-full transition-colors relative border ${longDistanceMode ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${longDistanceMode ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
+              </div>
+              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
+                <span className="text-sm text-zinc-700 dark:text-zinc-200">显示头像</span>
+                <button onClick={() => setShowAvatar(!showAvatar)} className={`w-10 h-5 rounded-full transition-colors relative border ${showAvatar ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${showAvatar ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
+              </div>
+              <button onClick={handleExportChat} className="mt-2 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-3 border-none flex items-center justify-center gap-2"><Download size={16} /> 导出聊天记录</button>
+              <button onClick={handleClearChat} className="mt-2 py-3 bg-red-50 dark:bg-[#1c1c1e] text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-3 border-none">清空聊天记录</button>
             </>
           )}
 

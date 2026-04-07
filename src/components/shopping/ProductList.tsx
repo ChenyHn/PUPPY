@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ShoppingCart, Check, Package, Search, RefreshCw, Tag } from 'lucide-react';
-import { getAllProducts, fetchDummyProducts, addToCart } from '../../services/shoppingService';
+import { getAllProducts, searchProductsByAI, addToCart } from '../../services/shoppingService';
 import type { CartItem, Product } from '../../types/shopping';
 
 interface ProductListProps {
@@ -33,24 +33,20 @@ export const ProductList: React.FC<ProductListProps> = ({ onCartUpdate, onBack }
     }
 
     setIsLoading(true);
-    const dummyProducts = await fetchDummyProducts(searchQuery);
-    
-    // 合并本地搜索结果和API结果
-    const localMatches = getAllProducts().filter(p => 
-      p.category === activeCategory && 
-      p.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    
-    setProducts([...localMatches, ...dummyProducts]);
-    setIsLoading(false);
+    try {
+      const aiProducts = await searchProductsByAI(searchQuery);
+      setProducts(aiProducts);
+    } catch (e) {
+      alert('AI生成商品失败，请检查API配置或稍后再试');
+      loadLocalProducts();
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleRefresh = async () => {
-    setIsLoading(true);
-    const skip = Math.floor(Math.random() * 100);
-    const dummyProducts = await fetchDummyProducts(undefined, skip);
-    setProducts(dummyProducts);
-    setIsLoading(false);
+  const handleReset = () => {
+    setSearchQuery('');
+    loadLocalProducts();
   };
 
   const handleAddToCart = (productId: string) => {
@@ -65,17 +61,17 @@ export const ProductList: React.FC<ProductListProps> = ({ onCartUpdate, onBack }
   return (
     <div className="flex flex-col h-full w-full bg-transparent pt-6">
       {/* 顶部区域 */}
-      <div className="px-4 pt-2 pb-2 flex flex-col gap-3 relative z-10">
+      <div className="flex flex-col gap-3 relative z-10">
         {/* 第一行：返回按钮与切换条 */}
-        <div className="flex items-center justify-between w-full h-10">
+        <div className="flex items-center justify-between px-4 pt-4 pb-2 w-full">
           <button
             onClick={onBack}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-[#1a1a1a] dark:text-[#f0f0f3] active:scale-90 transition-all p-0 bg-transparent shrink-0 -ml-2"
+            className="w-5 h-5 shrink-0 flex items-center justify-center text-[#1a1a1a] dark:text-[#f0f0f3] bg-transparent p-0 border-none shadow-none active:scale-90 transition-transform"
           >
             <ArrowLeft size={20} strokeWidth={2} />
           </button>
           
-          <div className="flex-1 flex justify-center">
+          <div className="flex-1 flex justify-center items-center h-9">
             <div className="glass-tabs-container w-[160px] h-9 flex items-center">
               <button
                 onClick={() => setActiveCategory('shopping')}
@@ -85,7 +81,7 @@ export const ProductList: React.FC<ProductListProps> = ({ onCartUpdate, onBack }
                     : 'text-gray-500 dark:text-gray-400 bg-transparent'
                 }`}
               >
-                购物
+                商城
               </button>
               <button
                 onClick={() => setActiveCategory('food')}
@@ -100,27 +96,33 @@ export const ProductList: React.FC<ProductListProps> = ({ onCartUpdate, onBack }
             </div>
           </div>
           
-          <div className="w-9 h-9 shrink-0"></div> {/* 右侧留空占位，保持居中平衡 */}
+          <div className="w-5 h-5 shrink-0"></div> {/* 右侧留空占位，保持居中平衡 */}
         </div>
 
         {/* 第二行：搜索和换一批 */}
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-center px-4 pb-2">
           <form onSubmit={handleSearch} className="flex-1">
             <div className="neumorph-input flex items-center w-full !py-2 !px-3 !border-transparent !ring-0 !outline-none shadow-none focus-within:!border-transparent focus-within:!ring-0">
               <Search className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" />
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索商品..."
-                className="w-full bg-transparent border-none outline-none ring-0 focus:ring-0 focus:outline-none pl-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (!e.target.value.trim()) {
+                    loadLocalProducts();
+                  }
+                }}
+                disabled={isLoading}
+                placeholder={isLoading ? "生成中..." : "输入需求，AI生成商品"}
+                className="w-full bg-transparent border-none outline-none ring-0 focus:ring-0 focus:outline-none pl-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 disabled:opacity-50"
               />
             </div>
           </form>
           <button
-            onClick={handleRefresh}
+            onClick={handleReset}
             disabled={isLoading}
-            className="glass-btn-secondary p-2 flex items-center justify-center shrink-0 w-[38px] h-[38px] !px-0"
+            className="glass-btn-secondary p-2 flex items-center justify-center shrink-0 w-[38px] h-[38px] !px-0 rounded-full shadow-[2px_2px_5px_rgba(0,0,0,0.08),-1px_-1px_3px_rgba(255,255,255,0.8)] dark:shadow-[2px_2px_5px_rgba(0,0,0,0.3),-1px_-1px_3px_rgba(255,255,255,0.05)] border-none"
           >
             <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
@@ -159,7 +161,7 @@ export const ProductList: React.FC<ProductListProps> = ({ onCartUpdate, onBack }
                 </div>
               </div>
 
-              {/* 购物车按钮（右侧底部） */}
+              {/* 商城车按钮（右侧底部） */}
               <button
                 onClick={() => handleAddToCart(product.id)}
                 className="cart-add-btn flex items-center justify-center shrink-0 absolute bottom-3 right-3"

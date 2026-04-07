@@ -1,15 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { User, Settings, CreditCard, Clock, ChevronRight, Package, Tag, Trash2 } from 'lucide-react';
-import { getLocalProducts } from '../../services/shoppingService';
+import { User, Settings, CreditCard, Clock, ChevronRight, Package, Tag, Trash2, ArrowLeft } from 'lucide-react';
+import { getLocalProducts, getProductById, getOrders } from '../../services/shoppingService';
 import type { Product } from '../../types/shopping';
 
-export const Profile: React.FC = () => {
+import type { Order } from '../../types/shopping';
+interface ProfileProps {
+  onBack: () => void;
+  onAwaitingReceipt?: () => void;
+}
+
+export const Profile: React.FC<ProfileProps> = ({ onBack, onAwaitingReceipt }) => {
   const [activeTab, setActiveTab] = useState<'orders' | 'published'>('orders');
+  const [orders, setOrders] = useState<Order[]>([]);
   const [publishedItems, setPublishedItems] = useState<Product[]>([]);
 
   useEffect(() => {
     loadPublishedItems();
+    loadOrders();
+    const interval = setInterval(loadOrders, 1000);
+    return () => clearInterval(interval);
   }, []);
+
+  const loadOrders = () => {
+    setOrders(getOrders());
+  };
 
   const loadPublishedItems = () => {
     setPublishedItems(getLocalProducts());
@@ -27,10 +41,16 @@ export const Profile: React.FC = () => {
     <div className="flex flex-col h-full w-full bg-transparent relative pt-6">
       {/* 顶部标题栏 */}
       <div className="flex justify-between items-center px-4 pt-4 pb-2 z-10">
-        {/* 这里由外部控制返回按钮，为了对齐保持结构一致 */}
-        <div className="w-8 h-8 flex items-center justify-center"></div>
-        <h1 className="text-lg font-medium text-[#1a1a1a] dark:text-[#f0f0f3]">我的</h1>
-        <div className="w-8 h-8 flex items-center justify-center"></div> {/* 占位保持平衡 */}
+        <button 
+          onClick={onBack}
+          className="w-5 h-5 shrink-0 flex items-center justify-center text-[#1a1a1a] dark:text-[#f0f0f3] bg-transparent p-0 border-none shadow-none active:scale-90 transition-transform"
+        >
+          <ArrowLeft size={20} strokeWidth={2} />
+        </button>
+        <div className="flex-1 flex justify-center items-center h-9">
+          <h1 className="text-lg font-medium text-[#1a1a1a] dark:text-[#f0f0f3]">我的</h1>
+        </div>
+        <div className="w-5 h-5 shrink-0" /> {/* 占位保持平衡 */}
       </div>
 
       {/* 头部信息 */}
@@ -53,7 +73,7 @@ export const Profile: React.FC = () => {
               activeTab === 'orders' ? 'glass-tab-active text-[#1a1a1a] dark:text-[#f0f0f3]' : 'text-[#999999] dark:text-[#aaaaaa]'
             }`}
           >
-            <Package size={14} /> 我的订单
+            <Clock size={14} /> 待收货订单
           </button>
           <button
             onClick={() => setActiveTab('published')}
@@ -72,22 +92,32 @@ export const Profile: React.FC = () => {
             {/* 常用功能 */}
             <div className="grid grid-cols-4 gap-3 glass-card py-5">
               {[
-                { icon: CreditCard, label: '待付款' },
-                { icon: Package, label: '待发货' },
-                { icon: Clock, label: '待收货' },
-                { icon: Settings, label: '售后' },
+                { icon: CreditCard, label: '待付款', count: 0, onClick: () => {} },
+                { icon: Package, label: '待发货', count: 0, onClick: () => {} },
+                { icon: Clock, label: '待收货', count: orders.filter(o => o.status === 'shipping').length, onClick: onAwaitingReceipt },
+                { icon: Settings, label: '售后', count: 0, onClick: () => {} },
               ].map((item, index) => (
-                <div key={index} className="flex flex-col items-center gap-2">
+                <button 
+                  key={index} 
+                  onClick={item.onClick}
+                  className="flex flex-col items-center gap-2 bg-transparent border-none outline-none active:scale-95 transition-transform relative"
+                >
                   <div className="w-12 h-12 rounded-full glass-btn-secondary flex items-center justify-center p-0 shadow-none">
                     <item.icon size={20} className="text-[#666666] dark:text-[#cccccc]" />
+                    {item.count > 0 && (
+                      <div className="absolute top-0 right-1 min-w-[16px] h-[16px] bg-[#1a1a1a] dark:bg-[#333333] rounded-full flex items-center justify-center px-1 border border-white dark:border-[#2a2a2c]">
+                        <span className="text-[9px] font-bold text-white">{item.count > 99 ? '99+' : item.count}</span>
+                      </div>
+                    )}
                   </div>
                   <span className="text-[10px] font-bold text-[#666666] dark:text-[#cccccc]">{item.label}</span>
-                </div>
+                </button>
               ))}
             </div>
 
+
             {/* 菜单列表 */}
-            <div className="glass-card overflow-hidden p-0 mb-4">
+            <div className="glass-card overflow-hidden p-0 mb-4 mt-4">
               {[
                 '收货地址',
                 '我的收藏',
@@ -134,7 +164,7 @@ export const Profile: React.FC = () => {
                       <span className="font-bold text-sm text-[#1a1a1a] dark:text-[#f0f0f3] leading-none">¥{item.price.toFixed(2)}</span>
                       <button
                         onClick={() => handleDeleteItem(item.id)}
-                        className="p-1 rounded-full text-[#999999] dark:text-[#aaaaaa] hover:text-red-500 transition-colors active:scale-90 bg-transparent"
+                        className="p-1 rounded-full text-[#999999] dark:text-[#aaaaaa] hover:text-[#1a1a1a] dark:hover:text-[#f0f0f3] transition-colors active:scale-90 bg-transparent"
                       >
                         <Trash2 size={14} strokeWidth={2} />
                       </button>
@@ -146,6 +176,7 @@ export const Profile: React.FC = () => {
           </div>
         )}
       </div>
+
     </div>
   );
 };

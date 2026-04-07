@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Check, Globe2, ShieldCheck, RefreshCw, Sparkles, MessageSquare, Type, Wifi } from 'lucide-react';
+import { ArrowLeft, Check, Globe2, ShieldCheck, RefreshCw, Sparkles, MessageSquare, Type, Wifi, Download, Smartphone, Upload, AlertCircle } from 'lucide-react';
 import { StatusBar, GlassCard } from './Shared';
 import { ApiConfig } from '../types';
 
@@ -33,6 +33,11 @@ export const SettingsScreen = ({
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [isAiLoading, setIsAiLoading] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
+  const [showImportSuccess, setShowImportSuccess] = useState(false);
+  const [importData, setImportData] = useState<any>(null);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToastMessage(message);
@@ -109,6 +114,99 @@ export const SettingsScreen = ({
     }
   };
 
+  const handleExportData = () => {
+    try {
+      const data: Record<string, string> = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('aiphone_') || ['shopping_orders', 'shopping_products', 'music_data'].includes(key))) {
+          data[key] = localStorage.getItem(key) || '';
+        }
+      }
+      
+      const backup = {
+        backupTime: Date.now(),
+        data
+      };
+
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      const date = new Date();
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      const hh = String(date.getHours()).padStart(2, '0');
+      const min = String(date.getMinutes()).padStart(2, '0');
+      const ss = String(date.getSeconds()).padStart(2, '0');
+      
+      a.download = `puppy_backup_${yyyy}${mm}${dd}_${hh}${min}${ss}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      showToast('导出成功', 'success');
+    } catch (err) {
+      console.error('Export failed:', err);
+      showToast('导出失败', 'error');
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset input
+    e.target.value = '';
+
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('文件大小不能超过 10MB', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (json && typeof json === 'object' && 'backupTime' in json && 'data' in json && typeof json.data === 'object') {
+          setImportData(json);
+          setShowImportConfirm(true);
+        } else {
+          showToast('无效的备份文件', 'error');
+        }
+      } catch (err) {
+        console.error('Parse JSON failed:', err);
+        showToast('无效的备份文件：解析错误', 'error');
+      }
+    };
+    reader.onerror = () => {
+      showToast('读取文件失败', 'error');
+    };
+    reader.readAsText(file);
+  };
+
+  const executeImport = () => {
+    if (!importData || !importData.data) return;
+    
+    try {
+      const data = importData.data;
+      for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          localStorage.setItem(key, data[key]);
+        }
+      }
+      setShowImportConfirm(false);
+      setShowImportSuccess(true);
+    } catch (err) {
+      console.error('Import failed:', err);
+      showToast('导入失败', 'error');
+      setShowImportConfirm(false);
+    }
+  };
+
   const handleTestConnection = async () => {
     if (!tempConfig.baseUrl || !tempConfig.apiKey) {
       showToast('请先输入 API 地址和密钥', 'error');
@@ -175,6 +273,83 @@ export const SettingsScreen = ({
       key="app-settings"
       className="absolute inset-0 bg-white dark:bg-black flex flex-col z-50"
     >
+      <AnimatePresence>
+        {showImportConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="w-full max-w-[320px] bg-white dark:bg-[#1c1c1e] rounded-3xl p-6 flex flex-col gap-6"
+            >
+              <div className="flex flex-col items-center gap-3 text-center">
+                <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <AlertCircle size={24} className="text-zinc-900 dark:text-zinc-100" />
+                </div>
+                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">确认导入数据？</h3>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  导入将覆盖当前所有数据（联系人、聊天记录、设置、钱包等），且不可撤销。<br/><br/>强烈建议您在导入前先导出备份当前数据。
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowImportConfirm(false);
+                    setImportData(null);
+                  }}
+                  className="flex-1 h-12 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-2xl font-bold active:scale-95 transition-all"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={executeImport}
+                  className="flex-1 h-12 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-bold active:scale-95 transition-all"
+                >
+                  确认导入
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {showImportSuccess && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="w-full max-w-[320px] bg-white dark:bg-[#1c1c1e] rounded-3xl p-6 flex flex-col gap-6"
+            >
+              <div className="flex flex-col items-center gap-3 text-center">
+                <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <Check size={24} className="text-zinc-900 dark:text-zinc-100" />
+                </div>
+                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">导入成功</h3>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  数据已成功恢复。<br/>请刷新页面以加载最新数据。
+                </p>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full h-12 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-bold active:scale-95 transition-all"
+              >
+                立即刷新
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
       
       <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800">
@@ -341,15 +516,38 @@ export const SettingsScreen = ({
           </GlassCard>
         </div>
 
-        <div className="flex justify-center mt-4">
+        <div className="flex flex-col gap-3 mt-4">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileChange} 
+            className="hidden" 
+            accept=".json" 
+          />
           <button 
             onClick={handleTestConnection}
             disabled={isAiLoading}
-            className="flex items-center justify-center gap-2 w-full max-w-[200px] h-[44px] bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-full text-sm font-bold active:bg-zinc-200 dark:active:bg-zinc-700 transition-colors disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 h-[44px] bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-full text-sm font-bold active:bg-zinc-200 dark:active:bg-zinc-700 transition-colors disabled:opacity-50"
           >
             {isAiLoading ? <RefreshCw size={16} className="animate-spin" /> : <Wifi size={16} />}
             测试连接
           </button>
+          <div className="flex gap-3">
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-1 items-center justify-center gap-2 h-[44px] bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-full text-sm font-bold active:bg-zinc-200 dark:active:bg-zinc-700 transition-colors"
+            >
+              <Upload size={16} />
+              导入数据
+            </button>
+            <button 
+              onClick={handleExportData}
+              className="flex flex-1 items-center justify-center gap-2 h-[44px] bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-full text-sm font-bold active:bg-zinc-200 dark:active:bg-zinc-700 transition-colors"
+            >
+              <Download size={16} />
+              导出数据
+            </button>
+          </div>
         </div>
 
         <div className="mt-auto pt-6">

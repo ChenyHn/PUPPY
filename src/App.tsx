@@ -79,6 +79,7 @@ import { PaymentSecurityModal } from './components/PaymentSecurityModal';
 import { HeartbeatNPC } from './screens/HeartbeatNPC';
 import { MusicScreen } from './components/MusicScreen';
 import { ShoppingScreen } from './components/shopping/ShoppingScreen';
+import { getOrders, updateOrderStatus } from './services/shoppingService';
 
 import type { ChatMessage } from './types';
 
@@ -297,7 +298,7 @@ const DEFAULT_HOME_APPS: HomeAppItem[] = [
   { id: 'chat', icon: MessageCircle, label: '聊天', screen: 'app-chat' },
   { id: 'music', icon: Music, label: '音乐', screen: 'app-music' },
   { id: 'notes', icon: FileText, label: '备忘录' },
-  { id: 'shopping', icon: ShoppingBag, label: '购物', screen: 'app-shopping' },
+  { id: 'shopping', icon: ShoppingBag, label: '商城', screen: 'app-shopping' },
   { id: 'world', icon: BookOpen, label: '世界书', screen: 'app-world' },
   { id: 'settings', icon: Settings, label: '设置', screen: 'app-settings' },
   { id: 'appearance', icon: Palette, label: '外观', screen: 'app-appearance' },
@@ -995,6 +996,122 @@ export default function App() {
     localStorage.setItem('aiphone_favorites', JSON.stringify(favorites));
   }, [favorites]);
 
+  // 物流检查与触发 (每分钟检查一次)
+  useEffect(() => {
+    const notifyDelivery = async (orderId: string) => {
+      const order = getOrders().find(o => o.id === orderId);
+      if (!order) return;
+      const isProxy = order.paymentMethod === 'proxy' && order.proxyContactId;
+      
+      let content = '';
+      if (isProxy) {
+        const contact = contacts.find(c => c.id === order.proxyContactId);
+        try {
+          let baseUrl = apiConfig.baseUrl;
+          if (!/^https?:\/\//i.test(baseUrl)) { baseUrl = 'https://' + baseUrl; }
+          const url = baseUrl.replace(/\/chat\/completions$/, '') + '/chat/completions';
+          
+          const prompt = `用户让你代付了订单 ${order.id}。现在商品已经送达。请以你(${contact?.chatName || '朋友'})的口吻，给用户发送一条送达通知，并带上一句简短的评论。只需返回通知文本。`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+            body: JSON.stringify({
+              model: apiConfig.selectedModel,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0.7
+            })
+          });
+          const data = await response.json();
+          content = data.choices[0].message.content;
+        } catch(err) {
+          content = `你买的东西到啦！我帮你签收了，看起来不错～（订单 ${order.id}）`;
+        }
+        
+        setChatHistories(prev => {
+          const history = prev[order.proxyContactId!] || [];
+          return {
+            ...prev,
+            [order.proxyContactId!]: [
+              ...history,
+              {
+                id: `msg_delivery_${Date.now()}_${Math.random()}`,
+                content,
+                role: 'assistant',
+                sender: 'assistant',
+                timestamp: Date.now()
+              }
+            ]
+          };
+        });
+      } else {
+        try {
+          let baseUrl = apiConfig.baseUrl;
+          if (!/^https?:\/\//i.test(baseUrl)) { baseUrl = 'https://' + baseUrl; }
+          const url = baseUrl.replace(/\/chat\/completions$/, '') + '/chat/completions';
+          
+          const prompt = `用户自己付款的订单 ${order.id} 已经送达。请作为系统AI助手，给用户发送一条简短的送达通知。只需返回通知文本。`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+            body: JSON.stringify({
+              model: apiConfig.selectedModel,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0.7
+            })
+          });
+          const data = await response.json();
+          content = data.choices[0].message.content;
+        } catch(err) {
+          content = `您的订单 ${order.id} 已送达，请注意查收！`;
+        }
+        
+        setChatHistories(prev => {
+          const history = prev['ai_assistant'] || [];
+          return {
+            ...prev,
+            ['ai_assistant']: [
+              ...history,
+              {
+                id: `msg_delivery_${Date.now()}_${Math.random()}`,
+                content,
+                role: 'assistant',
+                sender: 'assistant',
+                timestamp: Date.now()
+              }
+            ]
+          };
+        });
+      }
+    };
+
+    const handleOrderDelivered = (e: any) => {
+      const orderId = e.detail?.orderId;
+      if (orderId) {
+        notifyDelivery(orderId);
+      }
+    };
+    window.addEventListener('orderDelivered', handleOrderDelivered as EventListener);
+
+    const checkDeliveries = () => {
+      const orders = getOrders();
+      const now = Date.now();
+
+      orders.forEach(order => {
+        if (order.status === 'shipping' && now >= order.estimatedDeliveryTime) {
+          updateOrderStatus(order.id, 'delivered', now);
+          notifyDelivery(order.id);
+        }
+      });
+    };
+
+    checkDeliveries();
+    const timer = setInterval(checkDeliveries, 60000);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('orderDelivered', handleOrderDelivered as EventListener);
+    };
+  }, [contacts, apiConfig]);
+
   return (
     <div 
     className="relative w-full h-full bg-zinc-50 dark:bg-black flex items-center justify-center overflow-hidden font-sans"
@@ -1347,10 +1464,10 @@ export default function App() {
               transition={{ duration: 0 }}
               className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50"
             >
-              <StatusBar time={time} className="bg-white/80 dark:bg-black/80 text-black dark:text-zinc-200 backdrop-blur-md z-10" />
+              <StatusBar time={time} className="bg-[#F5F5F5] dark:bg-black text-black dark:text-zinc-200 z-10" />
               
               {/* Top Nav */}
-              <div className="px-6 py-4 flex justify-between items-center bg-white dark:bg-black border-none">
+              <div className="px-6 py-4 flex justify-between items-center bg-[#F5F5F5] dark:bg-black border-none">
                 <div className="w-10">
                   <button onClick={() => setScreen('home')} className="p-1.5 bg-white dark:bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 active:text-zinc-800 dark:active:text-white transition-colors shadow-sm">
                     <LogOut size={18} strokeWidth={1.5} />
@@ -1398,9 +1515,9 @@ export default function App() {
               </div>
 
               {/* Content Area */}
-              <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-black/50 backdrop-blur-2xl pb-20">
+              <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-black/50 backdrop-blur-2xl">
                     {chatTab === 'messages' && (
-                      <div className="flex flex-col">
+                      <div className="flex flex-col bg-[#F5F5F5] dark:bg-black min-h-full pb-24">
                         {contacts.length === 0 ? (
                           <div className="flex-1 flex flex-col items-center justify-center py-40 text-zinc-400 gap-4">
                             <MessageSquare size={48} strokeWidth={1} />
@@ -1409,42 +1526,19 @@ export default function App() {
                           </div>
                         ) : (
                           <>
-                            {/* Build sorted chat list: AI assistant + contacts, pinned first */}
+                            {/* Build sorted chat list: contacts only, pinned first */}
                             {(() => {
-                              const aiAssistantItem = {
-                                type: 'ai' as const,
-                                id: 'ai_assistant',
-                                isPinned: !!(chatSettings['ai_assistant']?.isPinned),
-                              };
                               const contactItems = contacts.map(contact => ({
                                 type: 'contact' as const,
                                 id: contact.id,
                                 contact,
                                 isPinned: !!(chatSettings[contact.id]?.isPinned),
                               }));
-                              const allItems = [aiAssistantItem, ...contactItems];
                               // Sort: pinned items first, maintain original order within each group
-                              allItems.sort((a, b) => (a.isPinned === b.isPinned ? 0 : a.isPinned ? -1 : 1));
+                              contactItems.sort((a, b) => (a.isPinned === b.isPinned ? 0 : a.isPinned ? -1 : 1));
 
-                              return allItems.map(item => {
-                                if (item.type === 'ai') {
-                                  const aiSettings = chatSettings['ai_assistant'] || { remark: '', background: '', isBlocked: false, isPinned: false };
-                                  return (
-                                    <div key="ai_assistant" onClick={() => {
-                                      setActiveChatContact(null);
-                                      setScreen('ai-chat');
-                                    }}>
-                                      <ChatListItem 
-                                        name={aiSettings.remark || "AI 助手"} 
-                                        msg={chatMessages.length > 0 ? chatMessages[chatMessages.length-1].content : "你好！有什么我可以帮你的吗？"} 
-                                        time="10:24" 
-                                        unread={0} 
-                                        isPinned={aiSettings.isPinned}
-                                      />
-                                    </div>
-                                  );
-                                } else {
-                                  const contact = item.contact!;
+                              return contactItems.map(item => {
+                                  const contact = item.contact;
                                   const history = chatHistories[contact.id] || [];
                                   const lastMsg = history.length > 0 ? history[history.length - 1].content : "点击开始聊天";
                                   const contactSettings = chatSettings[contact.id] || { remark: '', background: '', isBlocked: false, isPinned: false };
@@ -1454,16 +1548,15 @@ export default function App() {
                                       setActiveChatContact(contact);
                                       setScreen('ai-chat');
                                     }}>
-                                      <ChatListItem 
-                                        name={displayName} 
-                                        msg={lastMsg} 
-                                        time="09:15" 
-                                        avatar={contact.avatar} 
+                                      <ChatListItem
+                                        name={displayName}
+                                        msg={lastMsg}
+                                        time="09:15"
+                                        avatar={contact.avatar}
                                         isPinned={contactSettings.isPinned}
                                       />
                                     </div>
                                   );
-                                }
                               });
                             })()}
                           </>
@@ -1472,7 +1565,7 @@ export default function App() {
                     )}
 
                     {chatTab === 'contacts' && (
-                      <div className="flex flex-col bg-neutral-50 dark:bg-black min-h-full">
+                      <div className="flex flex-col bg-[#F5F5F5] dark:bg-black min-h-full pb-24">
                         {/* Section Header */}
                         <div className="px-5 pt-3 pb-1">
                           <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 tracking-wider uppercase">联系人</span>
@@ -1498,19 +1591,31 @@ export default function App() {
                                   setActiveChatContact(contact);
                                   setScreen('ai-chat');
                                 }}
-                                className="bg-white dark:bg-gray-800 shadow-[0_1px_3px_rgba(0,0,0,0.04)] rounded-2xl p-4 cursor-pointer active:scale-[0.98] transition-all"
+                                className="bg-[rgba(255,255,255,0.85)] dark:bg-[rgba(40,40,45,0.85)] backdrop-blur-[8px] border border-[rgba(255,255,255,0.9)] dark:border-[rgba(255,255,255,0.2)] rounded-[16px] p-3 cursor-pointer active:scale-[0.98] transition-all shadow-none !important"
+                                style={{
+                                  background: 'rgba(255, 255, 255, 0.85)',
+                                  backdropFilter: 'blur(8px)',
+                                  border: '1px solid rgba(255, 255, 255, 0.9)',
+                                  borderRadius: '16px',
+                                  boxShadow: 'none',
+                                }}
                               >
                                 <div className="flex items-center gap-3">
                                   <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden shrink-0">
-                                    {contact.avatar ? (
-                                      <img className="w-full h-full rounded-full object-cover" src={contact.avatar} alt={contact.chatName} />
-                                    ) : (
-                                      <User size={24} className="text-gray-400 dark:text-gray-500" />
-                                    )}
+                                    {(() => {
+                                      // 尝试从 phonePersonas 获取最新头像
+                                      const matchingPersona = phonePersonas.find(p => p.id === contact.id);
+                                      const displayAvatar = matchingPersona?.avatar || contact.avatar;
+                                      return displayAvatar ? (
+                                        <img className="w-full h-full rounded-full object-cover" src={displayAvatar} alt={contact.chatName || contact.name} />
+                                      ) : (
+                                        <User size={24} className="text-gray-400 dark:text-gray-500" />
+                                      );
+                                    })()}
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <span className="block text-[15px] font-medium text-gray-900 dark:text-gray-100 truncate">{contact.chatName}</span>
-                                    <span className="block text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{contact.bio || contact.chatId}</span>
+                                    <span className="block text-[15px] font-bold text-gray-900 dark:text-gray-100 truncate">{contact.chatName || contact.name}</span>
+                                    <span className="block text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{contact.chatId}</span>
                                   </div>
                                   <ChevronRight size={16} className="text-gray-300 dark:text-gray-600 shrink-0" />
                                 </div>
@@ -1522,7 +1627,7 @@ export default function App() {
                     )}
 
                     {chatTab === 'moments' && (
-                      <div className="flex flex-col">
+                      <div className="flex flex-col bg-[#F5F5F5] dark:bg-black min-h-full pb-24">
                         <div className="relative h-64 bg-zinc-100/20 overflow-hidden">
                           <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
                           <div className="absolute bottom-4 right-6 flex items-center gap-4">
@@ -1567,7 +1672,7 @@ export default function App() {
                     )}
 
                     {chatTab === 'me' && (
-                      <div className="flex flex-col gap-6 p-6 bg-white dark:bg-black min-h-full">
+                      <div className="flex flex-col gap-6 p-6 bg-[#F5F5F5] dark:bg-black min-h-full pb-24">
                         <div 
                           className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer"
                           onClick={() => setShowProfileModal(true)}
@@ -1651,23 +1756,37 @@ export default function App() {
               </div>
 
               {/* Bottom Tab Bar */}
-              <div className="absolute bottom-4 left-4 right-4 bg-white/40 dark:bg-black/40 backdrop-blur-md rounded-xl py-1 px-4 flex justify-around items-center z-50">
-                <button onClick={() => setChatTab('messages')} className={`flex flex-col items-center gap-0.5 p-1.5 transition-colors ${chatTab === 'messages' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
+              <div 
+                className="absolute bottom-4 left-4 right-4 rounded-2xl py-2 px-4 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px] shadow-[5px_5px_12px_rgba(0,0,0,0.04),-5px_-5px_10px_rgba(255,255,255,0.7)] dark:shadow-[5px_5px_10px_rgba(0,0,0,0.3),-5px_-5px_10px_rgba(255,255,255,0.05)]"
+              >
+                <motion.button 
+                  onClick={() => setChatTab('messages')} 
+                  className={`flex flex-col items-center gap-0.5 p-1.5 rounded-xl transition-colors ${chatTab === 'messages' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}`}
+                >
                   <MessageSquare size={20} strokeWidth={chatTab === 'messages' ? 2 : 1.5} />
                   <span className="text-[9px] font-bold">消息</span>
-                </button>
-                <button onClick={() => setChatTab('contacts')} className={`flex flex-col items-center gap-0.5 p-1.5 transition-colors ${chatTab === 'contacts' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
+                </motion.button>
+                <motion.button 
+                  onClick={() => setChatTab('contacts')} 
+                  className={`flex flex-col items-center gap-0.5 p-1.5 rounded-xl transition-colors ${chatTab === 'contacts' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}`}
+                >
                   <Users size={20} strokeWidth={chatTab === 'contacts' ? 2 : 1.5} />
                   <span className="text-[9px] font-bold">通讯录</span>
-                </button>
-                <button onClick={() => setChatTab('moments')} className={`flex flex-col items-center gap-0.5 p-1.5 transition-colors ${chatTab === 'moments' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
+                </motion.button>
+                <motion.button 
+                  onClick={() => setChatTab('moments')} 
+                  className={`flex flex-col items-center gap-0.5 p-1.5 rounded-xl transition-colors ${chatTab === 'moments' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}`}
+                >
                   <Camera size={20} strokeWidth={chatTab === 'moments' ? 2 : 1.5} />
                   <span className="text-[9px] font-bold">朋友圈</span>
-                </button>
-                <button onClick={() => setChatTab('me')} className={`flex flex-col items-center gap-0.5 p-1.5 transition-colors ${chatTab === 'me' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'}`}>
+                </motion.button>
+                <motion.button 
+                  onClick={() => setChatTab('me')} 
+                  className={`flex flex-col items-center gap-0.5 p-1.5 rounded-xl transition-colors ${chatTab === 'me' ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}`}
+                >
                   <User size={20} strokeWidth={chatTab === 'me' ? 2 : 1.5} />
                   <span className="text-[9px] font-bold">我</span>
-                </button>
+                </motion.button>
               </div>
             </motion.div>
           )}
@@ -1838,6 +1957,7 @@ export default function App() {
             favorites={favorites}
             setFavorites={setFavorites}
                 phonePersonas={phonePersonas}
+                currentUser={currentUser}
               />
             </motion.div>
           )}
@@ -1877,6 +1997,11 @@ export default function App() {
               <ShoppingScreen
                 onBack={() => setScreen('home')}
                 time={time}
+                contacts={contacts}
+                chatHistories={chatHistories}
+                setChatHistories={setChatHistories}
+                wallet={wallet}
+                setWallet={setWallet}
               />
             </motion.div>
           )}
@@ -1915,6 +2040,26 @@ export default function App() {
               setContacts(prev => {
                 if (prev.some(c => c.id === persona.id)) return prev;
                 return [...prev, persona];
+              });
+              
+              // Add initial greeting message from the new contact
+              setChatHistories(prev => {
+                const history = prev[persona.id] || [];
+                if (history.length === 0) {
+                  return {
+                    ...prev,
+                    [persona.id]: [
+                      {
+                        id: `msg_init_${Date.now()}_${Math.random()}`,
+                        content: '你是？我们好像不认识。',
+                        role: 'assistant',
+                        sender: 'assistant',
+                        timestamp: Date.now()
+                      }
+                    ]
+                  };
+                }
+                return prev;
               });
             } catch (err) {
               console.error('[App] onAddContact error:', err);
@@ -2014,6 +2159,10 @@ export default function App() {
           --glass-base-dark-opacity: ${componentBgOpacity};
           /* Noise opacity maps from 0 to 0.15 based on intensity */
           --noise-opacity: calc(var(--frost-intensity) / 100 * 0.15);
+          --nav-inner-shadow: inset 3px 3px 6px rgba(0,0,0,0.1), inset -3px -3px 6px rgba(255,255,255,0.6);
+        }
+        .dark {
+          --nav-inner-shadow: inset 3px 3px 6px rgba(0,0,0,0.3), inset -3px -3px 6px rgba(255,255,255,0.05);
         }
         * {
           font-family: var(--custom-font-family) !important;

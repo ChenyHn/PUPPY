@@ -1,4 +1,4 @@
-export type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-heartbeat-npc' | 'app-music';
+export type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-heartbeat-npc' | 'app-music' | 'app-shopping';
 export type WorldBookScope = 'global' | 'local';
 
 export interface WorldBook {
@@ -64,7 +64,7 @@ export interface MemoryEntry {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   groupId?: string;
   quote?: { content: string; sender: string };
@@ -75,7 +75,12 @@ export interface ChatMessage {
     sender: string;
     timestamp: number;
   }[];
-  messageType?: 'text' | 'image' | 'redpacket' | 'gift' | 'location';
+  messageType?: 'text' | 'image' | 'redpacket' | 'gift' | 'location' | 'custom_gift' | 'system';
+  giftData?: {
+    imageUrl: string;
+    name?: string;
+    message?: string;
+  };
   locationData?: {
     type: 'real' | 'virtual';
     name: string;
@@ -94,6 +99,11 @@ export interface ChatSettings {
   isAutoSummaryEnabled?: boolean;
   autoSummaryThreshold?: number;
   lastSummaryMessageIndex?: number;
+  timeAwareness?: boolean;
+  showAvatar?: boolean;
+  lastInteractionTime?: number;
+  patSuffix?: string;
+  longDistanceMode?: boolean;
 }
 
 export interface FavoriteItem {

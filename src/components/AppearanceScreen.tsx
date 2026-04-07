@@ -1059,11 +1059,36 @@ export const AppearanceScreen = ({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.2 }}
-            className="flex flex-col items-center justify-center py-20 text-zinc-300 dark:text-zinc-600"
+            className="flex flex-col items-center justify-center py-10 gap-6 text-zinc-300 dark:text-zinc-600"
           >
-            <Sparkles size={48} strokeWidth={1} />
-            <p className="mt-4 text-xs font-bold tracking-widest uppercase">PUPPY OS v1.0</p>
-            <p className="mt-2 text-[10px] text-zinc-400 dark:text-zinc-500">已是最新版本</p>
+            <div className="flex flex-col items-center justify-center">
+              <Sparkles size={48} strokeWidth={1} />
+              <p className="mt-4 text-xs font-bold tracking-widest uppercase">PUPPY OS v1.0</p>
+              <p className="mt-2 text-[10px] text-zinc-400 dark:text-zinc-500">当前版本</p>
+            </div>
+            
+            <button 
+              onClick={() => {
+                setSuccess('正在更新… 请稍后');
+                setTimeout(() => {
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(registrations => {
+                      for (let registration of registrations) {
+                        registration.unregister();
+                      }
+                    }).then(() => {
+                      window.location.reload();
+                    });
+                  } else {
+                    window.location.reload();
+                  }
+                }, 1500);
+              }}
+              className="flex items-center gap-2 px-6 h-[44px] bg-zinc-100 dark:bg-zinc-800/50 text-zinc-700 dark:text-zinc-300 rounded-full text-sm font-bold active:bg-zinc-200 dark:active:bg-zinc-700 transition-colors"
+            >
+              <RotateCcw size={16} />
+              立即更新
+            </button>
           </motion.div>
         )}
         </AnimatePresence>

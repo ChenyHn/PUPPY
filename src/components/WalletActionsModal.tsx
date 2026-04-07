@@ -6,11 +6,12 @@ import type { Persona, ApiConfig } from '../types';
 
 export interface Transaction {
   id: string;
-  type: 'recharge';
+  type: string;
   amount: number;
   balanceAfter: number;
-  timestamp: string;
-  description: string;
+  timestamp: string | number;
+  description?: string;
+  title?: string;
 }
 
 export interface WalletData {
@@ -27,8 +28,10 @@ interface WalletActionsModalProps {
   apiConfig?: ApiConfig;
 }
 
-const formatDate = (dateStr: string) => {
+const formatDate = (dateStr: string | number | undefined) => {
+  if (!dateStr) return '';
   const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const hh = String(d.getHours()).padStart(2, '0');
@@ -70,29 +73,29 @@ const BillDetailModal = ({
             <ReceiptText size={24} />
           </div>
           <h3 className="text-base font-bold text-zinc-800 dark:text-zinc-100 mb-1">
-            {transaction.description}
+            {transaction?.description || transaction?.title || '交易记录'}
           </h3>
           <div className="text-3xl font-bold text-zinc-900 dark:text-white my-2">
-            +{transaction.amount.toFixed(2)}
+            {(transaction?.amount || 0) < 0 ? '' : '+'}{(transaction?.amount || 0).toFixed(2)}
           </div>
         </div>
         
         <div className="p-6 pt-4 space-y-4">
           <div className="flex justify-between text-sm">
             <span className="text-zinc-500 dark:text-zinc-400">当前状态</span>
-            <span className="text-zinc-800 dark:text-zinc-200 font-medium">充值成功</span>
+            <span className="text-zinc-800 dark:text-zinc-200 font-medium">交易成功</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-zinc-500 dark:text-zinc-400">时间</span>
-            <span className="text-zinc-800 dark:text-zinc-200 font-medium">{formatDate(transaction.timestamp)}</span>
+            <span className="text-zinc-800 dark:text-zinc-200 font-medium">{formatDate(transaction?.timestamp)}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-zinc-500 dark:text-zinc-400">交易单号</span>
-            <span className="text-zinc-800 dark:text-zinc-200 font-medium">{transaction.id}</span>
+            <span className="text-zinc-800 dark:text-zinc-200 font-medium">{transaction?.id || '-'}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-zinc-500 dark:text-zinc-400">充值后余额</span>
-            <span className="text-zinc-800 dark:text-zinc-200 font-medium">¥ {transaction.balanceAfter.toFixed(2)}</span>
+            <span className="text-zinc-500 dark:text-zinc-400">交易后余额</span>
+            <span className="text-zinc-800 dark:text-zinc-200 font-medium">¥ {(transaction?.balanceAfter || 0).toFixed(2)}</span>
           </div>
         </div>
 
@@ -251,25 +254,32 @@ export const WalletActionsModal: React.FC<WalletActionsModalProps> = ({
               </div>
             ) : (
               <div className="space-y-4">
-                {displayTransactions.map(tx => (
-                  <div 
-                    key={tx.id} 
-                    onClick={() => setSelectedBill(tx)}
-                    className="flex justify-between items-center p-3 -mx-3 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                        {tx.description}
-                      </span>
-                      <span className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
-                        {formatDate(tx.timestamp)}
+                {displayTransactions.map((tx, idx) => {
+                  if (!tx) return null;
+                  const desc = tx.description || tx.title || '交易记录';
+                  const amt = tx.amount || 0;
+                  const sign = amt < 0 ? '' : '+';
+                  
+                  return (
+                    <div 
+                      key={tx.id || idx} 
+                      onClick={() => setSelectedBill(tx)}
+                      className="flex justify-between items-center p-3 -mx-3 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                          {desc}
+                        </span>
+                        <span className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
+                          {formatDate(tx.timestamp)}
+                        </span>
+                      </div>
+                      <span className="text-base font-bold text-zinc-900 dark:text-white">
+                        {sign}{amt.toFixed(2)}
                       </span>
                     </div>
-                    <span className="text-base font-bold text-zinc-900 dark:text-white">
-                      +{tx.amount.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

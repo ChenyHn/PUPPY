@@ -1,8 +1,9 @@
-import type { CartItem, Product } from '../types/shopping';
+import type { CartItem, Product, Order } from '../types/shopping';
 
 const CART_KEY = 'shopping_cart';
+const ORDERS_KEY = 'shopping_orders';
 
-// 硬编码商品数据 (购物)
+// 硬编码商品数据 (商城)
 export const SHOPPING_PRODUCTS: Product[] = [
   {
     id: 'prod_001',
@@ -198,28 +199,175 @@ export function getProductById(id: string): Product | undefined {
   return allProducts.find(p => p.id === id);
 }
 
-// 从 DummyJSON 获取商品
-export async function fetchDummyProducts(query?: string, skip: number = 0): Promise<Product[]> {
+export function getOrders(): Order[] {
   try {
-    const url = query 
-      ? `https://dummyjson.com/products/search?q=${encodeURIComponent(query)}`
-      : `https://dummyjson.com/products?limit=10&skip=${skip}`;
-      
-    const response = await fetch(url);
-    const data = await response.json();
+    const raw = localStorage.getItem(ORDERS_KEY);
+    if (raw) {
+      return JSON.parse(raw) as Order[];
+    }
+  } catch (e) {
+    console.error('Failed to read orders:', e);
+  }
+  return [];
+}
+
+export function saveOrders(orders: Order[]): void {
+  localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+}
+
+function calculateEstimatedDeliveryTime(deliveryType: 'food' | 'normal' | 'express'): number {
+  const now = Date.now();
+  switch (deliveryType) {
+    case 'food':
+      // 当前时间 + 30~60分钟随机
+      const foodMinutes = 30 + Math.floor(Math.random() * 30);
+      return now + foodMinutes * 60 * 1000;
+    case 'normal':
+      // 当前时间 + 1~3天（24~72小时）
+      const normalHours = 24 + Math.floor(Math.random() * 48);
+      return now + normalHours * 60 * 60 * 1000;
+    case 'express':
+      // 当前时间 + 2~6小时
+      const expressHours = 2 + Math.floor(Math.random() * 4);
+      return now + expressHours * 60 * 60 * 1000;
+  }
+}
+
+export function createOrder(
+  items: CartItem[],
+  total: number,
+  paymentMethod: 'self' | 'proxy',
+  proxyContactId?: string,
+  deliveryType: 'food' | 'normal' | 'express' = 'normal'
+): Order {
+  const order: Order = {
+    id: `order_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    items,
+    totalAmount: total,
+    status: 'shipping',
+    paymentMethod,
+    proxyContactId,
+    deliveryType,
+    estimatedDeliveryTime: calculateEstimatedDeliveryTime(deliveryType),
+    createdAt: Date.now()
+  };
+
+  try {
+    const orders = getOrders();
+    orders.push(order);
+    saveOrders(orders);
+  } catch (e) {
+    console.error('Failed to save order:', e);
+  }
+
+  return order;
+}
+
+export function updateOrderStatus(orderId: string, status: Order['status'], actualDeliveryTime?: number): Order | undefined {
+  const orders = getOrders();
+  const order = orders.find(o => o.id === orderId);
+  if (order) {
+    order.status = status;
+    if (actualDeliveryTime) {
+      order.actualDeliveryTime = actualDeliveryTime;
+    }
+    saveOrders(orders);
+  }
+  return order;
+}
+
+export function deliverOrder(orderId: string): Order | undefined {
+  const orders = getOrders();
+  const order = orders.find(o => o.id === orderId);
+  if (order && order.status === 'shipping') {
+    order.status = 'delivered';
+    order.actualDeliveryTime = Date.now();
+    saveOrders(orders);
     
-    // 映射到我们的 Product 类型
-    return data.products.map((p: any) => ({
-      id: `dummy_${p.id}`,
-      name: p.title,
-      price: Math.round(p.price * 7), // 简单转换为人民币
-      description: p.description,
-      imageUrl: p.thumbnail,
-      stock: p.stock,
-      category: 'shopping'
+    // 这里可以触发事件或通知，由顶层组件监听并发送 AI 消息
+    window.dispatchEvent(new CustomEvent('orderDelivered', { detail: { orderId: order.id } }));
+  }
+  return order;
+}
+
+export function skipDeliveryWait(orderId: string): Order | undefined {
+  const orders = getOrders();
+  const order = orders.find(o => o.id === orderId);
+  if (order && order.status === 'shipping') {
+    order.estimatedDeliveryTime = Date.now();
+    saveOrders(orders);
+  }
+  return order;
+}
+
+// 使用 AI 生成商品
+export async function searchProductsByAI(keyword: string): Promise<Product[]> {
+  try {
+    const rawConfig = localStorage.getItem('aiphone_api_config');
+    if (!rawConfig) {
+      throw new Error('API config not found');
+    }
+    const apiConfig = JSON.parse(rawConfig);
+    if (!apiConfig.baseUrl || !apiConfig.apiKey || !apiConfig.selectedModel) {
+      throw new Error('API config incomplete');
+    }
+
+    const prompt = `用户搜索关键词：“${keyword}”。
+请生成4-6个相关商品，每个商品包含：
+- name: 商品名称
+- description: 简短描述
+- price: 价格（数字，单位元）
+- category: 类型（"food" 外卖 / "normal" 普通快递 / "express" 顺丰当日达）
+返回 JSON 数组，格式：[{"name":"...","description":"...","price":99.9,"category":"food"}]
+只返回 JSON，不要其他文字。`;
+
+    let baseUrl = apiConfig.baseUrl;
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      baseUrl = 'https://' + baseUrl;
+    }
+    const url = baseUrl.replace(/\/chat\/completions$/, '') + '/chat/completions';
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiConfig.apiKey}`
+      },
+      body: JSON.stringify({
+        model: apiConfig.selectedModel,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}`);
+    }
+
+    const data = await response.json();
+    let content = data.choices[0].message.content;
+    
+    // 尝试提取 JSON 数组
+    const jsonMatch = content.match(/\[.*\]/s);
+    if (jsonMatch) {
+      content = jsonMatch[0];
+    }
+
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed)) {
+      throw new Error('AI response is not a JSON array');
+    }
+
+    return parsed.map((p: any, i: number) => ({
+      id: `ai_${Date.now()}_${i}`,
+      name: p.name || '未知商品',
+      price: typeof p.price === 'number' ? p.price : parseFloat(p.price) || 0,
+      description: p.description || '',
+      stock: 100,
+      category: p.category === 'food' ? 'food' : 'shopping',
     }));
   } catch (e) {
-    console.error('Failed to fetch dummy products:', e);
-    return [];
+    console.error('Failed to generate products by AI:', e);
+    throw e;
   }
 }
