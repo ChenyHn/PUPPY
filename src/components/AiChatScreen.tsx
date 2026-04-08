@@ -40,6 +40,8 @@ import type { CurrentUser } from './ProfileEditorModal';
 
 import { mediaService } from '../services/mediaService';
 import { RedPacketModal } from './chat/RedPacketModal';
+import { getVoicePreference, saveVoicePreference, PRESET_VOICES, VoicePreference } from '../utils/voiceSettings';
+import { textToSpeech } from '../utils/miniMaxService';
 import { GiftModal } from './chat/GiftModal';
 import { ImageMessage } from './chat/ImageMessage';
 import { RedPacketMessage } from './chat/RedPacketMessage';
@@ -183,7 +185,27 @@ function buildCharacterSystemPrompt(p: Persona): string {
   if (p.gender) t.push(`性别：${p.gender}`);
   if (p.occupation) t.push(`职业：${p.occupation}`);
   if (p.location) t.push(`所在地：${p.location}`);
-  return `你现在正扮演以下角色，必须严格遵循角色设定，以第一人称视角回复，语气、用词、思维方式都要完全符合角色特点，不能脱离角色，不能说出任何不符合角色身份的话。回复要像真人一样自然、生动、有情感，避免机械感或AI感。绝对不能以AI身份自居，不能说"作为AI"、"我是人工智能"之类的话。\n\n角色信息：\n- 姓名：${p.name || p.chatName}\n- 性格：${p.personality || '未设定'}\n- 背景故事：${p.bio || '未设定'}\n- 其他特征：${t.length > 0 ? t.join('；') : '无'}\n\n请以该角色的身份与用户进行对话，每一句话都要符合角色设定，让人感觉就是角色本人在说话。保持对话自然，像是在社交软件上聊天一样。`;
+  return `你现在正扮演以下角色，必须严格遵循角色设定，以第一人称视角回复，语气、用词、思维方式都要完全符合角色特点，不能脱离角色，不能说出任何不符合角色身份的话。回复要像真人一样自然、生动、有情感，避免机械感或AI感。绝对不能以AI身份自居，不能说"作为AI"、"我是人工智能"之类的话。
+
+【对话风格强制要求】
+- 你是一个真实的人，正在和对方用即时通讯软件聊天。你的回复必须纯对话形式，禁止任何动作描写、环境描写、内心独白。
+- 禁止使用“（动作描述）”或“*内心独白*”等标记。
+- 禁止使用“他/她说道”、“笑了笑”等叙事性文字。
+- 回复要简短、口语化，每句话不超过20字，可以使用省略号、语气词（嗯、啊、哦、哈）。
+- 不要一次发超过两句话，避免长篇大论。
+- 示例：
+  ❌ 错误：“（微笑着）你今天过得怎么样？我很想你。”
+  ✅ 正确：“你今天咋样？我想你了。”
+  ❌ 错误：“她疑惑地看着对方，心想这人是谁。”
+  ✅ 正确：“你是谁啊？我们认识吗？”
+
+角色信息：
+- 姓名：${p.name || p.chatName}
+- 性格：${p.personality || '未设定'}
+- 背景故事：${p.bio || '未设定'}
+- 其他特征：${t.length > 0 ? t.join('；') : '无'}
+
+请以该角色的身份与用户进行对话，每一句话都要符合角色设定，让人感觉就是角色本人在说话。保持对话自然，像是在社交软件上聊天一样。`;
 }
 
 function generateSimulatedReply(persona: Persona | null, userMessage: string): string {
@@ -301,6 +323,9 @@ export function AiChatScreen(props: AiChatScreenProps) {
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [showGiftActionSheet, setShowGiftActionSheet] = useState(false);
   const [showCustomGiftModal, setShowCustomGiftModal] = useState(false);
+  
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const isSummarizingRef = useRef<Record<string, boolean>>({});
@@ -466,20 +491,51 @@ export function AiChatScreen(props: AiChatScreenProps) {
     }
   };
 
-  const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imgUrl = event.target?.result as string;
-        if (imgUrl) {
-          addUserMessage('[图片]', 'image', { imageUrl: imgUrl });
-        }
-      };
-      reader.onerror = () => {
-        showToast('无法读取照片');
-      };
-      reader.readAsDataURL(file);
+      showToast('处理中...', 10000); // Show loading toast
+      try {
+        // Use the same compression logic as mediaService
+        const compressed = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let width = img.width;
+              let height = img.height;
+              const MAX_WIDTH = 1024;
+              if (width > MAX_WIDTH) {
+                height = Math.round((height * MAX_WIDTH) / width);
+                width = MAX_WIDTH;
+              }
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) { reject(new Error('Failed to get canvas context')); return; }
+              ctx.drawImage(img, 0, 0, width, height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+              const sizeInBytes = Math.round((dataUrl.length * 3) / 4);
+              if (sizeInBytes > 500 * 1024) {
+                resolve(canvas.toDataURL('image/jpeg', 0.5));
+              } else {
+                resolve(dataUrl);
+              }
+            };
+            img.onerror = () => reject(new Error('Failed to load image'));
+            img.src = event.target?.result as string;
+          };
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsDataURL(file);
+        });
+        
+        setToastMessage(''); // Clear loading toast
+        addUserMessage('[图片]', 'image', { imageUrl: compressed });
+      } catch (err) {
+        setToastMessage('');
+        showToast('图片过大或格式不支持');
+      }
     }
     // Reset the input value so the same file can be captured again if needed
     if (cameraInputRef.current) {
@@ -491,8 +547,17 @@ export function AiChatScreen(props: AiChatScreenProps) {
     setShowFunctionPanel(false);
     try {
       if (actionType === 'album') {
-        const imgUrl = await mediaService.selectImageFromAlbum();
-        addUserMessage('[图片]', 'image', { imageUrl: imgUrl });
+        showToast('处理中...', 10000);
+        try {
+          const imgUrl = await mediaService.selectImageFromAlbum();
+          setToastMessage('');
+          addUserMessage('[图片]', 'image', { imageUrl: imgUrl });
+        } catch (err: any) {
+          setToastMessage('');
+          if (err.message !== 'No file selected') {
+            showToast('图片过大或格式不支持');
+          }
+        }
       } else if (actionType === 'camera') {
         if (cameraInputRef.current) {
           cameraInputRef.current.click();
@@ -512,6 +577,51 @@ export function AiChatScreen(props: AiChatScreenProps) {
       if (err.message !== 'No file selected' && err.message !== 'No photo taken') {
         showToast(err.message || '操作失败');
       }
+    }
+  };
+
+  const handlePlayVoice = async (msgId: string, content: string) => {
+    if (playingMessageId === msgId) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setPlayingMessageId(null);
+      return;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+
+    setPlayingMessageId(msgId);
+    try {
+      const url = await textToSpeech(content);
+      if (!url) {
+        showToast('语音服务未配置或调用失败');
+        setPlayingMessageId(null);
+        return;
+      }
+
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      
+      audio.onended = () => {
+        setPlayingMessageId(null);
+        URL.revokeObjectURL(url);
+      };
+      
+      audio.onerror = () => {
+        showToast('语音播放失败');
+        setPlayingMessageId(null);
+        URL.revokeObjectURL(url);
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.warn('Play voice error:', err);
+      showToast('语音播放失败');
+      setPlayingMessageId(null);
     }
   };
 
@@ -643,12 +753,21 @@ export function AiChatScreen(props: AiChatScreenProps) {
       const url = `${normalizeBaseUrl(apiConfig.baseUrl)}/chat/completions`;
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 30000);
-      const resp = await fetch(url, { method: 'POST', headers: hdrs, mode: 'cors', credentials: 'omit', signal: ctrl.signal, body: JSON.stringify({ model: apiConfig.selectedModel || 'gpt-3.5-turbo', messages: [{ role: 'system', content: finalSys }, ...ctxMsgs], temperature: apiConfig.temperature ?? 0.7, max_tokens: apiConfig.maxTokens ?? 2048, stream: false }) });
+      const resp = await fetch(url, { method: 'POST', headers: hdrs, mode: 'cors', credentials: 'omit', signal: ctrl.signal, body: JSON.stringify({ model: apiConfig.selectedModel || 'gpt-3.5-turbo', messages: [{ role: 'system', content: finalSys }, ...ctxMsgs], temperature: apiConfig.temperature ?? 0.6, max_tokens: apiConfig.maxTokens ?? 100, stream: false }) });
       clearTimeout(tid);
       if (!resp.ok) { const ed = await resp.json().catch(() => ({})); throw new Error(ed.error?.message || ed.message || `请求失败 (HTTP ${resp.status})`); }
       const data = await resp.json();
       if (data.choices?.[0]?.message?.content) {
-        const final3 = await appendSeq(splitTextIntoMessages(data.choices[0].message.content));
+        let rawContent = data.choices[0].message.content;
+        // 后处理过滤：去除括号、星号等动作描写
+        rawContent = rawContent.replace(/[\(（][^\)）]*[\)）]/g, '');
+        rawContent = rawContent.replace(/\*[^\*]*\*/g, '');
+        rawContent = rawContent.replace(/\[[^\]]*\]/g, '');
+        rawContent = rawContent.replace(/【[^】]*】/g, '');
+        rawContent = rawContent.trim();
+        if (!rawContent) rawContent = '...';
+        
+        const final3 = await appendSeq(splitTextIntoMessages(rawContent));
         checkAndTriggerAutoSummary(activeChatContact ? activeChatContact.id : 'ai_assistant', final3 as ChatMessage[]);
       } else throw new Error('返回数据格式不正确');
     } catch (err: any) {
@@ -950,34 +1069,75 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
   // --- Render ---
   return (
-    <div className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50">
+    <div className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50 overflow-hidden">
       {/* Header */}
       {isMultiSelectMode ? (
-        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-gray-900 border-b border-neutral-200 dark:border-zinc-800">
+        <div className="absolute top-0 left-0 w-full z-50 px-6 py-4 flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-neutral-200/50 dark:border-zinc-800/50">
           <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">已选择 {selectedMessageIds.size} 条消息</span>
           <button onClick={exitMultiSelectMode} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm">完成</button>
         </div>
       ) : (
-        <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-gray-900 border-b border-neutral-200 dark:border-zinc-800 relative">
-          <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors p-1 -ml-1">
-            <ArrowLeft className="w-5 h-5" strokeWidth={2} />
+        <div className="absolute top-4 w-full h-10 flex justify-between items-center px-4 z-50">
+          <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-gray-600 dark:text-zinc-300 hover:opacity-80 transition-opacity p-2 relative z-10">
+            <ArrowLeft className="w-5 h-5" strokeWidth={2.5} />
           </button>
-          <h2 className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100 absolute left-1/2 -translate-x-1/2 w-fit max-w-[60%] truncate text-center">{displayChatName}</h2>
-          <button onClick={() => setIsChatSettingsOpen(true)} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 active:text-zinc-700 dark:active:text-zinc-300 transition-colors p-1 -mr-1">
-            <SlidersHorizontal size={20} strokeWidth={1.5} />
+          <h2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-base font-bold text-gray-600 dark:text-zinc-300 max-w-[60%] truncate text-center">{displayChatName}</h2>
+          <button onClick={() => setIsChatSettingsOpen(true)} className="text-gray-600 dark:text-zinc-300 hover:opacity-80 transition-opacity p-2 relative z-10">
+            <SlidersHorizontal size={20} strokeWidth={2.5} />
           </button>
         </div>
       )}
 
+      {/* Dynamic CSS Injection */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        /* 通用气泡样式 */
+        .message-user, .message-assistant {
+          max-width: 75%;
+          /* 增加内边距，让文字远离边缘，缓解内部方角的生硬感 */
+          padding: 16px 24px !important;
+          border-radius: 24px !important;
+          position: relative;
+          z-index: 1;
+          
+          /* 
+             调整为 15px，并确保渐变覆盖全边缘。
+             transparent 0% -> 确保最边缘完全不可见。
+          */
+          -webkit-mask-image:
+            linear-gradient(to right, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%),
+            linear-gradient(to bottom, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%);
+          mask-image:
+            linear-gradient(to right, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%),
+            linear-gradient(to bottom, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%);
+          
+          -webkit-mask-composite: intersect;
+          mask-composite: intersect;
+          
+          font-size: 13px;
+          line-height: 1.6;
+        }
+        .message-assistant {
+          background-color: #ffffff !important;
+          color: #1a1a1a !important;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .message-user {
+          background-color: #4b4b50 !important;
+          color: #ffffff !important;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        ${currentChatSettings.customBubbleCSS || ''}
+      ` }} />
+
       {/* Messages */}
       <div 
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto overflow-x-hidden px-6 pt-6 pb-[120px] flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.background ? 'bg-neutral-50 dark:bg-black' : ''}`} 
+        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-20 pb-24 flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.backgroundImage ? 'bg-neutral-50 dark:bg-black' : ''}`} 
         onScroll={(e) => { 
           if (contextMenu.isVisible) closeCtx(); 
           handleScroll(e);
         }}
-        style={currentChatSettings.background ? (currentChatSettings.background.startsWith('data:image') || currentChatSettings.background.startsWith('http') ? { backgroundImage: `url("${currentChatSettings.background}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : { backgroundColor: currentChatSettings.background }) : undefined}
+        style={currentChatSettings.backgroundImage ? { backgroundImage: `url("${currentChatSettings.backgroundImage}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
       >
         <AnimatePresence>
           {chatErrorToast && (<motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-2 left-4 right-4 z-20 px-4 py-2.5 bg-red-500 text-white rounded-xl text-[11px] font-bold shadow-lg text-center">⚠️ API错误: {chatErrorToast}</motion.div>)}
@@ -999,12 +1159,12 @@ export function AiChatScreen(props: AiChatScreenProps) {
         {visibleMessages.map((msg, i) => {
           const globalIndex = startIndex + i;
           return (
-          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group relative items-end px-1 gap-2 w-full`}>
+          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} group relative items-start gap-2 w-full`}>
             {/* Multi-select checkbox */}
             {isMultiSelectMode && (
               <button
                 onClick={() => toggleMessageSelection(msg.id)}
-                className={`flex-shrink-0 self-center transition-colors ${msg.role === 'user' ? 'order-first' : ''}`}
+                className={`flex-shrink-0 self-center transition-colors ${msg.role === 'user' ? 'order-last' : ''}`}
               >
                 {selectedMessageIds.has(msg.id) ? (
                   <CheckSquare size={20} className="text-zinc-800 dark:text-zinc-200" />
@@ -1014,55 +1174,66 @@ export function AiChatScreen(props: AiChatScreenProps) {
               </button>
             )}
 
-            {msg.role !== 'user' && msg.role !== 'system' && currentChatSettings.showAvatar !== false && !msg.isMergedForward && (
-              <div className="flex flex-col justify-end pb-1 flex-shrink-0">
-                <div 
-                  className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
-                  onDoubleClick={() => {
-                    const suffix = currentChatSettings.patSuffix || '';
-                    const patText = `你拍了拍 ${displayChatName} ${suffix}`.trim();
-                    const newMsg: ChatMessage = {
-                      id: generateMsgId(),
-                      role: 'system',
-                      content: patText,
-                      timestamp: Date.now(),
-                      messageType: 'system'
-                    };
-                    const newMsgs = [...currentMessages, newMsg];
-                    if (activeChatContact) setChatHistories(prev => ({ ...prev, [activeChatContact.id]: newMsgs }));
-                    else setChatMessages(newMsgs);
-                  }}
-                >
-                  {charAvatar ? <img src={charAvatar} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback') as HTMLElement)?.classList.remove('hidden'); }} /> : null}
-                  <Bot size={16} className={`text-zinc-500 avatar-fallback ${charAvatar ? 'hidden' : ''}`} />
-                </div>
+            {/* Avatar - Unified before the bubble */}
+            {msg.role !== 'system' && currentChatSettings.showAvatar !== false && !msg.isMergedForward && (
+              <div className="flex flex-col justify-start pt-0.5 flex-shrink-0">
+                {msg.role === 'user' ? (
+                  <div className="avatar-user w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex items-center justify-center">
+                    {userAvatar ? <img src={userAvatar} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback')?.classList.remove('hidden'); }} /> : null}
+                    <User size={16} className={`text-zinc-500 avatar-fallback ${userAvatar ? 'hidden' : ''}`} />
+                  </div>
+                ) : (
+                  <div 
+                    className="avatar-assistant w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
+                    onDoubleClick={() => {
+                      const suffix = currentChatSettings.patSuffix || '';
+                      const patText = `你拍了拍 ${displayChatName} ${suffix}`.trim();
+                      const newMsg: ChatMessage = {
+                        id: generateMsgId(),
+                        role: 'system',
+                        content: patText,
+                        timestamp: Date.now(),
+                        messageType: 'system'
+                      };
+                      const newMsgs = [...currentMessages, newMsg];
+                      if (activeChatContact) setChatHistories(prev => ({ ...prev, [activeChatContact.id]: newMsgs }));
+                      else setChatMessages(newMsgs);
+                    }}
+                  >
+                    {charAvatar ? <img src={charAvatar} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback') as HTMLElement)?.classList.remove('hidden'); }} /> : null}
+                    <Bot size={16} className={`text-zinc-500 avatar-fallback ${charAvatar ? 'hidden' : ''}`} />
+                  </div>
+                )}
               </div>
             )}
 
-            <div
-              onContextMenu={(e) => handleContextMenu(e, globalIndex, msg)}
-              onClick={() => { if (isMultiSelectMode) toggleMessageSelection(msg.id); else if (msg.isMergedForward) setMergedMessageDetails(msg.originalMessages!); }}
-              className={`relative transition-transform duration-200 ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black rounded-2xl' : ''} ${msg.role === 'user' && currentChatSettings.showAvatar !== false ? 'order-first' : ''}`}
-            >
-              {msg.messageType === 'image' && msg.specialData?.imageUrl ? (
-                <ImageMessage imageUrl={msg.specialData.imageUrl} isSelf={msg.role === 'user'} />
-              ) : msg.messageType === 'redpacket' && msg.specialData ? (
-                <RedPacketMessage data={msg.specialData} isSelf={msg.role === 'user'} />
-              ) : msg.messageType === 'gift' && msg.specialData ? (
-                <GiftMessage data={msg.specialData} isSelf={msg.role === 'user'} />
-              ) : msg.messageType === 'custom_gift' && msg.giftData ? (
-                <CustomGiftMessage data={msg.giftData} isSelf={msg.role === 'user'} />
-              ) : msg.messageType === 'location' && msg.locationData ? (
-                <LocationMessage data={msg.locationData!} isSelf={msg.role === 'user'} />
-              ) : msg.messageType === 'system' ? (
-                <div className="w-full flex justify-center my-2 select-none pointer-events-none">
-                  <span className="bg-black/5 dark:bg-white/10 text-zinc-500 dark:text-zinc-400 text-xs px-3 py-1 rounded-full italic">
-                    {msg.content}
-                  </span>
-                </div>
-              ) : (
-                <div className={`max-w-[80%] p-4 rounded-2xl text-sm relative select-text flex flex-col gap-1.5 ${msg.role === 'user' ? 'bg-zinc-800 text-white rounded-tr-none dark:bg-zinc-800 dark:text-zinc-100' : 'bg-white dark:bg-[#1c1c1e] text-zinc-700 dark:text-zinc-200 rounded-tl-none shadow'} ${msg.isMergedForward ? '!bg-zinc-100 !text-zinc-800 dark:!bg-[#1c1c1e] dark:!text-zinc-200 shadow-none cursor-pointer' : ''} ${isMultiSelectMode ? 'cursor-pointer' : ''}`}>
-                  {msg.isMergedForward ? (
+              <div
+                onContextMenu={(e) => handleContextMenu(e, globalIndex, msg)}
+                onClick={() => { if (isMultiSelectMode) toggleMessageSelection(msg.id); else if (msg.isMergedForward) setMergedMessageDetails(msg.originalMessages!); }}
+                className={`relative transition-transform duration-200 ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black rounded-2xl' : ''}`}
+              >
+                {msg.messageType === 'image' && msg.specialData?.imageUrl ? (
+                  <ImageMessage imageUrl={msg.specialData.imageUrl} isSelf={msg.role === 'user'} />
+                ) : msg.messageType === 'redpacket' && msg.specialData ? (
+                  <RedPacketMessage data={msg.specialData} isSelf={msg.role === 'user'} />
+                ) : msg.messageType === 'gift' && msg.specialData ? (
+                  <GiftMessage data={msg.specialData} isSelf={msg.role === 'user'} />
+                ) : msg.messageType === 'custom_gift' && msg.giftData ? (
+                  <CustomGiftMessage data={msg.giftData} isSelf={msg.role === 'user'} />
+                ) : msg.messageType === 'location' && msg.locationData ? (
+                  <LocationMessage data={msg.locationData!} isSelf={msg.role === 'user'} />
+                ) : msg.messageType === 'system' ? (
+                  <div className="w-full flex justify-center my-2 select-none pointer-events-none">
+                    <span className="bg-black/5 dark:bg-white/10 text-zinc-500 dark:text-zinc-400 text-xs px-3 py-1 rounded-full italic">
+                      {msg.content}
+                    </span>
+                  </div>
+                ) : (
+                  <div 
+                    className={`relative w-fit mb-3 text-[13px] leading-relaxed select-text flex flex-col gap-1.5 whitespace-normal break-words ${msg.role === 'user' ? 'self-end ml-auto bubble-user message-user' : 'self-start mr-auto bubble-char message-assistant'} ${msg.isMergedForward ? 'cursor-pointer' : ''} ${isMultiSelectMode ? 'cursor-pointer' : ''}`}
+                  >
+                    {/* 气泡样式使用 .bubble-user 和 .bubble-char 标记，后续可在美化设置中通过覆盖这些类来支持自定义颜色 */}
+                    {msg.isMergedForward ? (
                     <div className="flex flex-col gap-1">
                       <div className="font-bold text-[13px] border-b border-black/10 dark:border-white/10 pb-1.5 mb-1 flex items-center gap-1.5">
                         <span className="w-1 h-3 bg-zinc-400 dark:bg-zinc-500 rounded-full" />
@@ -1080,14 +1251,6 @@ export function AiChatScreen(props: AiChatScreenProps) {
               )}
             </div>
 
-            {msg.role === 'user' && currentChatSettings.showAvatar !== false && !msg.isMergedForward && (
-              <div className="flex flex-col justify-end pb-1 flex-shrink-0">
-                <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex items-center justify-center">
-                  {userAvatar ? <img src={userAvatar} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback')?.classList.remove('hidden'); }} /> : null}
-                  <User size={16} className={`text-zinc-500 avatar-fallback ${userAvatar ? 'hidden' : ''}`} />
-                </div>
-              </div>
-            )}
           </div>
         );})}
         {isAiLoading && <div className="flex justify-start"><div className="bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><RefreshCw size={14} className="animate-spin text-zinc-400" /> 打字中...</div></div>}
@@ -1185,7 +1348,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Normal Input Area (hidden in multi-select mode) */}
       {!isMultiSelectMode && (
-        <div className="absolute bottom-6 left-4 right-4 px-2 py-2.5 bg-white/95 dark:bg-gray-900/95 rounded-[32px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] flex flex-col gap-2 z-30 border border-black/5 dark:border-white/10 backdrop-blur-2xl">
+        <div className="absolute bottom-6 w-full flex justify-center items-center gap-3 px-6 z-40">
           
           {/* Function Panel */}
           <AnimatePresence>
@@ -1211,28 +1374,28 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute bottom-full left-0 right-0 mb-3 bg-white/95 dark:bg-gray-900/95 rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] p-4 z-20 border border-black/5 dark:border-white/10 backdrop-blur-2xl"
+                  className="absolute bottom-full left-4 right-4 mb-4 bg-white/95 dark:bg-zinc-900/95 rounded-[28px] shadow-xl p-4 z-20 border border-black/5 dark:border-white/10 backdrop-blur-2xl"
                 >
-                  <div className="grid grid-cols-4 gap-4">
+                  <div className="grid grid-cols-4 gap-y-6 gap-x-4">
                     {[
-                      { icon: ImageIcon, label: '相册', id: 'album' },
-                      { icon: Camera, label: '拍摄', id: 'camera' },
-                      { icon: Phone, label: '语音/视频', id: 'phone' },
-                      { icon: MapPin, label: '位置', id: 'location' },
-                      { icon: Wallet, label: '红包', id: 'redpacket' },
-                      { icon: Gift, label: '礼物', id: 'gift' },
-                      { icon: Banknote, label: '转账', id: 'transfer' },
-                      { icon: Contact, label: '查岗', id: 'check' },
+                      { icon: ImageIcon, label: '相册', id: 'album', color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/10' },
+                      { icon: Camera, label: '拍摄', id: 'camera', color: 'text-zinc-700 dark:text-zinc-300', bg: 'bg-zinc-100 dark:bg-zinc-800' },
+                      { icon: Phone, label: '语音通话', id: 'phone', color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-500/10' },
+                      { icon: MapPin, label: '位置', id: 'location', color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-500/10' },
+                      { icon: Wallet, label: '红包', id: 'redpacket', color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-500/10' },
+                      { icon: Gift, label: '礼物', id: 'gift', color: 'text-pink-500', bg: 'bg-pink-50 dark:bg-pink-500/10' },
+                      { icon: Banknote, label: '转账', id: 'transfer', color: 'text-yellow-600 dark:text-yellow-500', bg: 'bg-yellow-50 dark:bg-yellow-500/10' },
+                      { icon: Contact, label: '查岗', id: 'check', color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-500/10' },
                     ].map((item, idx) => (
                       <button 
                         key={idx} 
                         onClick={() => handleSendSpecialMessage(item.id)}
                         className="flex flex-col items-center gap-2 group"
                       >
-                        <div className="w-[52px] h-[52px] bg-gray-50 dark:bg-gray-800 rounded-[18px] flex items-center justify-center text-gray-600 dark:text-gray-200 group-active:scale-95 transition-transform">
-                          <item.icon size={24} strokeWidth={1.5} />
+                        <div className={`w-[56px] h-[56px] rounded-[20px] flex items-center justify-center group-active:scale-95 transition-transform ${item.bg}`}>
+                          <item.icon size={26} strokeWidth={1.5} className={item.color} />
                         </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{item.label}</span>
+                        <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">{item.label}</span>
                       </button>
                     ))}
                   </div>
@@ -1242,72 +1405,82 @@ export function AiChatScreen(props: AiChatScreenProps) {
           </AnimatePresence>
 
           {currentChatSettings.isBlocked ? (
-            <div className="flex items-center justify-center p-4 bg-gray-100 dark:bg-gray-800 rounded-2xl text-zinc-400 dark:text-zinc-500 text-sm border border-neutral-200 dark:border-zinc-700">您已被拉黑</div>
+            <div className="flex items-center justify-center w-full py-3 px-4 bg-black/5 dark:bg-white/10 backdrop-blur-md rounded-full border border-black/10 dark:border-white/20 text-zinc-500 text-sm font-medium shadow-sm">
+              您已被拉黑，无法发送消息
+            </div>
           ) : (
             <>
               {quoteToReply && (
-                <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 text-xs shadow-sm">
-                  <div className="flex flex-col flex-1 min-w-0 pr-2 border-l-2 border-gray-300 dark:border-gray-600 pl-2">
-                    <span className="font-bold text-gray-600 dark:text-gray-300">{quoteToReply.sender}</span>
-                    <span className="text-gray-500 dark:text-gray-400 truncate">{quoteToReply.content}</span>
+                <div className="absolute bottom-[100%] left-6 right-6 mb-2 flex items-center justify-between px-4 py-2 bg-black/5 dark:bg-white/10 backdrop-blur-md rounded-2xl border border-black/10 dark:border-white/20 text-xs shadow-sm">
+                  <div className="flex flex-col flex-1 min-w-0 pr-3 border-l-2 border-zinc-400 dark:border-zinc-500 pl-3">
+                    <span className="font-bold text-zinc-700 dark:text-zinc-300 mb-0.5">{quoteToReply.sender}</span>
+                    <span className="text-zinc-600 dark:text-zinc-400 truncate">{quoteToReply.content}</span>
                   </div>
-                  <button onClick={() => setQuoteToReply(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"><Delete size={14} /></button>
-                </div>
-              )}
-              <div className="flex items-end gap-2 relative z-20 w-full px-1">
-                <button 
-                  onClick={() => setShowFunctionPanel(!showFunctionPanel)}
-                  className="w-8 h-8 mb-1 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0"
-                >
-                  <Plus size={22} strokeWidth={1.5} />
-                </button>
-                
-                <div className="flex-1 bg-gray-100 dark:bg-gray-800 rounded-[20px] flex items-end relative overflow-hidden min-w-0">
-                  <textarea 
-                    rows={1}
-                    ref={chatInputRef} 
-                    placeholder="输入消息..." 
-                    className="flex-1 bg-transparent py-[10px] pl-4 pr-11 text-[15px] text-zinc-800 dark:text-zinc-100 outline-none resize-none overflow-hidden leading-tight w-full" 
-                    style={{ height: '40px', minHeight: '40px', maxHeight: '120px' }} 
-                    value={chatInput} 
-                    onChange={(e) => { setChatInput(e.target.value); e.target.style.height = '40px'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }} 
-                    onKeyDown={(e) => { 
-                      if (e.key === 'Enter' && !e.shiftKey) { 
-                        e.preventDefault(); 
-                        if (chatInput.trim()) { addUserMessage(); } else { generateAiReply(); }
-                      } 
-                    }} 
-                  />
-                  <button 
-                    onClick={() => console.log('语音输入待实现')}
-                    className="absolute right-1 bottom-1 w-8 h-8 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all z-10 bg-transparent rounded-full"
-                  >
-                    <Mic size={20} strokeWidth={1.5} />
+                  <button onClick={() => setQuoteToReply(null)} className="p-1.5 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 rounded-full transition-colors">
+                    <X size={14} strokeWidth={2} />
                   </button>
                 </div>
-                
-                <button 
-                  onClick={() => console.log('表情包功能待实现')}
-                  className="w-8 h-8 mb-1 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0"
-                >
-                  <Smile size={22} strokeWidth={1.5} />
-                </button>
-                
-                <button 
-                  onClick={() => {
-                    if (chatInput.trim()) {
-                      addUserMessage();
-                    } else {
-                      generateAiReply();
-                    }
+              )}
+              
+              {/* Plus Button */}
+              <button 
+                onClick={() => setShowFunctionPanel(!showFunctionPanel)}
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${currentChatSettings.backgroundImage ? 'text-white/90 hover:bg-white/20' : 'text-zinc-800 dark:text-white/90 hover:bg-black/10 dark:hover:bg-white/20'} ${showFunctionPanel ? 'rotate-45' : ''}`}
+              >
+                <Plus size={24} strokeWidth={1.5} />
+              </button>
+              
+              {/* Main Input Area */}
+              <div className="flex-1 h-10 flex items-center px-2 bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm transition-colors focus-within:bg-white/20">
+                <textarea 
+                  rows={1}
+                  ref={chatInputRef} 
+                  placeholder="说点什么..." 
+                  className={`flex-1 bg-transparent py-2.5 px-2 text-[14px] outline-none resize-none overflow-hidden leading-tight min-w-0 h-full ${currentChatSettings.backgroundImage ? 'text-white placeholder:text-white/60' : 'text-zinc-800 dark:text-white placeholder:text-zinc-500 dark:placeholder:text-zinc-400'}`} 
+                  value={chatInput} 
+                  onChange={(e) => { 
+                    setChatInput(e.target.value); 
                   }} 
-                  disabled={isAiLoading && !chatInput.trim()} 
-                  className="w-8 h-8 mb-1 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all flex-shrink-0 bg-transparent"
-                  title={chatInput.trim() ? "发送" : "请求AI回复"}
+                  onKeyDown={(e) => { 
+                    if (e.key === 'Enter' && !e.shiftKey) { 
+                      e.preventDefault(); 
+                      if (chatInput.trim()) { addUserMessage(); } else { generateAiReply(); }
+                    } 
+                  }} 
+                />
+
+                {/* Mic Button */}
+                <button 
+                  onClick={() => console.log('语音输入待实现')}
+                  className={`w-7 h-7 flex items-center justify-center active:scale-95 transition-all flex-shrink-0 ${currentChatSettings.backgroundImage ? 'text-white/90' : 'text-zinc-700 dark:text-white/90'} hover:opacity-80`}
                 >
-                  {chatInput.trim() ? <ArrowUp size={22} strokeWidth={1.5} /> : <Zap size={22} strokeWidth={1.5} />}
+                  <Mic size={20} strokeWidth={1.5} />
                 </button>
               </div>
+
+              {/* Emoji Button */}
+              <button 
+                onClick={() => console.log('表情包功能待实现')}
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${currentChatSettings.backgroundImage ? 'text-white/90 hover:bg-white/20' : 'text-zinc-700 dark:text-white/90 hover:bg-black/10 dark:hover:bg-white/20'}`}
+              >
+                <Smile size={24} strokeWidth={1.5} />
+              </button>
+              
+              {/* Send Button */}
+              <button 
+                onClick={() => {
+                  if (chatInput.trim()) {
+                    addUserMessage();
+                  } else {
+                    generateAiReply();
+                  }
+                }} 
+                disabled={isAiLoading && !chatInput.trim()} 
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${chatInput.trim() ? (currentChatSettings.backgroundImage ? 'bg-white/90 text-black border-white/90' : 'bg-zinc-800 text-white dark:bg-white/90 dark:text-black border-zinc-800 dark:border-white/90') : (currentChatSettings.backgroundImage ? 'text-white hover:bg-white/20' : 'text-zinc-500 dark:text-white/70 hover:bg-black/10 dark:hover:bg-white/20')}`}
+                title={chatInput.trim() ? "发送" : "请求AI回复"}
+              >
+                {chatInput.trim() ? <ArrowUp size={20} strokeWidth={1.5} /> : <Zap size={20} strokeWidth={1.5} />}
+              </button>
             </>
           )}
         </div>
@@ -1518,9 +1691,73 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
   const [showAvatar, setShowAvatar] = useState(currentChatSettings.showAvatar !== false);
   const [patSuffix, setPatSuffix] = useState(currentChatSettings.patSuffix || '');
   const [longDistanceMode, setLongDistanceMode] = useState(currentChatSettings.longDistanceMode || false);
-  const [activeTab, setActiveTab] = useState<'general' | 'memory'>('general');
+  const [backgroundImage, setBackgroundImage] = useState(currentChatSettings.backgroundImage || '');
+  const [customBubbleCSS, setCustomBubbleCSS] = useState(currentChatSettings.customBubbleCSS || '');
+  const [globalChatCSS, setGlobalChatCSS] = useState(() => localStorage.getItem('aiphone_global_chat_css') || '');
+  const [activeTab, setActiveTab] = useState<'general' | 'voice' | 'memory' | 'beauty'>('general');
+  const [voicePref, setVoicePref] = useState<VoicePreference>({ mode: 'preset', voiceId: '' });
+
+  useEffect(() => {
+    setVoicePref(getVoicePreference());
+  }, []);
+
+  const handleVoicePrefChange = (mode: 'preset' | 'custom', voiceId: string) => {
+    const newPref = { mode, voiceId };
+    setVoicePref(newPref);
+    saveVoicePreference(newPref);
+  };
 
   const curMem = chatMemories[currentChatId] || [];
+  const presetColors = ['#f4f4f5', '#fee2e2', '#fef3c7', '#dcfce7', '#e0e7ff', '#f3e8ff', '#fce7f3', '#18181b', '#3f3f46'];
+  const isImageBg = bg.startsWith('data:image') || bg.startsWith('http');
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        showToast('不支持的文件格式');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        if (!result) return;
+        
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > 800) {
+              height = Math.round((height * 800) / width);
+              width = 800;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, width, height);
+              ctx.drawImage(img, 0, 0, width, height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+              setBg(dataUrl);
+            } else {
+              showToast('图片处理失败');
+            }
+          } catch (err) {
+            showToast('图片加载失败');
+          }
+        };
+        img.onerror = () => showToast('图片加载失败');
+        img.src = result;
+      };
+      reader.onerror = () => showToast('图片加载失败');
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSave = () => {
     setChatSettings(prev => ({
@@ -1537,8 +1774,21 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
         showAvatar,
         patSuffix,
         longDistanceMode,
+        backgroundImage,
+        customBubbleCSS,
       }
     }));
+    localStorage.setItem('aiphone_global_chat_css', globalChatCSS);
+    
+    // Apply global CSS immediately
+    let styleEl = document.getElementById('global-chat-css');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'global-chat-css';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = globalChatCSS;
+
     onClose();
   };
 
@@ -1636,7 +1886,7 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
     setTimeout(() => setAutoSummaryStatus(''), 3000);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBackgroundImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
@@ -1655,9 +1905,9 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
             let width = img.width;
             let height = img.height;
             
-            if (width > 800) {
-              height = Math.round((height * 800) / width);
-              width = 800;
+            if (width > 1080) {
+              height = Math.round((height * 1080) / width);
+              width = 1080;
             }
             
             canvas.width = width;
@@ -1668,7 +1918,7 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
               ctx.fillRect(0, 0, width, height);
               ctx.drawImage(img, 0, 0, width, height);
               const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-              setBg(dataUrl);
+              setBackgroundImage(dataUrl);
             } else {
               showToast('图片处理失败');
             }
@@ -1684,29 +1934,47 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
     }
   };
 
-  const isImageBg = bg.startsWith('data:image') || bg.startsWith('http');
-  const presetColors = ['#f4f4f5', '#fee2e2', '#fef3c7', '#dcfce7', '#e0e7ff', '#f3e8ff', '#fce7f3', '#18181b', '#3f3f46'];
-
   return (
-    <div className="absolute inset-0 z-[60] bg-neutral-50 dark:bg-black flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-      <div className="px-6 py-4 flex items-center justify-between border-b border-neutral-200 dark:border-zinc-800 bg-neutral-50 dark:bg-[#1c1c1e] relative">
-        <button onClick={onClose} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors p-1 -ml-1">
-          <ArrowLeft className="w-5 h-5" strokeWidth={2} />
+    <div className="absolute inset-0 z-[60] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-300 dark:from-[#1c1c1e] dark:via-black dark:to-[#1c1c1e] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="w-full flex justify-between items-center px-4 h-14 relative z-20 mt-2">
+        <button 
+          onClick={onClose} 
+          className="w-10 h-10 rounded-full bg-white/50 dark:bg-zinc-800/50 shadow-sm flex items-center justify-center text-gray-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors flex-shrink-0"
+        >
+          <ArrowLeft size={20} strokeWidth={2} />
         </button>
-        <span className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100 absolute left-1/2 -translate-x-1/2 w-fit max-w-[50%] truncate text-center">{displayChatName} 设置</span>
-        <button onClick={handleSave} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm flex items-center gap-1">
-          <Check size={14} />保存
+        
+        <div className="flex-1 mx-4 max-w-[240px] flex justify-center gap-2">
+          {[
+            { id: 'general', label: '通用' },
+            { id: 'beauty', label: '美化' },
+            { id: 'memory', label: '记忆' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`bg-white/20 backdrop-blur-md border border-white/30 rounded-full px-4 py-1.5 text-sm transition-all duration-300 ${
+                (activeTab === tab.id || (tab.id === 'general' && activeTab === 'voice')) 
+                  ? 'bg-white/40 text-gray-900 font-bold' 
+                  : 'text-gray-500'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <button 
+          onClick={handleSave}
+          className="px-4 h-10 rounded-full bg-black dark:bg-white text-white dark:text-black text-sm font-bold flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all flex-shrink-0"
+        >
+          <Check size={14} />
+          保存
         </button>
       </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-neutral-200 dark:border-zinc-800 bg-neutral-50 dark:bg-[#1c1c1e]">
-          <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${activeTab === 'general' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-100' : 'text-zinc-400 dark:text-zinc-600 border-transparent'}`}>通用设置</button>
-          <button onClick={() => setActiveTab('memory')} className={`flex-1 py-3 text-xs font-bold transition-colors border-b-2 ${activeTab === 'memory' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-100' : 'text-zinc-400 dark:text-zinc-600 border-transparent'}`}>记忆管理</button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5 bg-neutral-50 dark:bg-black">
-          {activeTab === 'general' && (
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
+          {(activeTab === 'general' || activeTab === 'voice') && (
             <>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">备注名</label>
@@ -1719,38 +1987,6 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                 <span className="text-[10px] text-zinc-400">双击对方头像触发拍一拍</span>
               </div>
               
-              <div className="flex flex-col gap-3 py-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">聊天背景</label>
-                  <button onClick={() => setBg('')} className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">重置</button>
-                </div>
-                
-                <div className="flex gap-2 flex-wrap">
-                  <button onClick={() => setBg('')} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center ${!bg ? 'border-zinc-800 dark:border-zinc-200' : 'border-zinc-200 dark:border-zinc-700'} bg-zinc-100 dark:bg-zinc-800 text-zinc-400`}><X size={14} /></button>
-                  {presetColors.map(c => (
-                    <button key={c} onClick={() => setBg(c)} className={`w-8 h-8 rounded-full border-2 ${bg === c ? 'border-blue-500' : 'border-transparent shadow-sm'}`} style={{ backgroundColor: c }} />
-                  ))}
-                </div>
-                
-                <label className="relative mt-2 w-full h-32 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex flex-col items-center justify-center text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer overflow-hidden group">
-                  {isImageBg ? (
-                    <>
-                      <img src={bg} alt="背景预览" className="w-full h-full object-cover absolute inset-0 z-0" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
-                        <span className="text-white text-sm font-bold flex items-center gap-2"><Upload size={16} /> 更换图片</span>
-                      </div>
-                    </>
-                  ) : (
-                     <>
-                       <Upload size={24} className="mb-2" />
-                       <span className="text-sm font-bold">从相册选择图片</span>
-                       <span className="text-xs text-zinc-400 mt-1">支持 JPG, PNG 等格式</span>
-                     </>
-                  )}
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                </label>
-              </div>
-
               <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800 mt-2">
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">置顶聊天</span>
                 <button onClick={() => setPinned(!pinned)} className={`w-10 h-5 rounded-full transition-colors relative border ${pinned ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${pinned ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
@@ -1773,6 +2009,59 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
               </div>
               <button onClick={handleExportChat} className="mt-2 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-3 border-none flex items-center justify-center gap-2"><Download size={16} /> 导出聊天记录</button>
               <button onClick={handleClearChat} className="mt-2 py-3 bg-red-50 dark:bg-[#1c1c1e] text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-3 border-none">清空聊天记录</button>
+
+            {/* Voice Settings Section merged into General */}
+            <div className="flex flex-col gap-6 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+              <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 px-1">语音设置</h3>
+              <div className="flex flex-col gap-3">
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">预设声音</label>
+                <div className="flex flex-col gap-2">
+                  {PRESET_VOICES.map(voice => (
+                    <button
+                      key={voice.id}
+                      onClick={() => handleVoicePrefChange('preset', voice.id)}
+                      className={`flex items-center gap-3 p-3 rounded-xl transition-colors text-left ${voicePref.mode === 'preset' && voicePref.voiceId === voice.id ? 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900' : 'bg-white dark:bg-[#1c1c1e] border border-neutral-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${voicePref.mode === 'preset' && voicePref.voiceId === voice.id ? 'border-white dark:border-zinc-900' : 'border-zinc-300 dark:border-zinc-600'}`}>
+                        {voicePref.mode === 'preset' && voicePref.voiceId === voice.id && <div className="w-2 h-2 rounded-full bg-white dark:bg-zinc-900" />}
+                      </div>
+                      <span className="text-sm font-bold">{voice.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="flex flex-col gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">自定义声音 (Voice ID)</label>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      if (voicePref.mode !== 'custom') {
+                        handleVoicePrefChange('custom', voicePref.voiceId);
+                      }
+                    }}
+                    className="w-4 h-4 rounded-full border-2 flex items-center justify-center border-zinc-300 dark:border-zinc-600 flex-shrink-0"
+                  >
+                    {voicePref.mode === 'custom' && <div className="w-2 h-2 rounded-full bg-zinc-800 dark:bg-zinc-200" />}
+                  </button>
+                  <input 
+                    type="text" 
+                    placeholder="输入 MiniMax Voice ID" 
+                    className={`flex-1 bg-white dark:bg-[#1c1c1e] p-3 rounded-xl text-sm outline-none border transition-colors ${voicePref.mode === 'custom' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-500' : 'text-zinc-400 dark:text-zinc-600 border-neutral-200 dark:border-zinc-800'}`} 
+                    value={voicePref.mode === 'custom' ? voicePref.voiceId : ''} 
+                    onChange={e => {
+                      handleVoicePrefChange('custom', e.target.value);
+                    }}
+                    onFocus={() => {
+                      if (voicePref.mode !== 'custom') {
+                        handleVoicePrefChange('custom', voicePref.voiceId);
+                      }
+                    }}
+                  />
+                </div>
+                <p className="text-[10px] text-zinc-400 px-7">你可以前往 MiniMax 开放平台克隆或选择其他音色，在此填入 Voice ID。</p>
+              </div>
+            </div>
             </>
           )}
 
@@ -1820,6 +2109,96 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                   </div>
                 ))
               )}
+            </>
+          )}
+
+          {activeTab === 'beauty' && (
+            <>
+              <div className="flex flex-col gap-3 py-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">聊天背景/壁纸</label>
+                  <button onClick={() => setBackgroundImage('')} className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">重置背景</button>
+                </div>
+                
+                <label className="relative mt-2 w-full h-40 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex flex-col items-center justify-center text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer overflow-hidden group">
+                  {backgroundImage ? (
+                    <>
+                      <img src={backgroundImage} alt="背景预览" className="w-full h-full object-cover absolute inset-0 z-0" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                        <span className="text-white text-sm font-bold flex items-center gap-2"><Upload size={16} /> 更换背景</span>
+                      </div>
+                    </>
+                  ) : (
+                     <>
+                       <Upload size={24} className="mb-2" />
+                       <span className="text-sm font-bold">从相册选择图片</span>
+                       <span className="text-xs text-zinc-400 mt-1">支持 JPG, PNG 等格式</span>
+                     </>
+                  )}
+                  <input type="file" accept="image/*" className="hidden" onChange={handleBackgroundImageUpload} />
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-2 mt-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">当前聊天气泡美化 (CSS)</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => setCustomBubbleCSS(prev => prev + (prev ? '\n' : '') + '.message-user {\n  background: #e0f7fa;\n  border-radius: 20px 12px 20px 12px;\n}\n.message-assistant {\n  background: #ffffff;\n  border: 1px solid #ddd;\n}')} className="px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] text-zinc-700 dark:text-zinc-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">填入示例</button>
+                    <button onClick={() => setCustomBubbleCSS('')} className="px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] text-zinc-700 dark:text-zinc-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">重置</button>
+                  </div>
+                </div>
+                <textarea 
+                  placeholder="编写CSS代码自定义当前聊天气泡样式..." 
+                  className="w-full bg-gray-100 dark:bg-gray-800 p-3 rounded-xl text-sm font-mono text-zinc-800 dark:text-zinc-100 outline-none border-none transition-colors overflow-auto" 
+                  style={{ height: '150px' }}
+                  value={customBubbleCSS} 
+                  onChange={e => setCustomBubbleCSS(e.target.value)} 
+                />
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400">支持 CSS 类名：.message-user（用户气泡）、.message-assistant（AI 气泡）、.chat-container（聊天容器）</span>
+              </div>
+
+              <div className="flex flex-col gap-2 mt-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">全局聊天界面美化 (CSS)</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => setGlobalChatCSS(prev => prev + (prev ? '\n' : '') + '.message-user {\n  background: #e0f7fa;\n  border-radius: 20px 12px 20px 12px;\n}\n.message-assistant {\n  background: #ffffff;\n  border: 1px solid #ddd;\n}')} className="px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] text-zinc-700 dark:text-zinc-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">填入示例</button>
+                    <button onClick={() => setGlobalChatCSS('')} className="px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] text-zinc-700 dark:text-zinc-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">重置</button>
+                  </div>
+                </div>
+                <textarea 
+                  placeholder="编写CSS代码应用于所有聊天界面..." 
+                  className="w-full bg-gray-100 dark:bg-gray-800 p-3 rounded-xl text-sm font-mono text-zinc-800 dark:text-zinc-100 outline-none border-none transition-colors overflow-auto" 
+                  style={{ height: '150px' }}
+                  value={globalChatCSS} 
+                  onChange={e => setGlobalChatCSS(e.target.value)} 
+                />
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400">支持 CSS 类名：.message-user（用户气泡）、.message-assistant（AI 气泡）、.chat-container（聊天容器）</span>
+              </div>
+
+              <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/30">
+                <h4 className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2">如何自定义气泡样式？</h4>
+                <div className="text-[11px] text-blue-600 dark:text-blue-400 space-y-1 font-mono">
+                  <p>你可以使用以下 CSS 类名来定制聊天气泡：</p>
+                  <ul className="list-disc pl-4 space-y-0.5 my-2">
+                    <li>.message-user (用户气泡)</li>
+                    <li>.message-assistant (AI气泡)</li>
+                    <li>.chat-container (聊天容器)</li>
+                    <li>.avatar-user (用户头像)</li>
+                    <li>.avatar-assistant (AI头像)</li>
+                  </ul>
+                  <p>示例：</p>
+                  <pre className="bg-white/50 dark:bg-black/20 p-2 rounded mt-1 overflow-x-auto">
+{`.message-user {
+  background: #e0f7fa;
+  border-radius: 20px 12px 20px 12px;
+}
+.message-assistant {
+  background: #ffffff;
+  border: 1px solid #ddd;
+}`}
+                  </pre>
+                </div>
+              </div>
             </>
           )}
         </div>

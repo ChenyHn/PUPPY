@@ -119,7 +119,7 @@ async function generatePersonaByAI(
   try {
     const url = `${normalizeBaseUrl(apiConfig.baseUrl)}/chat/completions`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     const resp = await fetch(url, {
       method: 'POST',
@@ -195,7 +195,9 @@ async function generatePersonaByAI(
     console.error('AI persona generation failed:', err);
     // Fallback to simple generation
     try {
-      return generateFallbackPersona(accountName);
+      const fallback = generateFallbackPersona(accountName);
+      (fallback as any)._isFallback = true;
+      return fallback;
     } catch (fallbackErr) {
       console.error('Fallback persona generation also failed:', fallbackErr);
       return null;
@@ -310,7 +312,23 @@ function AddFriendModalInner({
       if (!newPersona) {
         setSearchResult({ found: false, error: '生成失败，请重试' });
       } else {
-        setSearchResult({ found: true, contact: newPersona, isExisting: false });
+        if ((newPersona as any)._isFallback) {
+          // 提示网络异常
+          setAddError('网络异常，已创建默认联系人');
+          // 仍然允许添加
+        }
+        
+        // 确保必填字段存在
+        const validatedPersona = {
+          ...newPersona,
+          name: newPersona.name || '无名氏',
+          chatId: newPersona.chatId || generateChatId(),
+          avatar: newPersona.avatar || null,
+          gender: newPersona.gender || '未知',
+          chatName: newPersona.chatName || newPersona.name || '无名氏',
+        };
+        
+        setSearchResult({ found: true, contact: validatedPersona, isExisting: false });
       }
     } catch (err) {
       console.error('[AddFriendModal] Search error:', err);

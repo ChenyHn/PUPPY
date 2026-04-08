@@ -104,6 +104,8 @@ export interface ChatSettings {
   lastInteractionTime?: number;
   patSuffix?: string;
   longDistanceMode?: boolean;
+  backgroundImage?: string;
+  customBubbleCSS?: string;
 }
 
 export interface FavoriteItem {
