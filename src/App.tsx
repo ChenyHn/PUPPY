@@ -80,6 +80,7 @@ import { HeartbeatNPC } from './screens/HeartbeatNPC';
 import { MusicScreen } from './components/MusicScreen';
 import { ShoppingScreen } from './components/shopping/ShoppingScreen';
 import { getOrders, updateOrderStatus } from './services/shoppingService';
+import { StatusBar } from './components/StatusBar';
 
 import type { ChatMessage } from './types';
 
@@ -161,17 +162,6 @@ const GlassCard = ({ children, className = "", blur, opacity, darkOpacity, ...pr
     </div>
   );
 };
-
-const StatusBar = ({ className = "", time }: { className?: string, time: string }) => (
-  <div className={`flex justify-between items-center px-8 py-3 font-semibold text-[12px] text-zinc-800 dark:text-zinc-200 backdrop-blur-md ${className}`}>
-    <span>{time}</span>
-    <div className="flex items-center gap-2">
-      <Signal size={14} strokeWidth={2} />
-      <Wifi size={14} strokeWidth={2} />
-      <Battery size={14} strokeWidth={2} className="rotate-90" />
-    </div>
-  </div>
-);
 
 const hexToRgb = (hex: string) => {
   const r = parseInt(hex.slice(1, 3), 16) || 0;
@@ -516,6 +506,11 @@ export default function App() {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
+  const [showStatusBar, setShowStatusBar] = useState<boolean>(() => {
+    const saved = localStorage.getItem('aiphone_show_status_bar');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
   // API Config State
   const [apiConfig, setApiConfig] = useState<ApiConfig>(() => {
     const saved = localStorage.getItem('aiphone_api_config');
@@ -649,6 +644,12 @@ export default function App() {
       if (savedOpacity !== null) {
         setComponentBgOpacity(Number(savedOpacity));
       }
+
+      // 同步状态栏开关
+      const savedStatusBar = localStorage.getItem('aiphone_show_status_bar');
+      if (savedStatusBar !== null) {
+        setShowStatusBar(JSON.parse(savedStatusBar));
+      }
     };
 
     window.addEventListener('storage', handleStorageChange);
@@ -758,6 +759,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('aiphone_password_enabled', JSON.stringify(isPasswordEnabled));
   }, [isPasswordEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('aiphone_show_status_bar', JSON.stringify(showStatusBar));
+  }, [showStatusBar]);
 
   useEffect(() => {
     if (avatar) localStorage.setItem('aiphone_avatar', avatar);
@@ -1122,6 +1127,15 @@ export default function App() {
       {/* Mobile Frame */}
       <div id="phone-container" className={`relative w-full h-full lg:max-w-[390px] lg:max-h-[844px] lg:h-[844px] lg:rounded-[44px] lg:border-[12px] lg:border-white dark:lg:border-zinc-800 lg:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:lg:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}>
         
+        {/* Global StatusBar - single instance for entire app */}
+        {showStatusBar ? (
+          <div className="absolute top-0 left-0 right-0 z-[100]">
+            <StatusBar />
+          </div>
+        ) : (
+          (console.log("Status Bar is hidden") as any) || null
+        )}
+
         <AnimatePresence mode="wait">
           {/* 1. Splash Screen */}
           {screen === 'splash' && (
@@ -1189,8 +1203,6 @@ export default function App() {
               ) : (
                 <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 dark:from-black dark:via-zinc-900 dark:to-black pointer-events-none transition-colors" />
               )}
-              <StatusBar time={time} className={`z-10 ${wallpaper ? 'text-white' : 'bg-white/10 dark:bg-black/10 text-zinc-800 dark:text-zinc-200'}`} />
-              
               <div className="flex-1 flex flex-col items-center justify-start pt-24 relative z-10">
                 <span className={`text-[84px] font-thin tracking-tighter leading-none ${wallpaper ? 'text-white' : 'text-zinc-700 dark:text-zinc-200'}`}>{time}</span>
                 <span className={`text-sm font-medium mt-4 tracking-[0.2em] uppercase ${wallpaper ? 'text-white/80' : 'text-zinc-500 dark:text-zinc-400'}`}>{date}</span>
@@ -1276,6 +1288,9 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* ===== Global Content Container: offset by 32px (h-8) when status bar is visible ===== */}
+        <div className={`absolute left-0 right-0 bottom-0 transition-all duration-300 ${showStatusBar ? 'top-8' : 'top-0'}`}>
+
         {/* ===== Layer 2: Home Screen (always rendered when past auth) ===== */}
         {isPostAuth && (
           <div 
@@ -1308,10 +1323,8 @@ export default function App() {
                 onChange={handleWallpaperChange} 
               />
 
-              <StatusBar time={time} className={`z-10 ${wallpaper ? 'text-white' : 'backdrop-blur-xl bg-white/20 dark:bg-black/20 text-zinc-800 dark:text-zinc-200'}`} />
-              
               <div 
-                className="flex-1 flex flex-col relative z-10"
+                className={`flex-1 flex flex-col relative z-10 pt-2`}
                 onDoubleClick={(e) => {
                   const target = e.target as HTMLElement;
                   const isInteractive = target.closest('button') || target.closest('input') || target.closest('.app-icon-container') || target.closest('.widget-container');
@@ -1464,10 +1477,8 @@ export default function App() {
               transition={{ duration: 0 }}
               className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50"
             >
-              <StatusBar time={time} className="bg-[#F5F5F5] dark:bg-black text-black dark:text-zinc-200 z-10" />
-              
               {/* Top Nav */}
-              <div className="px-6 py-4 flex justify-between items-center bg-[#F5F5F5] dark:bg-black border-none">
+              <div className="pt-4 px-6 py-4 flex justify-between items-center bg-[#F5F5F5] dark:bg-black border-none">
                 <div className="w-10">
                   <button onClick={() => setScreen('home')} className="p-1.5 bg-white dark:bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 active:text-zinc-800 dark:active:text-white transition-colors shadow-sm">
                     <LogOut size={18} strokeWidth={1.5} />
@@ -1938,7 +1949,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 z-50"
+              className="absolute inset-0 z-50 flex flex-col"
             >
               <AiChatScreen
             activeChatContact={activeChatContact}
@@ -1970,7 +1981,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 z-50"
+              className="absolute inset-0 z-50 flex flex-col"
             >
               <MusicScreen
                 onBack={() => setScreen('home')}
@@ -1992,7 +2003,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 z-50"
+              className="absolute inset-0 z-50 flex flex-col"
             >
               <ShoppingScreen
                 onBack={() => setScreen('home')}
@@ -2014,7 +2025,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 z-50"
+              className="absolute inset-0 z-50 flex flex-col"
             >
               <HeartbeatNPC 
                 apiConfig={apiConfig}
@@ -2135,6 +2146,8 @@ export default function App() {
           isOpen={showPaymentSecurityModal}
           onClose={() => setShowPaymentSecurityModal(false)}
         />
+
+        </div>{/* End of Global Content Container */}
       </div>
 
       {/* 预留自定义 CSS 接口 */}

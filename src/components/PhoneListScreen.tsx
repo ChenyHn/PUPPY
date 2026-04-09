@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Plus, Users, Pencil, Delete, CircleUserRound } from 'lucide-react';
-import { StatusBar, GlassCard } from './Shared';
+import { GlassCard } from './Shared';
 import { Persona } from '../types';
 
 export const PhoneListScreen = ({ onBack, time, personas, onEditPersona, onAddPersona, onDeletePersona }: any) => {
@@ -14,7 +14,6 @@ export const PhoneListScreen = ({ onBack, time, personas, onEditPersona, onAddPe
       transition={{ duration: 0 }}
       className="absolute inset-0 bg-white dark:bg-black z-50 flex flex-col"
     >
-      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 dark:text-zinc-200 backdrop-blur-md z-10" />
       
       <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e]">
         <div className="flex items-center gap-4">

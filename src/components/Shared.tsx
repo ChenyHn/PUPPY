@@ -1,5 +1,4 @@
 import React from 'react';
-import { Signal, Wifi, Battery } from 'lucide-react';
 
 export const GlassCard = ({ children, className = "", blur, opacity, ...props }: { children: React.ReactNode, className?: string, blur?: string, opacity?: string, [key: string]: any }) => {
   return (
@@ -19,14 +18,3 @@ export const GlassCard = ({ children, className = "", blur, opacity, ...props }:
     </div>
   );
 };
-
-export const StatusBar = ({ className = "", time }: { className?: string, time: string }) => (
-  <div className={`flex justify-between items-center px-8 py-3 font-semibold text-[12px] text-zinc-800 dark:text-zinc-200 backdrop-blur-md bg-white/10 transition-colors ${className}`}>
-    <span>{time}</span>
-    <div className="flex items-center gap-2">
-      <Signal size={14} strokeWidth={2} />
-      <Wifi size={14} strokeWidth={2} />
-      <Battery size={14} strokeWidth={2} className="rotate-90" />
-    </div>
-  </div>
-);

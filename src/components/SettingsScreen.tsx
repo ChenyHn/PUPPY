@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Check, Globe2, ShieldCheck, RefreshCw, Sparkles, MessageSquare, Type, Wifi, Download, Smartphone, Upload, AlertCircle } from 'lucide-react';
-import { StatusBar, GlassCard } from './Shared';
+import { GlassCard } from './Shared';
 import { ApiConfig } from '../types';
 
 /**
@@ -28,6 +28,27 @@ export const SettingsScreen = ({
   onBack, 
   time
 }: any) => {
+  const [showStatusBar, setShowStatusBar] = useState<boolean>(() => {
+    const saved = localStorage.getItem('aiphone_show_status_bar');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  // 监听 localStorage 变化以同步状态栏开关
+  useEffect(() => {
+    const syncStatusBar = () => {
+      const saved = localStorage.getItem('aiphone_show_status_bar');
+      if (saved !== null) {
+        setShowStatusBar(JSON.parse(saved));
+      }
+    };
+    window.addEventListener('storage', syncStatusBar);
+    const interval = setInterval(syncStatusBar, 300);
+    return () => {
+      window.removeEventListener('storage', syncStatusBar);
+      clearInterval(interval);
+    };
+  }, []);
+
   const [tempConfig, setTempConfig] = useState(apiConfig);
   const [showKey, setShowKey] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -350,9 +371,11 @@ export const SettingsScreen = ({
         )}
       </AnimatePresence>
 
-      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
+      {/* 顶部渐变遮挡条 */}
+      <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[#E5E5E5] dark:from-[#1c1c1e] to-transparent pointer-events-none z-30" />
+
       
-      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800">
+      <div className="px-6 pt-4 pb-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800 relative z-40">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 min-w-[44px] min-h-[44px] flex items-center justify-center -ml-2 transition-colors">
             <ArrowLeft size={24} strokeWidth={1.5} />

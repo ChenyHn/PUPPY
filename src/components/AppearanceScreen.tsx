@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Check, Smartphone, Lock, Unlock, Delete, Image as ImageIcon, Globe2, Plus, Sparkles, MessageCircle, Music, FileText, BookOpen, Settings, Palette, Phone, Globe, RotateCcw, CloudSun, Layers, Type, Shield, ShieldCheck, Layout, Grid3x3, MoreHorizontal, Info, ChevronRight, Sun, Moon } from 'lucide-react';
-import { StatusBar, GlassCard } from './Shared';
+import { GlassCard } from './Shared';
 
 interface CardItem {
   id: string;
@@ -214,7 +214,13 @@ export const AppearanceScreen = ({
   const [newPassword, setNewPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
+  const [showStatusBar, setShowStatusBar] = useState<boolean>(() => {
+    const saved = localStorage.getItem('aiphone_show_status_bar');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
   const [tempSettings, setTempSettings] = useState({
+    showStatusBar,
     isLockScreenEnabled,
     isPasswordEnabled,
     fontLink,
@@ -228,6 +234,8 @@ export const AppearanceScreen = ({
   });
 
   const handleSave = () => {
+    setShowStatusBar(tempSettings.showStatusBar);
+    localStorage.setItem('aiphone_show_status_bar', JSON.stringify(tempSettings.showStatusBar));
     setIsLockScreenEnabled(tempSettings.isLockScreenEnabled);
     setIsPasswordEnabled(tempSettings.isPasswordEnabled);
     setFontLink(tempSettings.fontLink);
@@ -367,9 +375,8 @@ export const AppearanceScreen = ({
       transition={{ duration: 0 }}
       className="absolute inset-0 bg-zinc-50 dark:bg-black flex flex-col z-50"
     >
-      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
       
-      <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800 transition-colors">
+      <div className="px-6 pt-4 pb-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800 transition-colors">
         <div className="flex items-center gap-4">
           <button onClick={() => activeView === 'home' ? onBack() : setActiveView('home')} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 p-1 -ml-1 transition-colors">
             <ArrowLeft size={24} strokeWidth={1.5} />
@@ -458,7 +465,25 @@ export const AppearanceScreen = ({
             transition={{ duration: 0.2 }}
             className="flex flex-col gap-4"
           >
-            <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">隐私防护</span>
+            <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1">系统显示</span>
+            <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-row justify-between items-center">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Smartphone size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
+                    <span className="text-sm text-zinc-700 dark:text-zinc-100 whitespace-nowrap">显示状态栏</span>
+                  </div>
+                  <button 
+                    onClick={() => setTempSettings(prev => ({ ...prev, showStatusBar: !prev.showStatusBar }))}
+                    className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${tempSettings.showStatusBar ? 'bg-zinc-800 dark:bg-zinc-300' : 'bg-zinc-200 dark:bg-zinc-700'}`}
+                  >
+                    <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-[#1c1c1e] rounded-full transition-all ${tempSettings.showStatusBar ? 'left-6' : 'left-1'}`} />
+                  </button>
+                </div>
+              </div>
+            </GlassCard>
+
+            <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-widest uppercase px-1 mt-2">隐私防护</span>
             <GlassCard className="p-4 dark:!bg-[#1c1c1e] dark:!border-zinc-800" opacity="0.8" blur="10px">
               <div className="flex flex-col gap-4">
                 <div className="flex flex-row justify-between items-center">

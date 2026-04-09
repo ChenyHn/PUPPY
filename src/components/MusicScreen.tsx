@@ -6,7 +6,6 @@ import {
   Trash2, ListMusic, Upload, X, ChevronRight,
   MoreVertical, Users, FolderPlus, Share2
 } from 'lucide-react';
-import { StatusBar } from './Shared';
 import { musicDB } from '../utils/musicDB';
 import type { StoredSong } from '../utils/musicDB';
 import type { Persona } from '../types';
@@ -650,7 +649,6 @@ export const MusicScreen = ({
         onChange={handleFileUpload}
       />
 
-      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
 
       {/* Header */}
       <div className="px-4 py-3 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800">

@@ -1072,12 +1072,12 @@ export function AiChatScreen(props: AiChatScreenProps) {
     <div className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50 overflow-hidden">
       {/* Header */}
       {isMultiSelectMode ? (
-        <div className="absolute top-0 left-0 w-full z-50 px-6 py-4 flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-neutral-200/50 dark:border-zinc-800/50">
+        <div className="absolute top-2 left-0 w-full z-50 px-6 pt-3 pb-4 flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-neutral-200/50 dark:border-zinc-800/50">
           <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">已选择 {selectedMessageIds.size} 条消息</span>
           <button onClick={exitMultiSelectMode} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm">完成</button>
         </div>
       ) : (
-        <div className="absolute top-4 w-full h-10 flex justify-between items-center px-4 z-50">
+        <div className="absolute top-2 w-full h-10 flex justify-between items-center px-4 z-50">
           <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-gray-600 dark:text-zinc-300 hover:opacity-80 transition-opacity p-2 relative z-10">
             <ArrowLeft className="w-5 h-5" strokeWidth={2.5} />
           </button>
@@ -1090,49 +1090,26 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Dynamic CSS Injection */}
       <style dangerouslySetInnerHTML={{ __html: `
-        /* 通用气泡样式 */
+        /* 统一气泡样式：白色磨砂 + 大圆角矩形 */
         .message-user, .message-assistant {
-          max-width: 75%;
-          /* 增加内边距，让文字远离边缘，缓解内部方角的生硬感 */
-          padding: 16px 24px !important;
-          border-radius: 24px !important;
+          padding: 6px 16px;
+          border-radius: 1rem;
           position: relative;
           z-index: 1;
-          
-          /* 
-             调整为 15px，并确保渐变覆盖全边缘。
-             transparent 0% -> 确保最边缘完全不可见。
-          */
-          -webkit-mask-image:
-            linear-gradient(to right, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%),
-            linear-gradient(to bottom, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%);
-          mask-image:
-            linear-gradient(to right, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%),
-            linear-gradient(to bottom, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%);
-          
-          -webkit-mask-composite: intersect;
-          mask-composite: intersect;
-          
           font-size: 13px;
           line-height: 1.6;
+          background-color: rgba(255, 255, 255, 0.3);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border: 1px solid rgba(255, 255, 255, 0.5);
+          color: #111827;
         }
-        .message-assistant {
-          background-color: #ffffff !important;
-          color: #1a1a1a !important;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
-        .message-user {
-          background-color: #4b4b50 !important;
-          color: #ffffff !important;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        ${currentChatSettings.customBubbleCSS || ''}
       ` }} />
 
       {/* Messages */}
       <div 
         ref={scrollContainerRef}
-        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-20 pb-24 flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.backgroundImage ? 'bg-neutral-50 dark:bg-black' : ''}`} 
+        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.5rem] pb-28 flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.backgroundImage ? 'bg-neutral-50 dark:bg-black' : ''}`} 
         onScroll={(e) => { 
           if (contextMenu.isVisible) closeCtx(); 
           handleScroll(e);
@@ -1159,7 +1136,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
         {visibleMessages.map((msg, i) => {
           const globalIndex = startIndex + i;
           return (
-          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} group relative items-start gap-2 w-full`}>
+          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-start gap-2 w-full`}>
             {/* Multi-select checkbox */}
             {isMultiSelectMode && (
               <button
@@ -1210,7 +1187,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
               <div
                 onContextMenu={(e) => handleContextMenu(e, globalIndex, msg)}
                 onClick={() => { if (isMultiSelectMode) toggleMessageSelection(msg.id); else if (msg.isMergedForward) setMergedMessageDetails(msg.originalMessages!); }}
-                className={`relative transition-transform duration-200 ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black rounded-2xl' : ''}`}
+                className={`relative w-fit max-w-[70%] min-w-0 transition-transform duration-200 ${contextMenu.isVisible && contextMenu.messageIndex === globalIndex ? 'scale-95 opacity-80' : ''} ${isMultiSelectMode && selectedMessageIds.has(msg.id) ? 'ring-2 ring-zinc-800 dark:ring-zinc-400 ring-offset-1 dark:ring-offset-black rounded-2xl' : ''}`}
               >
                 {msg.messageType === 'image' && msg.specialData?.imageUrl ? (
                   <ImageMessage imageUrl={msg.specialData.imageUrl} isSelf={msg.role === 'user'} />
@@ -1230,7 +1207,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   </div>
                 ) : (
                   <div 
-                    className={`relative w-fit mb-3 text-[13px] leading-relaxed select-text flex flex-col gap-1.5 whitespace-normal break-words ${msg.role === 'user' ? 'self-end ml-auto bubble-user message-user' : 'self-start mr-auto bubble-char message-assistant'} ${msg.isMergedForward ? 'cursor-pointer' : ''} ${isMultiSelectMode ? 'cursor-pointer' : ''}`}
+                    className={`relative w-fit text-[13px] leading-relaxed select-text whitespace-pre-wrap ${msg.role === 'user' ? 'bubble-user message-user' : 'bubble-char message-assistant'} ${msg.isMergedForward ? 'cursor-pointer' : ''} ${isMultiSelectMode ? 'cursor-pointer' : ''}`}
                   >
                     {/* 气泡样式使用 .bubble-user 和 .bubble-char 标记，后续可在美化设置中通过覆盖这些类来支持自定义颜色 */}
                     {msg.isMergedForward ? (
@@ -1244,7 +1221,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   ) : (
                     <>
                       {msg.quote && (<div className={`p-2 rounded-lg text-xs border-l-[3px] flex flex-col gap-0.5 ${msg.role === 'user' ? 'bg-white/10 border-white/30 text-white/80' : 'bg-zinc-100 dark:bg-[#2c2c2e] border-zinc-300 dark:border-zinc-500 text-zinc-500 dark:text-zinc-400'}`}><span className="font-bold">{msg.quote.sender}</span><span className="line-clamp-3 break-words whitespace-pre-wrap">{msg.quote.content}</span></div>)}
-                      <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+                      <span className="whitespace-pre-wrap">{msg.content}</span>
                     </>
                   )}
                 </div>
@@ -1326,7 +1303,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Multi-select bottom toolbar */}
       {isMultiSelectMode && (
-        <div className="absolute bottom-6 left-4 right-4 p-3 bg-white/95 dark:bg-gray-900/95 rounded-[28px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] flex items-center justify-around gap-2 z-30 border border-black/5 dark:border-white/10 backdrop-blur-2xl">
+        <div className="absolute bottom-0 left-0 w-full p-3 px-4 pb-6 bg-white/95 dark:bg-gray-900/95 rounded-t-[28px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] flex items-center justify-around gap-2 z-40 border-t border-black/5 dark:border-white/10 backdrop-blur-2xl">
           <button onClick={handleForwardClick} className="flex-1 flex flex-col items-center gap-1 py-2 text-zinc-700 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-zinc-100 active:scale-95 transition-all">
             <Forward size={20} />
             <span className="text-[10px] font-bold">转发</span>
@@ -1348,7 +1325,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Normal Input Area (hidden in multi-select mode) */}
       {!isMultiSelectMode && (
-        <div className="absolute bottom-6 w-full flex justify-center items-center gap-3 px-6 z-40">
+        <div className="absolute bottom-0 left-0 w-full flex justify-center items-center gap-3 px-6 pb-6 pt-3 z-40">
           
           {/* Function Panel */}
           <AnimatePresence>
@@ -1655,6 +1632,9 @@ export function AiChatScreen(props: AiChatScreenProps) {
         onClose={() => setIsChatSettingsOpen(false)}
         showToast={showToast}
       />}
+
+      {/* Custom CSS Injection - Placed at the bottom to ensure override */}
+      <style dangerouslySetInnerHTML={{ __html: currentChatSettings.customBubbleCSS || '' }} />
     </div>
   );
 }
@@ -1696,6 +1676,7 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
   const [globalChatCSS, setGlobalChatCSS] = useState(() => localStorage.getItem('aiphone_global_chat_css') || '');
   const [activeTab, setActiveTab] = useState<'general' | 'voice' | 'memory' | 'beauty'>('general');
   const [voicePref, setVoicePref] = useState<VoicePreference>({ mode: 'preset', voiceId: '' });
+  const [showTutorial, setShowTutorial] = useState(false);
 
   useEffect(() => {
     setVoicePref(getVoicePreference());
@@ -1935,123 +1916,121 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
   };
 
   return (
-    <div className="absolute inset-0 z-[60] bg-gradient-to-br from-gray-200 via-gray-100 to-gray-300 dark:from-[#1c1c1e] dark:via-black dark:to-[#1c1c1e] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-      <div className="w-full flex justify-between items-center px-4 h-14 relative z-20 mt-2">
+    <div className="absolute inset-0 z-[60] bg-gradient-to-br from-[#E5E5E5] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="flex items-center justify-between px-4 pt-4 relative z-20">
         <button 
           onClick={onClose} 
-          className="w-10 h-10 rounded-full bg-white/50 dark:bg-zinc-800/50 shadow-sm flex items-center justify-center text-gray-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors flex-shrink-0"
+          className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-gray-700 dark:text-zinc-300 shadow-sm hover:bg-white/40 dark:hover:bg-zinc-700 transition-colors flex-shrink-0"
         >
           <ArrowLeft size={20} strokeWidth={2} />
         </button>
         
-        <div className="flex-1 mx-4 max-w-[240px] flex justify-center gap-2">
+        <div className="flex-1 mx-3 h-12 bg-white/20 backdrop-blur-md rounded-full flex justify-evenly items-center relative overflow-hidden">
+          <div 
+            className={`absolute h-10 top-1 bg-white/40 backdrop-blur-md border-none transition-all duration-300 ease-out z-0 ${
+              (activeTab === 'general' || activeTab === 'voice') ? 'left-1 w-[calc(33.33%-4px)] rounded-l-xl rounded-r-none' :
+              activeTab === 'beauty' ? 'left-[33.33%] w-[33.34%] rounded-none' :
+              activeTab === 'memory' ? 'left-[66.67%] w-[calc(33.33%-4px)] rounded-r-xl rounded-l-none' : ''
+            }`}
+          />
           {[
             { id: 'general', label: '通用' },
             { id: 'beauty', label: '美化' },
             { id: 'memory', label: '记忆' }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`bg-white/20 backdrop-blur-md border border-white/30 rounded-full px-4 py-1.5 text-sm transition-all duration-300 ${
-                (activeTab === tab.id || (tab.id === 'general' && activeTab === 'voice')) 
-                  ? 'bg-white/40 text-gray-900 font-bold' 
-                  : 'text-gray-500'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ].map(tab => {
+            const isActive = activeTab === tab.id || (tab.id === 'general' && activeTab === 'voice');
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`relative z-10 w-1/3 h-full text-sm transition-all duration-300 ${
+                  isActive
+                    ? 'text-black font-bold' 
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         <button 
           onClick={handleSave}
-          className="px-4 h-10 rounded-full bg-black dark:bg-white text-white dark:text-black text-sm font-bold flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all flex-shrink-0"
+          className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-gray-700 dark:text-zinc-300 shadow-sm hover:bg-white/40 dark:hover:bg-zinc-700 transition-colors flex-shrink-0"
         >
-          <Check size={14} />
-          保存
+          <Check size={20} strokeWidth={2} />
         </button>
       </div>
 
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
           {(activeTab === 'general' || activeTab === 'voice') && (
             <>
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">备注名</label>
-                <input type="text" placeholder="设置备注名..." className="w-full bg-white dark:bg-[#1c1c1e] p-3 rounded-xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-neutral-200 focus:border-neutral-400 dark:focus:border-zinc-600 transition-colors" value={remark} onChange={e => setRemark(e.target.value)} />
+              <div className="flex flex-col gap-2 mb-3">
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest px-1">备注名</label>
+                <input type="text" placeholder="设置备注名..." className="w-full bg-white/20 backdrop-blur-md border border-white/30 rounded-xl px-4 py-2.5 text-gray-800 placeholder-gray-500 focus:outline-none focus:bg-white/30 transition-colors" value={remark} onChange={e => setRemark(e.target.value)} />
               </div>
               
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">拍一拍后缀</label>
-                <input type="text" placeholder="输入拍一拍后缀，如‘的肩膀’" className="w-full bg-white dark:bg-[#1c1c1e] p-3 rounded-xl text-sm text-zinc-800 dark:text-zinc-100 outline-none border border-neutral-200 focus:border-neutral-400 dark:focus:border-zinc-600 transition-colors" value={patSuffix} onChange={e => setPatSuffix(e.target.value)} />
-                <span className="text-[10px] text-zinc-400">双击对方头像触发拍一拍</span>
+              <div className="flex flex-col gap-2 mb-4">
+                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest px-1">拍一拍后缀</label>
+                <input type="text" placeholder="输入拍一拍后缀，如‘的肩膀’" className="w-full bg-white/20 backdrop-blur-md border border-white/30 rounded-xl px-4 py-2.5 text-gray-800 placeholder-gray-500 placeholder:text-[11px] focus:outline-none focus:bg-white/30 transition-colors" value={patSuffix} onChange={e => setPatSuffix(e.target.value)} />
+                <span className="text-[10px] text-zinc-400 px-1">双击对方头像触发拍一拍</span>
               </div>
               
-              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800 mt-2">
+              <div className="flex items-center justify-between p-3.5 mb-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/10">
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">置顶聊天</span>
                 <button onClick={() => setPinned(!pinned)} className={`w-10 h-5 rounded-full transition-colors relative border ${pinned ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${pinned ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
               </div>
-              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between p-3.5 mb-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/10">
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">拉黑</span>
                 <button onClick={() => setBlocked(!blocked)} className={`w-10 h-5 rounded-full transition-colors relative border ${blocked ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${blocked ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
               </div>
-              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between p-3.5 mb-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/10">
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">感知时间</span>
                 <button onClick={() => setTimeAwareness(!timeAwareness)} className={`w-10 h-5 rounded-full transition-colors relative border ${timeAwareness ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${timeAwareness ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
               </div>
-              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between p-3.5 mb-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/10">
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">异地模式</span>
                 <button onClick={() => setLongDistanceMode(!longDistanceMode)} className={`w-10 h-5 rounded-full transition-colors relative border ${longDistanceMode ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${longDistanceMode ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
               </div>
-              <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between p-3.5 mb-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/10">
                 <span className="text-sm text-zinc-700 dark:text-zinc-200">显示头像</span>
                 <button onClick={() => setShowAvatar(!showAvatar)} className={`w-10 h-5 rounded-full transition-colors relative border ${showAvatar ? 'bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200' : 'bg-zinc-200 border-zinc-200 dark:bg-zinc-600 dark:border-zinc-600'}`}><div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${showAvatar ? 'left-[22px] bg-white dark:bg-[#1c1c1e]' : 'left-0.5 bg-white'}`} /></button>
               </div>
-              <button onClick={handleExportChat} className="mt-2 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-3 border-none flex items-center justify-center gap-2"><Download size={16} /> 导出聊天记录</button>
-              <button onClick={handleClearChat} className="mt-2 py-3 bg-red-50 dark:bg-[#1c1c1e] text-red-500 rounded-xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-center border-t border-zinc-100 dark:border-zinc-800 pt-3 border-none">清空聊天记录</button>
 
-            {/* Voice Settings Section merged into General */}
-            <div className="flex flex-col gap-6 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-              <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 px-1">语音设置</h3>
-              <div className="flex flex-col gap-3">
-                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">预设声音</label>
-                <div className="flex flex-col gap-2">
-                  {PRESET_VOICES.map(voice => (
-                    <button
-                      key={voice.id}
-                      onClick={() => handleVoicePrefChange('preset', voice.id)}
-                      className={`flex items-center gap-3 p-3 rounded-xl transition-colors text-left ${voicePref.mode === 'preset' && voicePref.voiceId === voice.id ? 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900' : 'bg-white dark:bg-[#1c1c1e] border border-neutral-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
-                    >
-                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${voicePref.mode === 'preset' && voicePref.voiceId === voice.id ? 'border-white dark:border-zinc-900' : 'border-zinc-300 dark:border-zinc-600'}`}>
-                        {voicePref.mode === 'preset' && voicePref.voiceId === voice.id && <div className="w-2 h-2 rounded-full bg-white dark:bg-zinc-900" />}
-                      </div>
-                      <span className="text-sm font-bold">{voice.name}</span>
-                    </button>
-                  ))}
+              {/* Voice Settings Section */}
+              <div className="flex flex-col gap-3 mt-2 mb-4 bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+                <div className="flex items-center gap-3 mb-3">
+                  <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 shrink-0">语音设置</h3>
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                    {PRESET_VOICES.map(voice => {
+                      const isSelected = voicePref.mode === 'preset' && voicePref.voiceId === voice.id;
+                      return (
+                        <button
+                          key={voice.id}
+                          onClick={() => handleVoicePrefChange('preset', voice.id)}
+                          className={`px-3 py-1 rounded-full border text-xs whitespace-nowrap cursor-pointer transition-all ${
+                            isSelected 
+                              ? 'bg-white/30 border-white/40 text-black font-medium' 
+                              : 'bg-white/10 border-white/20 text-gray-600 hover:bg-white/20'
+                          }`}
+                        >
+                          {voice.name}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-              
-              <div className="flex flex-col gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">自定义声音 (Voice ID)</label>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      if (voicePref.mode !== 'custom') {
-                        handleVoicePrefChange('custom', voicePref.voiceId);
-                      }
-                    }}
-                    className="w-4 h-4 rounded-full border-2 flex items-center justify-center border-zinc-300 dark:border-zinc-600 flex-shrink-0"
-                  >
-                    {voicePref.mode === 'custom' && <div className="w-2 h-2 rounded-full bg-zinc-800 dark:bg-zinc-200" />}
-                  </button>
+                
+                <div className="flex items-center gap-3 w-full">
                   <input 
                     type="text" 
-                    placeholder="输入 MiniMax Voice ID" 
-                    className={`flex-1 bg-white dark:bg-[#1c1c1e] p-3 rounded-xl text-sm outline-none border transition-colors ${voicePref.mode === 'custom' ? 'text-zinc-800 dark:text-zinc-100 border-zinc-800 dark:border-zinc-500' : 'text-zinc-400 dark:text-zinc-600 border-neutral-200 dark:border-zinc-800'}`} 
+                    placeholder="自定义 Voice ID" 
+                    className={`flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm outline-none transition-colors focus:bg-white/20 ${
+                      voicePref.mode === 'custom' ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
+                    }`} 
                     value={voicePref.mode === 'custom' ? voicePref.voiceId : ''} 
-                    onChange={e => {
-                      handleVoicePrefChange('custom', e.target.value);
-                    }}
+                    onChange={e => handleVoicePrefChange('custom', e.target.value)}
                     onFocus={() => {
                       if (voicePref.mode !== 'custom') {
                         handleVoicePrefChange('custom', voicePref.voiceId);
@@ -2059,9 +2038,10 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                     }}
                   />
                 </div>
-                <p className="text-[10px] text-zinc-400 px-7">你可以前往 MiniMax 开放平台克隆或选择其他音色，在此填入 Voice ID。</p>
               </div>
-            </div>
+
+              <button onClick={handleExportChat} className="w-full py-3 mb-3 rounded-xl bg-white/20 backdrop-blur-md border border-white/30 text-gray-700 font-medium hover:bg-white/30 transition-colors flex items-center justify-center gap-2"><Download size={16} /> 导出聊天记录</button>
+              <button onClick={handleClearChat} className="w-full py-3 mb-3 rounded-xl bg-white/20 backdrop-blur-md border border-white/30 text-red-500 font-medium hover:bg-white/30 transition-colors flex items-center justify-center">清空聊天记录</button>
             </>
           )}
 
@@ -2139,16 +2119,38 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                 </label>
               </div>
 
+              {/* 气泡效果预览 */}
+              <div className="flex flex-col gap-2 mt-4">
+                <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">气泡效果预览</span>
+                <div className="relative w-full h-48 rounded-xl overflow-hidden bg-[#E5E5E5] dark:bg-zinc-800 flex flex-col p-4 gap-4 shadow-inner">
+                  
+                  {/* 确保预览也应用正在编辑的自定义CSS */}
+                  <style dangerouslySetInnerHTML={{ __html: customBubbleCSS + '\n' + globalChatCSS }} />
+                  
+                  <div className="relative z-10 w-full flex flex-col gap-4 mt-auto">
+                    <div className="self-start mr-auto bubble-char message-assistant" style={{ padding: '8px 16px', borderRadius: '16px' }}>
+                      这是对方的消息
+                    </div>
+                    <div className="self-end ml-auto bubble-user message-user" style={{ padding: '8px 16px', borderRadius: '16px' }}>
+                      这是我的消息
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex flex-col gap-2 mt-4">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">当前聊天气泡美化 (CSS)</label>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">当前聊天气泡美化 (CSS)</label>
+                    <span onClick={() => setShowTutorial(true)} className="inline-flex w-4 h-4 rounded-full bg-white/20 text-[10px] items-center justify-center cursor-pointer hover:bg-white/30 text-zinc-600 dark:text-zinc-300">?</span>
+                  </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setCustomBubbleCSS(prev => prev + (prev ? '\n' : '') + '.message-user {\n  background: #e0f7fa;\n  border-radius: 20px 12px 20px 12px;\n}\n.message-assistant {\n  background: #ffffff;\n  border: 1px solid #ddd;\n}')} className="px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] text-zinc-700 dark:text-zinc-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">填入示例</button>
-                    <button onClick={() => setCustomBubbleCSS('')} className="px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] text-zinc-700 dark:text-zinc-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">重置</button>
+                    <button onClick={() => setCustomBubbleCSS(prev => prev + (prev ? '\n' : '') + '.message-user {\n  background-color: #e0f7fa !important;\n  border-radius: 20px 12px 20px 12px !important;\n  color: #000000 !important;\n}\n.message-assistant {\n  background-color: #ffffff !important;\n  border: 1px solid #ddd !important;\n}')} className="px-3 py-1 rounded-lg bg-white/10 border border-white/20 text-xs hover:bg-white/20 transition-colors text-zinc-700 dark:text-zinc-300">填入示例</button>
+                    <button onClick={() => setCustomBubbleCSS('')} className="px-3 py-1 rounded-lg bg-white/10 border border-white/20 text-xs hover:bg-white/20 transition-colors text-zinc-700 dark:text-zinc-300">重置</button>
                   </div>
                 </div>
                 <textarea 
-                  placeholder="编写CSS代码自定义当前聊天气泡样式..." 
+                  placeholder="编写CSS代码自定义当前聊天气泡样式（建议加上 !important）..." 
                   className="w-full bg-gray-100 dark:bg-gray-800 p-3 rounded-xl text-sm font-mono text-zinc-800 dark:text-zinc-100 outline-none border-none transition-colors overflow-auto" 
                   style={{ height: '150px' }}
                   value={customBubbleCSS} 
@@ -2159,14 +2161,17 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
 
               <div className="flex flex-col gap-2 mt-4">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">全局聊天界面美化 (CSS)</label>
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">全局聊天界面美化 (CSS)</label>
+                    <span onClick={() => setShowTutorial(true)} className="inline-flex w-4 h-4 rounded-full bg-white/20 text-[10px] items-center justify-center cursor-pointer hover:bg-white/30 text-zinc-600 dark:text-zinc-300">?</span>
+                  </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setGlobalChatCSS(prev => prev + (prev ? '\n' : '') + '.message-user {\n  background: #e0f7fa;\n  border-radius: 20px 12px 20px 12px;\n}\n.message-assistant {\n  background: #ffffff;\n  border: 1px solid #ddd;\n}')} className="px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] text-zinc-700 dark:text-zinc-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">填入示例</button>
-                    <button onClick={() => setGlobalChatCSS('')} className="px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] text-zinc-700 dark:text-zinc-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">重置</button>
+                    <button onClick={() => setGlobalChatCSS(prev => prev + (prev ? '\n' : '') + '.message-user {\n  background-color: #e0f7fa !important;\n  border-radius: 20px 12px 20px 12px !important;\n  color: #000000 !important;\n}\n.message-assistant {\n  background-color: #ffffff !important;\n  border: 1px solid #ddd !important;\n}')} className="px-3 py-1 rounded-lg bg-white/10 border border-white/20 text-xs hover:bg-white/20 transition-colors text-zinc-700 dark:text-zinc-300">填入示例</button>
+                    <button onClick={() => setGlobalChatCSS('')} className="px-3 py-1 rounded-lg bg-white/10 border border-white/20 text-xs hover:bg-white/20 transition-colors text-zinc-700 dark:text-zinc-300">重置</button>
                   </div>
                 </div>
                 <textarea 
-                  placeholder="编写CSS代码应用于所有聊天界面..." 
+                  placeholder="编写CSS代码应用于所有聊天界面（建议加上 !important）..." 
                   className="w-full bg-gray-100 dark:bg-gray-800 p-3 rounded-xl text-sm font-mono text-zinc-800 dark:text-zinc-100 outline-none border-none transition-colors overflow-auto" 
                   style={{ height: '150px' }}
                   value={globalChatCSS} 
@@ -2175,11 +2180,32 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                 <span className="text-[10px] text-zinc-500 dark:text-zinc-400">支持 CSS 类名：.message-user（用户气泡）、.message-assistant（AI 气泡）、.chat-container（聊天容器）</span>
               </div>
 
-              <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/30">
-                <h4 className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2">如何自定义气泡样式？</h4>
-                <div className="text-[11px] text-blue-600 dark:text-blue-400 space-y-1 font-mono">
+            </>
+          )}
+        </div>
+
+        {/* Tutorial Modal */}
+        <AnimatePresence>
+          {showTutorial && (
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
+              className="absolute inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" 
+              onClick={() => setShowTutorial(false)}
+            >
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} 
+                className="bg-[#E5E5E5] dark:bg-zinc-800 rounded-2xl p-6 max-w-sm w-full flex flex-col shadow-2xl" 
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-bold text-zinc-800 dark:text-zinc-100">如何自定义气泡样式？</h4>
+                  <button onClick={() => setShowTutorial(false)} className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="text-[12px] text-zinc-600 dark:text-zinc-400 space-y-2 font-mono">
                   <p>你可以使用以下 CSS 类名来定制聊天气泡：</p>
-                  <ul className="list-disc pl-4 space-y-0.5 my-2">
+                  <ul className="list-disc pl-4 space-y-1 my-2">
                     <li>.message-user (用户气泡)</li>
                     <li>.message-assistant (AI气泡)</li>
                     <li>.chat-container (聊天容器)</li>
@@ -2187,21 +2213,22 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                     <li>.avatar-assistant (AI头像)</li>
                   </ul>
                   <p>示例：</p>
-                  <pre className="bg-white/50 dark:bg-black/20 p-2 rounded mt-1 overflow-x-auto">
+                  <pre className="bg-black/5 dark:bg-black/20 p-3 rounded-xl mt-2 overflow-x-auto text-[11px]">
 {`.message-user {
-  background: #e0f7fa;
-  border-radius: 20px 12px 20px 12px;
+  background-color: #e0f7fa !important;
+  border-radius: 20px 12px 20px 12px !important;
+  color: #000000 !important;
 }
 .message-assistant {
-  background: #ffffff;
-  border: 1px solid #ddd;
+  background-color: #ffffff !important;
+  border: 1px solid #ddd !important;
 }`}
                   </pre>
                 </div>
-              </div>
-            </>
+              </motion.div>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
 
         {/* Memory edit modal */}
         {editingMemory && (

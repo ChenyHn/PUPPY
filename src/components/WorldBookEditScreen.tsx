@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import * as mammoth from 'mammoth';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Check, User, FileUp } from 'lucide-react';
-import { StatusBar, GlassCard } from './Shared';
+import { GlassCard } from './Shared';
 
 export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePersonas, folders }: any) => {
   const [title, setTitle] = useState(initialData?.title || '');
@@ -75,7 +75,6 @@ export const WorldBookEditScreen = ({ onBack, time, initialData, onSave, phonePe
       transition={{ duration: 0 }}
       className="absolute inset-0 bg-zinc-50 dark:bg-black z-50 flex flex-col"
     >
-      <StatusBar time={time} className="bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 dark:text-zinc-200" />
       
       <div className="px-6 py-4 flex items-center justify-between bg-white dark:bg-[#1c1c1e] border-b border-zinc-100 dark:border-zinc-800 transition-colors">
         <div className="flex items-center gap-4">
