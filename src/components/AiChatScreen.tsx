@@ -1109,7 +1109,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
       {/* Messages */}
       <div 
         ref={scrollContainerRef}
-        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.5rem] pb-28 flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.backgroundImage ? 'bg-neutral-50 dark:bg-black' : ''}`} 
+        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.5rem] pb-20 flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.backgroundImage ? 'bg-neutral-50 dark:bg-black' : ''}`} 
         onScroll={(e) => { 
           if (contextMenu.isVisible) closeCtx(); 
           handleScroll(e);

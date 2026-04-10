@@ -858,12 +858,8 @@ export default function App() {
   useEffect(() => {
     const handler = () => {
       const saved = localStorage.getItem('aiphone_wallpaper');
-      if (saved) {
-        setWallpaper(''); // 先清空
-        requestAnimationFrame(() => {
-          setWallpaper(saved); // 下一帧再设置
-        });
-      }
+      if (saved) setWallpaper(saved);
+      else setWallpaper(null);
     };
     window.addEventListener('wallpaperChanged', handler);
     return () => window.removeEventListener('wallpaperChanged', handler);

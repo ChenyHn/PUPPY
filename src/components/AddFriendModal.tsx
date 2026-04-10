@@ -308,7 +308,11 @@ function AddFriendModalInner({
       }
 
       // 3. AI generate new persona
-      const newPersona = await generatePersonaByAI(trimmed, apiConfig);
+      const newPersona = await Promise.race([
+        generatePersonaByAI(trimmed, apiConfig),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+      ]).catch(() => generateFallbackPersona(trimmed));
+      
       if (!newPersona) {
         setSearchResult({ found: false, error: '生成失败，请重试' });
       } else {
