@@ -844,12 +844,7 @@ export default function App() {
         reader.onload = (e) => {
           const result = e.target?.result as string;
           localStorage.setItem('aiphone_wallpaper', result);
-          setWallpaper(''); // 先清空
-          requestAnimationFrame(() => {
-            setWallpaper(result); // 下一帧再设置
-            // 强制触发重渲?
-            window.dispatchEvent(new Event('wallpaperChanged'));
-          });
+          window.location.reload();
         };
         reader.readAsDataURL(file);
       } catch (err) {
@@ -1177,7 +1172,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 1 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center"
+              className="absolute inset-0 w-full h-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center"
             >
               <motion.div
                 initial={{ scale: 0.9, opacity: 0 }}
@@ -1212,7 +1207,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 1 }}
               transition={{ duration: 0 }}
-              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-transparent' : 'bg-zinc-100 dark:bg-black'}`}
+              className={`absolute inset-0 w-full h-full flex flex-col ${wallpaper ? 'bg-transparent' : 'bg-zinc-100 dark:bg-black'}`}
               onClick={() => {
                 if (!isPasswordEnabled) {
                   setScreen('home');
@@ -1250,7 +1245,7 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 1 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 bg-white dark:bg-black flex flex-col items-center justify-center"
+              className="absolute inset-0 w-full h-full bg-white dark:bg-black flex flex-col items-center justify-center"
             >
               <div className="absolute top-0 left-0 w-full h-full bg-zinc-50/50 dark:bg-black/50" />
               
@@ -1492,7 +1487,7 @@ export default function App() {
               animate={{ y: 0 }}
               exit={{ y: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50"
+              className="absolute inset-0 w-full h-full bg-neutral-50 dark:bg-black flex flex-col z-50"
             >
               {/* Top Nav */}
               <div className="pt-4 px-6 py-4 flex justify-between items-center bg-[#F5F5F5] dark:bg-black border-none">
@@ -1966,7 +1961,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 z-50 flex flex-col"
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
             >
               <AiChatScreen
             activeChatContact={activeChatContact}
@@ -1998,7 +1993,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 z-50 flex flex-col"
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
             >
               <MusicScreen
                 onBack={() => setScreen('home')}
@@ -2020,7 +2015,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 z-50 flex flex-col"
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
             >
               <ShoppingScreen
                 onBack={() => setScreen('home')}
@@ -2042,7 +2037,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 z-50 flex flex-col"
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
             >
               <HeartbeatNPC 
                 apiConfig={apiConfig}

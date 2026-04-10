@@ -18,6 +18,14 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
 @layer components {
   /* =========================================================================
      半透明毛玻璃 + 外凸立体感 风格（无内阴影/无凹陷）
