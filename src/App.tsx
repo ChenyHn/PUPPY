@@ -823,15 +823,22 @@ export default function App() {
     }
   };
 
+  const updateWallpaper = (newUrl: string | null) => {
+    if (wallpaper && wallpaper.startsWith('blob:')) {
+      URL.revokeObjectURL(wallpaper);
+    }
+    setTimeout(() => setWallpaper(newUrl), 100);
+  };
+
   const handleWallpaperChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       try {
         const compressed = await compressImage(file, 1024);
-        setWallpaper(compressed);
+        updateWallpaper(compressed);
       } catch (err) {
         console.error('Failed to process wallpaper:', err);
-        setWallpaper(null);
+        updateWallpaper(null);
         alert('图片加载失败，已恢复默认背景');
       }
     }
@@ -1804,7 +1811,7 @@ export default function App() {
               password={password}
               setPassword={setPassword}
               wallpaper={wallpaper}
-              setWallpaper={setWallpaper}
+              setWallpaper={updateWallpaper}
               fontLink={fontLink}
               setFontLink={setFontLink}
               customIcons={customIcons}
