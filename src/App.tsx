@@ -827,13 +827,9 @@ export default function App() {
     if (wallpaper && wallpaper.startsWith('blob:')) {
       URL.revokeObjectURL(wallpaper);
     }
-    setTimeout(() => {
-      setWallpaper(''); // 先清空
-      requestAnimationFrame(() => {
-        setWallpaper(newUrl); // 下一帧再设置
-        window.dispatchEvent(new Event('wallpaperChanged'));
-      });
-    }, 100);
+    setWallpaper(newUrl);
+    if (newUrl) localStorage.setItem('aiphone_wallpaper', newUrl);
+    else localStorage.removeItem('aiphone_wallpaper');
   };
 
   const handleWallpaperChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -843,8 +839,7 @@ export default function App() {
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result as string;
-          localStorage.setItem('aiphone_wallpaper', result);
-          window.location.reload();
+          updateWallpaper(result);
         };
         reader.readAsDataURL(file);
       } catch (err) {

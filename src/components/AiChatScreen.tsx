@@ -1109,7 +1109,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
       {/* Messages */}
       <div 
         ref={scrollContainerRef}
-        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.5rem] pb-20 flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.backgroundImage ? 'bg-neutral-50 dark:bg-black' : ''}`} 
+        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.5rem] pb-24 flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.backgroundImage ? 'bg-neutral-50 dark:bg-black' : ''}`} 
         onScroll={(e) => { 
           if (contextMenu.isVisible) closeCtx(); 
           handleScroll(e);
@@ -1325,7 +1325,10 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Normal Input Area (hidden in multi-select mode) */}
       {!isMultiSelectMode && (
-        <div className="absolute bottom-0 left-0 right-0 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px] rounded-2xl mx-3 mb-3 py-2 px-2">
+        <div 
+          className="absolute bottom-0 left-0 right-0 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px] rounded-2xl mx-3 mb-3 py-2 px-2"
+          style={{ marginBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+        >
           
           {/* Function Panel */}
           <AnimatePresence>
@@ -1402,7 +1405,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
               {/* Plus Button */}
               <button 
                 onClick={() => setShowFunctionPanel(!showFunctionPanel)}
-                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 text-zinc-700 dark:text-zinc-200 hover:bg-black/10 dark:hover:bg-white/20 ${showFunctionPanel ? 'rotate-45' : ''}`}
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 text-zinc-800 dark:text-zinc-100 hover:bg-black/10 dark:hover:bg-white/20 ${showFunctionPanel ? 'rotate-45' : ''}`}
               >
                 <Plus size={24} strokeWidth={1.5} />
               </button>
@@ -1413,7 +1416,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   rows={1}
                   ref={chatInputRef} 
                   placeholder="说点什么..." 
-                  className={`flex-1 bg-transparent py-2.5 px-2 text-[14px] outline-none resize-none overflow-hidden leading-tight min-w-0 h-full ${currentChatSettings.backgroundImage ? 'text-white placeholder:text-white/60' : 'text-zinc-800 dark:text-white placeholder:text-zinc-500 dark:placeholder:text-zinc-400'}`} 
+                  className={`flex-1 bg-transparent py-2.5 px-2 text-[14px] outline-none resize-none overflow-hidden leading-tight min-w-0 h-full text-zinc-800 dark:text-white placeholder:text-zinc-500 dark:placeholder:text-zinc-400`} 
                   value={chatInput} 
                   onChange={(e) => { 
                     setChatInput(e.target.value); 
@@ -1429,7 +1432,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                 {/* Mic Button */}
                 <button 
                   onClick={() => console.log('语音输入待实现')}
-                  className={`w-7 h-7 flex items-center justify-center active:scale-95 transition-all flex-shrink-0 text-zinc-700 dark:text-zinc-200 hover:opacity-80`}
+                  className={`w-7 h-7 flex items-center justify-center active:scale-95 transition-all flex-shrink-0 text-zinc-800 dark:text-zinc-100 hover:opacity-80`}
                 >
                   <Mic size={20} strokeWidth={1.5} />
                 </button>
@@ -1438,7 +1441,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
               {/* Emoji Button */}
               <button 
                 onClick={() => console.log('表情包功能待实现')}
-                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 text-zinc-700 dark:text-zinc-200 hover:bg-black/10 dark:hover:bg-white/20`}
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 text-zinc-800 dark:text-zinc-100 hover:bg-black/10 dark:hover:bg-white/20`}
               >
                 <Smile size={24} strokeWidth={1.5} />
               </button>
@@ -1453,7 +1456,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   }
                 }} 
                 disabled={isAiLoading && !chatInput.trim()} 
-                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${chatInput.trim() ? 'bg-zinc-800 text-white dark:bg-white/90 dark:text-black border-zinc-800 dark:border-white/90' : 'text-zinc-700 dark:text-zinc-200 hover:bg-black/10 dark:hover:bg-white/20'}`}
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${chatInput.trim() ? 'bg-zinc-800 text-white dark:bg-white/90 dark:text-black border-zinc-800 dark:border-white/90' : 'text-zinc-800 dark:text-zinc-100 hover:bg-black/10 dark:hover:bg-white/20'}`}
                 title={chatInput.trim() ? "发送" : "请求AI回复"}
               >
                 {chatInput.trim() ? <ArrowUp size={20} strokeWidth={1.5} /> : <Zap size={20} strokeWidth={1.5} />}
