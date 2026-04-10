@@ -474,10 +474,14 @@ export const AppearanceScreen = ({
                     <span className="text-sm text-zinc-700 dark:text-zinc-100 whitespace-nowrap">显示状态栏</span>
                   </div>
                   <button 
-                    onClick={() => setTempSettings(prev => ({ ...prev, showStatusBar: !prev.showStatusBar }))}
-                    className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${tempSettings.showStatusBar ? 'bg-zinc-800 dark:bg-zinc-300' : 'bg-zinc-200 dark:bg-zinc-700'}`}
+                    onClick={() => {
+                      const newShowStatusBar = !tempSettings.showStatusBar;
+                      console.log('AppearanceScreen toggle showStatusBar to:', newShowStatusBar);
+                      setTempSettings(prev => ({ ...prev, showStatusBar: newShowStatusBar }));
+                    }}
+                    className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${tempSettings.showStatusBar === true ? 'bg-zinc-800 dark:bg-zinc-300' : 'bg-zinc-200 dark:bg-zinc-700'}`}
                   >
-                    <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-[#1c1c1e] rounded-full transition-all ${tempSettings.showStatusBar ? 'left-6' : 'left-1'}`} />
+                    <div className={`absolute top-1 w-3 h-3 bg-white dark:bg-[#1c1c1e] rounded-full transition-all ${tempSettings.showStatusBar === true ? 'left-6' : 'left-1'}`} />
                   </button>
                 </div>
               </div>

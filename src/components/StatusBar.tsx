@@ -15,7 +15,7 @@ export const StatusBar: React.FC = () => {
   }, []);
 
   return (
-    <div className="absolute top-0 left-0 w-full h-8 z-[100] flex justify-between items-center px-6 bg-white/15 dark:bg-black/20 backdrop-blur-md text-[12px] text-gray-800 dark:text-zinc-200 font-medium select-none pointer-events-none border-b border-white/10 dark:border-white/5">
+    <div className="absolute top-0 left-0 w-full h-8 z-[100] flex justify-between items-center px-6 bg-white/10 backdrop-blur-xl border-b border-white/10 text-white select-none text-[12px] font-medium pointer-events-none dark:bg-black/20">
       <div>{time}</div>
       <div className="flex items-center gap-1.5">
         <Signal size={14} />

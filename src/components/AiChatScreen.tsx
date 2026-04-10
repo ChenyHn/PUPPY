@@ -1325,7 +1325,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Normal Input Area (hidden in multi-select mode) */}
       {!isMultiSelectMode && (
-        <div className="absolute bottom-0 left-0 w-full flex justify-center items-center gap-3 px-6 pb-6 pt-3 z-40">
+        <div className="absolute bottom-0 left-0 right-0 flex justify-center items-center gap-3 px-4 pb-6 pt-3 z-40">
           
           {/* Function Panel */}
           <AnimatePresence>

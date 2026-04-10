@@ -1125,17 +1125,12 @@ export default function App() {
       }}
     >
       {/* Mobile Frame */}
-      <div id="phone-container" className={`relative w-full h-full lg:max-w-[390px] lg:max-h-[844px] lg:h-[844px] lg:rounded-[44px] lg:border-[12px] lg:border-white dark:lg:border-zinc-800 lg:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:lg:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}>
+      <div 
+        id="phone-container" 
+        className={`relative w-full h-full lg:max-w-[390px] lg:max-h-[844px] lg:h-[844px] lg:rounded-[44px] lg:border-[12px] lg:border-white dark:lg:border-zinc-800 lg:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:lg:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}
+        style={wallpaper ? { backgroundImage: `url(${wallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+      >
         
-        {/* Global StatusBar - single instance for entire app */}
-        {showStatusBar ? (
-          <div className="absolute top-0 left-0 right-0 z-[100]">
-            <StatusBar />
-          </div>
-        ) : (
-          (console.log("Status Bar is hidden") as any) || null
-        )}
-
         <AnimatePresence mode="wait">
           {/* 1. Splash Screen */}
           {screen === 'splash' && (
@@ -1180,7 +1175,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 1 }}
               transition={{ duration: 0 }}
-              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}
+              className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-transparent' : 'bg-zinc-100 dark:bg-black'}`}
               onClick={() => {
                 if (!isPasswordEnabled) {
                   setScreen('home');
@@ -1189,18 +1184,7 @@ export default function App() {
                 }
               }}
             >
-              {wallpaper ? (
-                <img 
-                  src={wallpaper} 
-                  alt="wallpaper" 
-                  className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none" 
-                  onError={(e) => { 
-                    (e.target as HTMLImageElement).style.display = 'none'; 
-                    setWallpaper(null);
-                    alert('图片加载失败，已恢复默认背景');
-                  }}
-                />
-              ) : (
+              {!wallpaper && (
                 <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 dark:from-black dark:via-zinc-900 dark:to-black pointer-events-none transition-colors" />
               )}
               <div className="flex-1 flex flex-col items-center justify-start pt-24 relative z-10">
@@ -1288,30 +1272,26 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* Global StatusBar - single instance for entire app */}
+        {(() => {
+          console.log('App.tsx showStatusBar value:', showStatusBar);
+          return showStatusBar === true ? (
+            <div className="absolute top-0 left-0 right-0 z-[100]">
+              <StatusBar />
+            </div>
+          ) : null;
+        })()}
+
         {/* ===== Global Content Container: offset by 32px (h-8) when status bar is visible ===== */}
         <div className={`absolute left-0 right-0 bottom-0 transition-all duration-300 ${showStatusBar ? 'top-8' : 'top-0'}`}>
 
         {/* ===== Layer 2: Home Screen (always rendered when past auth) ===== */}
         {isPostAuth && (
           <div 
-            className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-zinc-900'}`}
+            className={`absolute inset-0 flex flex-col ${wallpaper ? 'bg-transparent' : 'bg-zinc-100 dark:bg-zinc-900'}`}
               onContextMenu={(e) => e.preventDefault()}
             >
-              {wallpaper ? (
-                <>
-                  <img 
-                    src={wallpaper} 
-                    alt="wallpaper" 
-                    className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none" 
-                    onError={(e) => { 
-                      (e.target as HTMLImageElement).style.display = 'none'; 
-                      setWallpaper(null);
-                      alert('图片加载失败，已恢复默认背景');
-                    }}
-                  />
-                  {/* 用户自定义壁纸不再叠加深浅模式遮罩 */}
-                </>
-              ) : (
+              {!wallpaper && (
                 <div className="absolute inset-0 bg-gradient-to-b from-zinc-50 via-zinc-100 to-zinc-200 dark:from-zinc-900 dark:via-zinc-800 dark:to-zinc-900 pointer-events-none transition-colors duration-300" />
               )}
               
