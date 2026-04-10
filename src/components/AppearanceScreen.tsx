@@ -541,18 +541,43 @@ export const AppearanceScreen = ({
                     <ImageIcon size={18} className="text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
                     <span className="text-sm text-zinc-700 dark:text-zinc-100 whitespace-nowrap">壁纸管理</span>
                   </div>
-                  <button 
-                    onClick={() => {
-                      if (wallpaper) {
-                        setWallpaper(null);
-                        localStorage.removeItem('aiphone_wallpaper');
-                        window.dispatchEvent(new Event('wallpaperChanged'));
-                      }
-                    }}
-                    className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 flex-shrink-0 transition-colors"
-                  >
-                    {wallpaper ? '重置壁纸' : '桌面空白处修改'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 flex-shrink-0 transition-colors cursor-pointer">
+                      上传壁纸
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (e) => {
+                              const result = e.target?.result as string;
+                              if (result) {
+                                setWallpaper(result);
+                                localStorage.setItem('aiphone_wallpaper', result);
+                                window.dispatchEvent(new Event('wallpaperChanged'));
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }} 
+                      />
+                    </label>
+                    {wallpaper && (
+                      <button 
+                        onClick={() => {
+                          setWallpaper(null);
+                          localStorage.removeItem('aiphone_wallpaper');
+                          window.dispatchEvent(new Event('wallpaperChanged'));
+                        }}
+                        className="text-[10px] font-bold text-red-500 hover:text-red-600 flex-shrink-0 transition-colors"
+                      >
+                        重置
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </GlassCard>
