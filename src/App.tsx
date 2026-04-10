@@ -828,8 +828,11 @@ export default function App() {
       URL.revokeObjectURL(wallpaper);
     }
     setTimeout(() => {
-      setWallpaper(newUrl);
-      window.dispatchEvent(new Event('wallpaperChanged'));
+      setWallpaper(''); // 先清空
+      requestAnimationFrame(() => {
+        setWallpaper(newUrl); // 下一帧再设置
+        window.dispatchEvent(new Event('wallpaperChanged'));
+      });
     }, 100);
   };
 
@@ -841,9 +844,12 @@ export default function App() {
         reader.onload = (e) => {
           const result = e.target?.result as string;
           localStorage.setItem('aiphone_wallpaper', result);
-          setWallpaper(result);
-          // 强制触发重渲染
-          window.dispatchEvent(new Event('wallpaperChanged'));
+          setWallpaper(''); // 先清空
+          requestAnimationFrame(() => {
+            setWallpaper(result); // 下一帧再设置
+            // 强制触发重渲?
+            window.dispatchEvent(new Event('wallpaperChanged'));
+          });
         };
         reader.readAsDataURL(file);
       } catch (err) {
@@ -857,7 +863,12 @@ export default function App() {
   useEffect(() => {
     const handler = () => {
       const saved = localStorage.getItem('aiphone_wallpaper');
-      if (saved) setWallpaper(saved);
+      if (saved) {
+        setWallpaper(''); // 先清空
+        requestAnimationFrame(() => {
+          setWallpaper(saved); // 下一帧再设置
+        });
+      }
     };
     window.addEventListener('wallpaperChanged', handler);
     return () => window.removeEventListener('wallpaperChanged', handler);
