@@ -824,9 +824,6 @@ export default function App() {
   };
 
   const updateWallpaper = (newUrl: string | null) => {
-    if (wallpaper && wallpaper.startsWith('blob:')) {
-      URL.revokeObjectURL(wallpaper);
-    }
     setWallpaper(newUrl);
     if (newUrl) localStorage.setItem('aiphone_wallpaper', newUrl);
     else localStorage.removeItem('aiphone_wallpaper');
@@ -839,7 +836,10 @@ export default function App() {
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result as string;
-          updateWallpaper(result);
+          if (result) {
+            setWallpaper(result);
+            localStorage.setItem('aiphone_wallpaper', result);
+          }
         };
         reader.readAsDataURL(file);
       } catch (err) {
