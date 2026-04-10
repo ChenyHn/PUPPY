@@ -1774,7 +1774,7 @@ export default function App() {
 
               {/* Bottom Tab Bar */}
               <div 
-                className="absolute bottom-4 left-4 right-4 rounded-2xl py-2 px-4 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px] shadow-[5px_5px_12px_rgba(0,0,0,0.04),-5px_-5px_10px_rgba(255,255,255,0.7)] dark:shadow-[5px_5px_10px_rgba(0,0,0,0.3),-5px_-5px_10px_rgba(255,255,255,0.05)]"
+                className="absolute bottom-4 left-0 right-0 mx-4 rounded-2xl py-2 px-4 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px]"
               >
                 <motion.button 
                   onClick={() => setChatTab('messages')} 

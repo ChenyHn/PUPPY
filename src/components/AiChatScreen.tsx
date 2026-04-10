@@ -1303,7 +1303,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Multi-select bottom toolbar */}
       {isMultiSelectMode && (
-        <div className="absolute bottom-0 left-0 w-full p-3 px-4 pb-6 bg-white/95 dark:bg-gray-900/95 rounded-t-[28px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] flex items-center justify-around gap-2 z-40 border-t border-black/5 dark:border-white/10 backdrop-blur-2xl">
+        <div className="absolute bottom-4 left-0 right-0 mx-4 rounded-2xl py-2 px-4 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px]">
           <button onClick={handleForwardClick} className="flex-1 flex flex-col items-center gap-1 py-2 text-zinc-700 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-zinc-100 active:scale-95 transition-all">
             <Forward size={20} />
             <span className="text-[10px] font-bold">转发</span>
@@ -1325,7 +1325,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Normal Input Area (hidden in multi-select mode) */}
       {!isMultiSelectMode && (
-        <div className="absolute bottom-0 left-0 right-0 flex justify-center items-center gap-3 px-4 pb-6 pt-3 z-40">
+        <div className="absolute bottom-4 left-0 right-0 mx-4 rounded-2xl py-2 px-4 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px]">
           
           {/* Function Panel */}
           <AnimatePresence>
