@@ -1402,7 +1402,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
               {/* Plus Button */}
               <button 
                 onClick={() => setShowFunctionPanel(!showFunctionPanel)}
-                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${currentChatSettings.backgroundImage ? 'text-white/90 hover:bg-white/20' : 'text-zinc-800 dark:text-white/90 hover:bg-black/10 dark:hover:bg-white/20'} ${showFunctionPanel ? 'rotate-45' : ''}`}
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 text-zinc-700 dark:text-zinc-200 hover:bg-black/10 dark:hover:bg-white/20 ${showFunctionPanel ? 'rotate-45' : ''}`}
               >
                 <Plus size={24} strokeWidth={1.5} />
               </button>
@@ -1429,7 +1429,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                 {/* Mic Button */}
                 <button 
                   onClick={() => console.log('语音输入待实现')}
-                  className={`w-7 h-7 flex items-center justify-center active:scale-95 transition-all flex-shrink-0 ${currentChatSettings.backgroundImage ? 'text-white/90' : 'text-zinc-700 dark:text-white/90'} hover:opacity-80`}
+                  className={`w-7 h-7 flex items-center justify-center active:scale-95 transition-all flex-shrink-0 text-zinc-700 dark:text-zinc-200 hover:opacity-80`}
                 >
                   <Mic size={20} strokeWidth={1.5} />
                 </button>
@@ -1438,7 +1438,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
               {/* Emoji Button */}
               <button 
                 onClick={() => console.log('表情包功能待实现')}
-                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${currentChatSettings.backgroundImage ? 'text-white/90 hover:bg-white/20' : 'text-zinc-700 dark:text-white/90 hover:bg-black/10 dark:hover:bg-white/20'}`}
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 text-zinc-700 dark:text-zinc-200 hover:bg-black/10 dark:hover:bg-white/20`}
               >
                 <Smile size={24} strokeWidth={1.5} />
               </button>
@@ -1453,7 +1453,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   }
                 }} 
                 disabled={isAiLoading && !chatInput.trim()} 
-                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${chatInput.trim() ? (currentChatSettings.backgroundImage ? 'bg-white/90 text-black border-white/90' : 'bg-zinc-800 text-white dark:bg-white/90 dark:text-black border-zinc-800 dark:border-white/90') : (currentChatSettings.backgroundImage ? 'text-white hover:bg-white/20' : 'text-zinc-500 dark:text-white/70 hover:bg-black/10 dark:hover:bg-white/20')}`}
+                className={`w-10 h-10 flex items-center justify-center bg-white/10 backdrop-blur-md rounded-full border border-white/30 shadow-sm active:scale-95 transition-all flex-shrink-0 ${chatInput.trim() ? 'bg-zinc-800 text-white dark:bg-white/90 dark:text-black border-zinc-800 dark:border-white/90' : 'text-zinc-700 dark:text-zinc-200 hover:bg-black/10 dark:hover:bg-white/20'}`}
                 title={chatInput.trim() ? "发送" : "请求AI回复"}
               >
                 {chatInput.trim() ? <ArrowUp size={20} strokeWidth={1.5} /> : <Zap size={20} strokeWidth={1.5} />}

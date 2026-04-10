@@ -550,18 +550,26 @@ export const AppearanceScreen = ({
                         className="hidden" 
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (e) => {
-                              const result = e.target?.result as string;
-                              if (result) {
-                                setWallpaper(result);
-                                localStorage.setItem('aiphone_wallpaper', result);
-                                window.dispatchEvent(new Event('wallpaperChanged'));
-                              }
-                            };
-                            reader.readAsDataURL(file);
-                          }
+                          if (!file) return;
+                          
+                          const canvas = document.createElement('canvas');
+                          const ctx = canvas.getContext('2d');
+                          const img = new Image();
+                          const objectUrl = URL.createObjectURL(file);
+                          
+                          img.onload = () => {
+                            const maxSize = 1200;
+                            const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
+                            canvas.width = img.width * ratio;
+                            canvas.height = img.height * ratio;
+                            ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+                            URL.revokeObjectURL(objectUrl);
+                            setWallpaper(compressed);
+                            localStorage.setItem('aiphone_wallpaper', compressed);
+                            window.dispatchEvent(new Event('wallpaperChanged'));
+                          };
+                          img.src = objectUrl;
                         }} 
                       />
                     </label>
