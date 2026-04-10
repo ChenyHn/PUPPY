@@ -1816,141 +1816,189 @@ export default function App() {
 
           {/* 7. Settings App (API Config) */}
           {screen === 'app-settings' && (
-            <SettingsScreen 
-              apiConfig={apiConfig} 
-              setApiConfig={setApiConfig} 
-              onBack={() => setScreen('home')}
-              time={time}
-            />
+            <motion.div
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.25 }}
+            >
+              <SettingsScreen 
+                apiConfig={apiConfig} 
+                setApiConfig={setApiConfig} 
+                onBack={() => setScreen('home')}
+                time={time}
+              />
+            </motion.div>
           )}
 
           {/* 7.5 Appearance App */}
           {screen === 'app-appearance' && (
-            <AppearanceScreen 
-              onBack={() => setScreen('home')}
-              time={time}
-              isLockScreenEnabled={isLockScreenEnabled}
-              setIsLockScreenEnabled={setIsLockScreenEnabled}
-              isPasswordEnabled={isPasswordEnabled}
-              setIsPasswordEnabled={setIsPasswordEnabled}
-              password={password}
-              setPassword={setPassword}
-              wallpaper={wallpaper}
-              setWallpaper={updateWallpaper}
-              fontLink={fontLink}
-              setFontLink={setFontLink}
-              customIcons={customIcons}
-              setCustomIcons={setCustomIcons}
-              iconStyleConfig={iconStyleConfig}
-              setIconStyleConfig={setIconStyleConfig}
-              iconFrostIntensity={iconFrostIntensity}
-              setIconFrostIntensity={setIconFrostIntensity}
-              frostIntensity={frostIntensity}
-              setFrostIntensity={setFrostIntensity}
-              componentBgOpacity={componentBgOpacity}
-              setComponentBgOpacity={setComponentBgOpacity}
-              themeMode={themeMode}
-              setThemeMode={setThemeMode}
-              baseFontSize={baseFontSize}
-              setBaseFontSize={setBaseFontSize}
-              baseFontColor={baseFontColor}
-              setBaseFontColor={setBaseFontColor}
-            />
+            <motion.div
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.25 }}
+            >
+              <AppearanceScreen 
+                onBack={() => setScreen('home')}
+                time={time}
+                isLockScreenEnabled={isLockScreenEnabled}
+                setIsLockScreenEnabled={setIsLockScreenEnabled}
+                isPasswordEnabled={isPasswordEnabled}
+                setIsPasswordEnabled={setIsPasswordEnabled}
+                password={password}
+                setPassword={setPassword}
+                wallpaper={wallpaper}
+                setWallpaper={updateWallpaper}
+                fontLink={fontLink}
+                setFontLink={setFontLink}
+                customIcons={customIcons}
+                setCustomIcons={setCustomIcons}
+                iconStyleConfig={iconStyleConfig}
+                setIconStyleConfig={setIconStyleConfig}
+                iconFrostIntensity={iconFrostIntensity}
+                setIconFrostIntensity={setIconFrostIntensity}
+                frostIntensity={frostIntensity}
+                setFrostIntensity={setFrostIntensity}
+                componentBgOpacity={componentBgOpacity}
+                setComponentBgOpacity={setComponentBgOpacity}
+                themeMode={themeMode}
+                setThemeMode={setThemeMode}
+                baseFontSize={baseFontSize}
+                setBaseFontSize={setBaseFontSize}
+                baseFontColor={baseFontColor}
+                setBaseFontColor={setBaseFontColor}
+              />
+            </motion.div>
           )}
 
           {/* 7.6 Persona App */}
           {screen === 'app-persona' && (
-            <PersonaScreen 
-              onBack={() => {
-                setScreen('app-phone-list');
-                setEditingPersona(null);
-              }}
-              time={time}
-              initialPersona={editingPersona}
-              onSavePersona={(p: Persona) => {
-                if (editingPersona) {
-                  setPhonePersonas(prev => prev.map(item => item.id === p.id ? p : item));
-                } else {
-                  setPhonePersonas(prev => [...prev, p]);
-                }
-                setEditingPersona(null);
-              }}
-            />
+            <motion.div
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.25 }}
+            >
+              <PersonaScreen 
+                onBack={() => {
+                  setScreen('app-phone-list');
+                  setEditingPersona(null);
+                }}
+                time={time}
+                initialPersona={editingPersona}
+                onSavePersona={(p: Persona) => {
+                  if (editingPersona) {
+                    setPhonePersonas(prev => prev.map(item => item.id === p.id ? p : item));
+                  } else {
+                    setPhonePersonas(prev => [...prev, p]);
+                  }
+                  setEditingPersona(null);
+                }}
+              />
+            </motion.div>
           )}
 
           {/* 7.7 Phone List App */}
           {screen === 'app-phone-list' && (
-            <PhoneListScreen 
-              onBack={() => setScreen('home')}
-              time={time}
-              personas={phonePersonas}
-              onEditPersona={(p: Persona) => {
-                setEditingPersona(p);
-                setScreen('app-persona');
-              }}
-              onAddPersona={() => {
-                setEditingPersona(null);
-                setScreen('app-persona');
-              }}
-              onDeletePersona={(id: string) => {
-                setPhonePersonas(prev => prev.filter(p => p.id !== id));
-              }}
-            />
+            <motion.div
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.25 }}
+            >
+              <PhoneListScreen 
+                onBack={() => setScreen('home')}
+                time={time}
+                personas={phonePersonas}
+                onEditPersona={(p: Persona) => {
+                  setEditingPersona(p);
+                  setScreen('app-persona');
+                }}
+                onAddPersona={() => {
+                  setEditingPersona(null);
+                  setScreen('app-persona');
+                }}
+                onDeletePersona={(id: string) => {
+                  setPhonePersonas(prev => prev.filter(p => p.id !== id));
+                }}
+              />
+            </motion.div>
           )}
 
           {/* 7.8 World Book List */}
           {screen === 'app-world' && (
-            <WorldBookListScreen 
-              onBack={() => setScreen('home')}
-              time={time}
-              worldBooks={worldBooks}
-              setWorldBooks={setWorldBooks}
-              folders={worldBookFolders}
-              setFolders={setWorldBookFolders}
-              onEdit={(wb: any) => {
-                setEditingWorldBook(wb);
-                setScreen('app-world-edit');
-              }}
-              onAdd={() => {
-                setEditingWorldBook(null);
-                setScreen('app-world-edit');
-              }}
-            />
+            <motion.div
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.25 }}
+            >
+              <WorldBookListScreen 
+                onBack={() => setScreen('home')}
+                time={time}
+                worldBooks={worldBooks}
+                setWorldBooks={setWorldBooks}
+                folders={worldBookFolders}
+                setFolders={setWorldBookFolders}
+                onEdit={(wb: any) => {
+                  setEditingWorldBook(wb);
+                  setScreen('app-world-edit');
+                }}
+                onAdd={() => {
+                  setEditingWorldBook(null);
+                  setScreen('app-world-edit');
+                }}
+              />
+            </motion.div>
           )}
 
           {/* 7.9 World Book Edit */}
           {screen === 'app-world-edit' && (
-            <WorldBookEditScreen 
-              onBack={() => {
-                setScreen('app-world');
-                setEditingWorldBook(null);
-              }}
-              time={time}
-              initialData={editingWorldBook}
-              phonePersonas={phonePersonas}
-              folders={worldBookFolders}
-              onSave={(wb: any) => {
-                setWorldBooks(prev => {
-                  let next = [...prev];
-                  const existingIndex = next.findIndex(item => item.id === wb.id);
-                  if (existingIndex >= 0) {
-                    next[existingIndex] = wb;
-                  } else {
-                    next.push(wb);
-                  }
-                  
-                  // If saving an active global world book, deactivate other globals
-                  if (wb.isActive && wb.scope === 'global') {
-                    next = next.map(item => 
-                      (item.id !== wb.id && item.scope === 'global') ? { ...item, isActive: false } : item
-                    );
-                  }
-                  return next;
-                });
-                setScreen('app-world');
-                setEditingWorldBook(null);
-              }}
-            />
+            <motion.div
+              className="absolute inset-0 w-full h-full z-50 flex flex-col"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.25 }}
+            >
+              <WorldBookEditScreen 
+                onBack={() => {
+                  setScreen('app-world');
+                  setEditingWorldBook(null);
+                }}
+                time={time}
+                initialData={editingWorldBook}
+                phonePersonas={phonePersonas}
+                folders={worldBookFolders}
+                onSave={(wb: any) => {
+                  setWorldBooks(prev => {
+                    let next = [...prev];
+                    const existingIndex = next.findIndex(item => item.id === wb.id);
+                    if (existingIndex >= 0) {
+                      next[existingIndex] = wb;
+                    } else {
+                      next.push(wb);
+                    }
+                    
+                    // If saving an active global world book, deactivate other globals
+                    if (wb.isActive && wb.scope === 'global') {
+                      next = next.map(item => 
+                        (item.id !== wb.id && item.scope === 'global') ? { ...item, isActive: false } : item
+                      );
+                    }
+                    return next;
+                  });
+                  setScreen('app-world');
+                  setEditingWorldBook(null);
+                }}
+              />
+            </motion.div>
           )}
 
           {/* 8. AI Chat Screen */}
@@ -2169,7 +2217,7 @@ export default function App() {
 
       <style>{`
         html {
-          font-size: var(--base-font-size, 16px) !important;
+          font-size: var(--base-font-size, 16px);
         }
         html.custom-font-color * {
           color: var(--base-font-color) !important;
@@ -2190,7 +2238,7 @@ export default function App() {
           --nav-inner-shadow: inset 3px 3px 6px rgba(0,0,0,0.3), inset -3px -3px 6px rgba(255,255,255,0.05);
         }
         * {
-          font-family: var(--custom-font-family) !important;
+          font-family: var(--custom-font-family);
         }
         .glass-card {
           position: relative;
