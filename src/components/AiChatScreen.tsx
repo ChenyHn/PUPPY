@@ -1069,7 +1069,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
   // --- Render ---
   return (
-    <div className="absolute inset-0 bg-neutral-50 dark:bg-black flex flex-col z-50 overflow-hidden">
+    <div className="relative w-full h-full bg-neutral-50 dark:bg-black flex flex-col z-50 overflow-hidden">
       {/* Header */}
       {isMultiSelectMode ? (
         <div className="absolute top-2 left-0 w-full z-50 px-6 pt-3 pb-4 flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-neutral-200/50 dark:border-zinc-800/50">
@@ -1325,7 +1325,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Normal Input Area (hidden in multi-select mode) */}
       {!isMultiSelectMode && (
-        <div className="fixed bottom-0 left-0 right-0 flex justify-center items-center gap-3 px-4 pb-6 pt-3 z-40">
+        <div className="absolute bottom-0 left-0 right-0 flex justify-center items-center gap-3 px-4 pb-6 pt-3 z-40">
           
           {/* Function Panel */}
           <AnimatePresence>

@@ -546,6 +546,7 @@ export const AppearanceScreen = ({
                       if (wallpaper) {
                         setWallpaper(null);
                         localStorage.removeItem('aiphone_wallpaper');
+                        window.dispatchEvent(new Event('wallpaperChanged'));
                       }
                     }}
                     className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 flex-shrink-0 transition-colors"

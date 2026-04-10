@@ -827,15 +827,25 @@ export default function App() {
     if (wallpaper && wallpaper.startsWith('blob:')) {
       URL.revokeObjectURL(wallpaper);
     }
-    setTimeout(() => setWallpaper(newUrl), 100);
+    setTimeout(() => {
+      setWallpaper(newUrl);
+      window.dispatchEvent(new Event('wallpaperChanged'));
+    }, 100);
   };
 
   const handleWallpaperChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       try {
-        const compressed = await compressImage(file, 1024);
-        updateWallpaper(compressed);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          localStorage.setItem('aiphone_wallpaper', result);
+          setWallpaper(result);
+          // 强制触发重渲染
+          window.dispatchEvent(new Event('wallpaperChanged'));
+        };
+        reader.readAsDataURL(file);
       } catch (err) {
         console.error('Failed to process wallpaper:', err);
         updateWallpaper(null);
@@ -843,6 +853,15 @@ export default function App() {
       }
     }
   };
+
+  useEffect(() => {
+    const handler = () => {
+      const saved = localStorage.getItem('aiphone_wallpaper');
+      if (saved) setWallpaper(saved);
+    };
+    window.addEventListener('wallpaperChanged', handler);
+    return () => window.removeEventListener('wallpaperChanged', handler);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('aiphone_api_config', JSON.stringify(apiConfig));
