@@ -2,13 +2,17 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* 全局基础样式 - 确保全屏铺满 */
 html, body, #root {
   height: 100%;
   width: 100%;
+  overflow: hidden;
+  position: fixed;
+}
+
+/* 全局基础样式 - 确保全屏铺满 */
+html, body, #root {
   margin: 0;
   padding: 0;
-  overflow: hidden;
   /* 适配 iOS 安全区域 */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
