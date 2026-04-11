@@ -6,7 +6,6 @@ html, body, #root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  position: fixed;
 }
 
 /* 全局基础样式 - 确保全屏铺满 */
