@@ -41,7 +41,7 @@ export const RedPacketMessage: React.FC<RedPacketMessageProps> = ({ data, isSelf
       </div>
 
       {showStatus && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[80] flex items-center justify-center p-4" onClick={() => setShowStatus(false)}>
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[80] flex items-center justify-center p-4" onClick={() => setShowStatus(false)}>
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-[280px] text-center flex flex-col items-center gap-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
             <div className="w-16 h-16 bg-[#ffe8ee] dark:bg-gray-700 rounded-full flex items-center justify-center mb-2">
               <Wallet className="text-[#403f44]" size={32} />

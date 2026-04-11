@@ -837,8 +837,7 @@ export default function App() {
         reader.onload = (e) => {
           const result = e.target?.result as string;
           if (result) {
-            setWallpaper(result);
-            localStorage.setItem('aiphone_wallpaper', result);
+            updateWallpaper(result);
           }
         };
         reader.readAsDataURL(file);
@@ -1609,6 +1608,7 @@ export default function App() {
                                 style={{
                                   background: 'rgba(255, 255, 255, 0.85)',
                                   backdropFilter: 'blur(8px)',
+                                  WebkitBackdropFilter: 'blur(8px)',
                                   border: '1px solid rgba(255, 255, 255, 0.9)',
                                   borderRadius: '16px',
                                   boxShadow: 'none',

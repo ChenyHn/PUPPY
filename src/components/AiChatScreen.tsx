@@ -1303,7 +1303,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
       {/* Multi-select bottom toolbar */}
       {isMultiSelectMode && (
-        <div className="absolute bottom-4 left-0 right-0 mx-4 rounded-2xl py-2 px-4 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px]">
+        <div className="absolute bottom-0 left-0 right-0 mx-3 mb-3 rounded-2xl py-2 px-4 flex justify-around items-center z-50 border border-white/20 dark:border-white/5 bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(20,20,25,0.4)] backdrop-blur-[16px]">
           <button onClick={handleForwardClick} className="flex-1 flex flex-col items-center gap-1 py-2 text-zinc-700 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-zinc-100 active:scale-95 transition-all">
             <Forward size={20} />
             <span className="text-[10px] font-bold">转发</span>
@@ -1343,12 +1343,12 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
             {showFunctionPanel && !currentChatSettings.isBlocked && (
               <>
-                <motion.div 
-                  initial={{ opacity: 0 }} 
-                  animate={{ opacity: 1 }} 
-                  exit={{ opacity: 0 }} 
-                  className="fixed inset-0 z-10" 
-                  onClick={() => setShowFunctionPanel(false)} 
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-10"
+                  onClick={() => setShowFunctionPanel(false)}
                 />
                 <motion.div
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}

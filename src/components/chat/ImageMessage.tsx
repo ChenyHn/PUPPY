@@ -24,8 +24,8 @@ export const ImageMessage: React.FC<ImageMessageProps> = ({ imageUrl, isSelf = f
       </div>
 
       {isPreviewOpen && (
-        <div 
-          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center cursor-zoom-out animate-in fade-in duration-200"
+        <div
+          className="absolute inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center cursor-zoom-out animate-in fade-in duration-200"
           onClick={() => setIsPreviewOpen(false)}
         >
           <button 
