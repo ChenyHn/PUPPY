@@ -1,4 +1,4 @@
-export type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-heartbeat-npc' | 'app-music' | 'app-shopping';
+export type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-favorites' | 'app-heartbeat-npc' | 'app-music' | 'app-shopping';
 export type WorldBookScope = 'global' | 'local';
 
 export interface WorldBook {

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as mammoth from 'mammoth';
 import { 
   Smartphone, 
@@ -81,89 +81,13 @@ import { MusicScreen } from './components/MusicScreen';
 import { ShoppingScreen } from './components/shopping/ShoppingScreen';
 import { getOrders, updateOrderStatus } from './services/shoppingService';
 import { StatusBar } from './components/StatusBar';
-import { UpdateNoticeCard } from './components/UpdateNoticeCard';
-import { wallpaperDB } from './utils/wallpaperDB';
+import { GlassCard } from './components/Shared';
+import { useAppSettings, compressImage } from './hooks/useAppSettings';
+import { useScreenNavigation } from './hooks/useScreenNavigation';
 
-import type { ChatMessage } from './types';
-
-// --- Types ---
-type Screen = 'splash' | 'lock' | 'password-setup' | 'password-unlock' | 'home' | 'app-chat' | 'app-settings' | 'ai-chat' | 'app-appearance' | 'app-persona' | 'app-phone-list' | 'app-world' | 'app-world-edit' | 'app-favorites' | 'app-heartbeat-npc' | 'app-music' | 'app-shopping';
-
-interface FavoriteItem {
-  id: string;
-  messageId: string;
-  contactId: string;
-  content: string;
-  sender: 'user' | 'assistant';
-  timestamp: number;
-}
-type WorldBookScope = 'global' | 'local';
-
-interface WorldBook {
-  id: string;
-  title: string;
-  content: string;
-  scope: WorldBookScope;
-  isActive: boolean;
-  boundPersonas: string[];
-  folderId?: string; // Add folder ID
-}
-
-interface WorldBookFolder {
-  id: string;
-  name: string;
-}
-type ChatTab = 'messages' | 'contacts' | 'moments' | 'me';
-
-interface Persona {
-  id: string;
-  name: string;
-  gender: string;
-  chatName: string;
-  chatId: string;
-  avatar: string | null;
-  height: string;
-  weight: string;
-  age: string;
-  occupation: string;
-  location: string;
-  personality: string;
-  bio: string;
-}
-
-interface ApiConfig {
-  baseUrl: string;
-  apiKey: string;
-  selectedModel: string;
-  models: string[];
-  temperature: number;
-  maxTokens: number;
-  contextMessageCount: number;
-}
+import type { ApiConfig, ChatMessage, FavoriteItem, Persona, Screen, WorldBookFolder } from './types';
 
 // --- Components ---
-
-const GlassCard = ({ children, className = "", blur, opacity, darkOpacity, ...props }: { children: React.ReactNode, className?: string, blur?: string, opacity?: string, darkOpacity?: string, [key: string]: any }) => {
-  // Use global frost intensity if available via CSS variables, otherwise fallback to defaults
-  // The global CSS variables are set on the root wrapper
-  return (
-    <div 
-      className={`glass-card shadow-[0_8px_32px_rgba(0,0,0,0.1)] rounded-[24px] border border-white/20 dark:border-white/10 ${className}`}
-      style={{ 
-        backdropFilter: blur ? `blur(${blur})` : 'var(--glass-blur, blur(40px))', 
-        WebkitBackdropFilter: blur ? `blur(${blur})` : 'var(--glass-blur, blur(40px))',
-        '--glass-opacity': opacity || 'var(--glass-base-opacity, 0.2)',
-        '--glass-dark-opacity': darkOpacity || 'var(--glass-base-dark-opacity, 0.4)',
-      } as React.CSSProperties}
-      {...props}
-    >
-      <div className="glass-noise" />
-      <div className="relative z-10 w-full h-full">
-        {children}
-      </div>
-    </div>
-  );
-};
 
 const hexToRgb = (hex: string) => {
   const r = parseInt(hex.slice(1, 3), 16) || 0;
@@ -283,7 +207,7 @@ interface HomeAppItem {
   id: string;
   icon: any;
   label: string;
-  screen?: string;
+  screen?: Screen;
 }
 
 const DEFAULT_HOME_APPS: HomeAppItem[] = [
@@ -321,7 +245,7 @@ const ReorderableGrid = ({
   customIcons: Record<string, string>;
   iconStyleConfig: any;
   iconFrostIntensity: number;
-  onAppClick: (screen?: string) => void;
+  onAppClick: (screen?: Screen) => void;
   gridRef: React.RefObject<HTMLDivElement | null>;
 }) => {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -409,13 +333,21 @@ const ReorderableGrid = ({
 };
 
 const ChatListItem = ({ name, msg, time, unread = 0, avatar, isPinned }: any) => (
-  <div className={`flex items-center gap-4 p-4 transition-colors cursor-pointer border-b border-neutral-200 dark:border-zinc-800 last:border-b-0 relative
-    ${isPinned 
-      ? 'bg-zinc-100/80 dark:bg-zinc-800/80 hover:bg-zinc-200/80 dark:hover:bg-zinc-700/80' 
-      : 'bg-white dark:bg-[#1c1c1e] hover:bg-neutral-50 dark:hover:bg-zinc-800/60'
-    }`}
+  <div
+    className={`mx-4 mt-3 flex items-center gap-4 rounded-[22px] px-4 py-4 cursor-pointer transition-all relative overflow-hidden border
+      ${isPinned
+        ? 'border-white/60 dark:border-white/12 text-zinc-900 dark:text-zinc-100'
+        : 'border-white/52 dark:border-white/10 text-zinc-900 dark:text-zinc-100'
+      }`}
+    style={{
+      background: isPinned ? 'rgba(255, 255, 255, 0.34)' : 'rgba(255, 255, 255, 0.26)',
+      backdropFilter: 'blur(18px)',
+      WebkitBackdropFilter: 'blur(18px)',
+      maskImage: 'linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.96) 5%, rgba(0, 0, 0, 0.96) 95%, transparent 100%)',
+      WebkitMaskImage: 'linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.96) 5%, rgba(0, 0, 0, 0.96) 95%, transparent 100%)',
+    }}
   >
-    <div className="w-[56px] h-[56px] rounded-full bg-neutral-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 dark:text-zinc-500 flex-shrink-0 overflow-hidden">
+    <div className="w-[56px] h-[56px] rounded-full bg-white/55 dark:bg-zinc-800/70 flex items-center justify-center text-zinc-400 dark:text-zinc-500 flex-shrink-0 overflow-hidden">
       {avatar ? (
         <img src={avatar} alt={name} className="w-full h-full object-cover" />
       ) : (
@@ -423,14 +355,14 @@ const ChatListItem = ({ name, msg, time, unread = 0, avatar, isPinned }: any) =>
       )}
     </div>
     <div className="flex-1 min-w-0">
-      <div className="flex justify-between items-center mb-0.5">
-        <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px]">{name}</span>
-        <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">{time}</span>
+      <div className="flex justify-between items-center mb-0.5 gap-3">
+        <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] truncate">{name}</span>
+        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium shrink-0">{time}</span>
       </div>
-      <p className="text-[12px] text-zinc-500 dark:text-zinc-400 truncate font-medium">{msg}</p>
+      <p className="text-[12px] text-zinc-600 dark:text-zinc-300 truncate font-medium">{msg}</p>
     </div>
     {unread > 0 && (
-      <div className="w-5 h-5 bg-zinc-800 dark:bg-zinc-200 rounded-full flex items-center justify-center">
+      <div className="w-5 h-5 bg-zinc-800 dark:bg-zinc-200 rounded-full flex items-center justify-center shrink-0">
         <span className="text-[10px] text-white dark:text-zinc-800 font-bold">{unread}</span>
       </div>
     )}
@@ -438,48 +370,62 @@ const ChatListItem = ({ name, msg, time, unread = 0, avatar, isPinned }: any) =>
 );
 
 export default function App() {
-  const [themeMode, setThemeMode] = useState<'system'|'light'|'dark'>(() => {
-    return (localStorage.getItem('aiphone_theme_mode') as any) || 'system';
+  const {
+    themeMode,
+    setThemeMode,
+    isLockScreenEnabled,
+    setIsLockScreenEnabled,
+    isPasswordEnabled,
+    setIsPasswordEnabled,
+    showStatusBar,
+    wallpaper,
+    safeWallpaper,
+    motto,
+    setMotto,
+    fontLink,
+    setFontLink,
+    customIcons,
+    setCustomIcons,
+    iconStyleConfig,
+    setIconStyleConfig,
+    frostIntensity,
+    setFrostIntensity,
+    iconFrostIntensity,
+    setIconFrostIntensity,
+    componentBgOpacity,
+    setComponentBgOpacity,
+    baseFontSize,
+    setBaseFontSize,
+    baseFontColor,
+    setBaseFontColor,
+    wallpaperInputRef,
+    updateWallpaper,
+    uploadWallpaper,
+    handleWallpaperChange,
+    compressImage,
+  } = useAppSettings();
+
+  const {
+    screen,
+    setScreen,
+    chatTab,
+    setChatTab,
+    password,
+    setPassword,
+    input,
+    setupStep,
+    error,
+    time,
+    date,
+    isPostAuth,
+    lockScreenTarget,
+    handleNumpad,
+    handleDelete,
+  } = useScreenNavigation({
+    isLockScreenEnabled,
+    isPasswordEnabled,
   });
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const applyTheme = (mode: string) => {
-      if (mode === 'dark') {
-        root.classList.add('dark');
-      } else if (mode === 'light') {
-        root.classList.remove('dark');
-      } else {
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (isDark) {
-          root.classList.add('dark');
-        } else {
-          root.classList.remove('dark');
-        }
-      }
-    };
-    
-    applyTheme(themeMode);
-    localStorage.setItem('aiphone_theme_mode', themeMode);
-
-    // 监听系统变化
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => { 
-      if (themeMode === 'system') applyTheme('system'); 
-    };
-    media.addEventListener('change', handler);
-    return () => media.removeEventListener('change', handler);
-  }, [themeMode]);
-
-  const [screen, setScreen] = useState<Screen>('splash');
-  const [chatTab, setChatTab] = useState<ChatTab>('messages');
-  const [password, setPassword] = useState<string | null>(() => localStorage.getItem('aiphone_password'));
-  const [input, setInput] = useState('');
-  const [setupStep, setSetupStep] = useState<'first' | 'confirm'>('first');
-  const [firstInput, setFirstInput] = useState('');
-  const [error, setError] = useState('');
-  const [time, setTime] = useState('');
-  const [date, setDate] = useState('');
   const [isEditingLayout, setIsEditingLayout] = useState(false);
   const [homeApps, setHomeApps] = useState<HomeAppItem[]>(() => {
     const saved = localStorage.getItem('aiphone_home_app_order');
@@ -499,21 +445,7 @@ export default function App() {
     return [...DEFAULT_HOME_APPS];
   });
   const gridRef = useRef<HTMLDivElement>(null);
-  const [isLockScreenEnabled, setIsLockScreenEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('aiphone_lock_screen_enabled');
-    return saved !== null ? JSON.parse(saved) : true;
-  });
-  const [isPasswordEnabled, setIsPasswordEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('aiphone_password_enabled');
-    return saved !== null ? JSON.parse(saved) : true;
-  });
 
-  const [showStatusBar, setShowStatusBar] = useState<boolean>(() => {
-    const saved = localStorage.getItem('aiphone_show_status_bar');
-    return saved !== null ? JSON.parse(saved) : true;
-  });
-
-  // API Config State
   const [apiConfig, setApiConfig] = useState<ApiConfig>(() => {
     const saved = localStorage.getItem('aiphone_api_config');
     return saved ? JSON.parse(saved) : { baseUrl: '', apiKey: '', selectedModel: '', models: [], temperature: 0.7, maxTokens: 2048, contextMessageCount: 10 };
@@ -529,14 +461,12 @@ export default function App() {
     }));
   };
 
-  // Chat State
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isAddingFriend, setIsAddingFriend] = useState(false);
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
   const [showContactsMenu, setShowContactsMenu] = useState(false);
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
 
-  // Home Screen Customization State
   const [avatar, setAvatar] = useState<string | null>(() => localStorage.getItem('aiphone_avatar'));
   const [currentUser, setCurrentUser] = useState<CurrentUser>(() => {
     const saved = localStorage.getItem('aiphone_current_user');
@@ -581,31 +511,6 @@ export default function App() {
     localStorage.setItem('aiphone_wallet', JSON.stringify(wallet));
   }, [wallet]);
 
-  const [wallpaper, setWallpaper] = useState<string | null>(null);
-  const [motto, setMotto] = useState(() => localStorage.getItem('aiphone_motto') || '生活明朗，万物可爱');
-  const [fontLink, setFontLink] = useState(() => localStorage.getItem('aiphone_font_link') || '');
-  const [customIcons, setCustomIcons] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('aiphone_custom_icons');
-    return saved ? JSON.parse(saved) : {};
-  });
-  const [iconStyleConfig, setIconStyleConfig] = useState<any>(() => {
-    const saved = localStorage.getItem('aiphone_icon_style_config');
-    return saved ? JSON.parse(saved) : {
-      isEnabled: true,
-      borderRadius: 20,
-      iconSize: 60,
-      bgOpacity: 0.2,
-      bgLightColor: '#ffffff',
-      bgDarkColor: '#000000',
-      shadowIntensity: 0.05,
-      iconLightColor: '#27272a',
-      iconDarkColor: '#f4f4f5'
-    };
-  });
-  const [frostIntensity, setFrostIntensity] = useState<number>(() => {
-    const saved = localStorage.getItem('aiphone_frost_intensity');
-    return saved !== null ? Number(saved) : 60;
-  });
   const [worldBooks, setWorldBooks] = useState<any[]>(() => {
     const saved = localStorage.getItem('aiphone_world_books');
     return saved ? JSON.parse(saved) : [];
@@ -616,54 +521,6 @@ export default function App() {
   });
   const [editingWorldBook, setEditingWorldBook] = useState<any | null>(null);
 
-  // 主屏幕图标组件样式状态
-  const [iconFrostIntensity, setIconFrostIntensity] = useState<number>(() => {
-    const saved = localStorage.getItem('iconFrostIntensity');
-    return saved !== null ? Number(saved) : 60;
-  });
-  const [componentBgOpacity, setComponentBgOpacity] = useState<number>(() => {
-    const saved = localStorage.getItem('componentBgOpacity');
-    return saved !== null ? Number(saved) : 0.3;
-  });
-  
-  const [baseFontSize, setBaseFontSize] = useState<number>(() => {
-    const saved = localStorage.getItem('aiphone_font_size');
-    return saved !== null ? Number(saved) : 16;
-  });
-  const [baseFontColor, setBaseFontColor] = useState<string>(() => {
-    return localStorage.getItem('aiphone_font_color') || '';
-  });
-
-  // 监听 localStorage 变化以实现实时响应
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const savedIconFrost = localStorage.getItem('iconFrostIntensity');
-      if (savedIconFrost !== null) {
-        setIconFrostIntensity(Number(savedIconFrost));
-      }
-      
-      const savedOpacity = localStorage.getItem('componentBgOpacity');
-      if (savedOpacity !== null) {
-        setComponentBgOpacity(Number(savedOpacity));
-      }
-
-      // 同步状态栏开关
-      const savedStatusBar = localStorage.getItem('aiphone_show_status_bar');
-      if (savedStatusBar !== null) {
-        setShowStatusBar(JSON.parse(savedStatusBar));
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    // 轮询以便在同一个标签页中获取本地存储的更新
-    const interval = setInterval(handleStorageChange, 200);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(interval);
-    };
-  }, []);
-
   const [contacts, setContacts] = useState<Persona[]>(() => {
     const saved = localStorage.getItem('aiphone_contacts');
     return saved ? JSON.parse(saved) : [];
@@ -672,9 +529,6 @@ export default function App() {
     const saved = localStorage.getItem('aiphone_phone_personas');
     return saved ? JSON.parse(saved) : [];
   });
-
-  const wallpaperInputRef = React.useRef<HTMLInputElement>(null);
-  const wallpaperObjectUrlRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('aiphone_contacts', JSON.stringify(contacts));
@@ -695,325 +549,12 @@ export default function App() {
   }, [phonePersonas]);
 
   useEffect(() => {
-    localStorage.setItem('aiphone_font_link', fontLink);
-    if (fontLink) {
-      const id = 'custom-font-style';
-      let link = document.getElementById(id) as HTMLLinkElement;
-      if (!link) {
-        link = document.createElement('link');
-        link.id = id;
-        link.rel = 'stylesheet';
-        document.head.appendChild(link);
-      }
-      link.href = fontLink;
-
-      // Extract font family from link if possible, or just apply it globally
-      // This is a bit tricky with just a link, but we can try to find the family name
-      const match = fontLink.match(/family=([^&:]+)/);
-      if (match) {
-        const family = match[1].replace(/\+/g, ' ');
-        document.documentElement.style.setProperty('--custom-font-family', `"${family}", sans-serif`);
-      }
-    } else {
-      document.documentElement.style.removeProperty('--custom-font-family');
-    }
-  }, [fontLink]);
-
-  useEffect(() => {
-    localStorage.setItem('aiphone_custom_icons', JSON.stringify(customIcons));
-  }, [customIcons]);
-
-  useEffect(() => {
-    localStorage.setItem('aiphone_icon_style_config', JSON.stringify(iconStyleConfig));
-  }, [iconStyleConfig]);
-
-  useEffect(() => {
-    localStorage.setItem('aiphone_frost_intensity', frostIntensity.toString());
-  }, [frostIntensity]);
-
-  useEffect(() => {
-    localStorage.setItem('iconFrostIntensity', iconFrostIntensity.toString());
-  }, [iconFrostIntensity]);
-
-  useEffect(() => {
-    localStorage.setItem('aiphone_font_size', baseFontSize.toString());
-    document.documentElement.style.setProperty('--base-font-size', `${baseFontSize}px`);
-  }, [baseFontSize]);
-
-  useEffect(() => {
-    localStorage.setItem('aiphone_font_color', baseFontColor);
-    if (baseFontColor) {
-      document.documentElement.style.setProperty('--base-font-color', baseFontColor);
-      document.documentElement.classList.add('custom-font-color');
-    } else {
-      document.documentElement.style.removeProperty('--base-font-color');
-      document.documentElement.classList.remove('custom-font-color');
-    }
-  }, [baseFontColor]);
-
-  useEffect(() => {
     localStorage.setItem('aiphone_home_app_order', JSON.stringify(homeApps.map(a => a.id)));
   }, [homeApps]);
 
   useEffect(() => {
-    localStorage.setItem('aiphone_lock_screen_enabled', JSON.stringify(isLockScreenEnabled));
-  }, [isLockScreenEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('aiphone_password_enabled', JSON.stringify(isPasswordEnabled));
-  }, [isPasswordEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('aiphone_show_status_bar', JSON.stringify(showStatusBar));
-  }, [showStatusBar]);
-
-  useEffect(() => {
     if (avatar) localStorage.setItem('aiphone_avatar', avatar);
   }, [avatar]);
-
-  useEffect(() => {
-    localStorage.setItem('aiphone_motto', motto);
-  }, [motto]);
-
-  const MAX_STORED_IMAGE_LENGTH = 1_200_000;
-  const MAX_WALLPAPER_IMAGE_LENGTH = 900_000;
-  const WALLPAPER_STORAGE_KEY = 'aiphone_wallpaper';
-
-  const isPersistedImageSource = (value: string | null | undefined, maxLength: number = MAX_STORED_IMAGE_LENGTH) => {
-    if (!value || typeof value !== 'string') return false;
-    if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value)) {
-      return value.length <= maxLength;
-    }
-    return /^https?:\/\//i.test(value);
-  };
-
-  const isRuntimeImageSource = (value: string | null | undefined, maxLength: number = MAX_STORED_IMAGE_LENGTH) => {
-    if (!value || typeof value !== 'string') return false;
-    if (/^blob:/i.test(value)) return true;
-    return isPersistedImageSource(value, maxLength);
-  };
-
-  const safeParseJson = <T,>(raw: string | null, fallback: T, storageKey?: string): T => {
-    if (!raw) return fallback;
-    try {
-      return JSON.parse(raw) as T;
-    } catch (error) {
-      if (storageKey) {
-        try {
-          localStorage.removeItem(storageKey);
-        } catch {}
-      }
-      return fallback;
-    }
-  };
-
-  const safeSetLocalStorage = (key: string, value: string) => {
-    try {
-      localStorage.setItem(key, value);
-      return true;
-    } catch (error) {
-      console.error(`Failed to save ${key}:`, error);
-      return false;
-    }
-  };
-
-  const sanitizeChatSettings = (settings: Record<string, any>) => {
-    return Object.fromEntries(
-      Object.entries(settings).map(([chatId, setting]) => {
-        const nextSetting = { ...setting };
-        if (!isPersistedImageSource(nextSetting.backgroundImage)) {
-          delete nextSetting.backgroundImage;
-        }
-        return [chatId, nextSetting];
-      })
-    );
-  };
-
-  const compressImage = (file: File, maxWidth: number = 1024, quality: number = 0.8, maxLength: number = MAX_STORED_IMAGE_LENGTH): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const compressed = canvas.toDataURL('image/jpeg', quality);
-            if (compressed.length > maxLength) {
-              reject(new Error('Image too large after compression'));
-              return;
-            }
-            resolve(compressed);
-          } else {
-            reject(new Error('Canvas context not available'));
-          }
-        };
-        img.onerror = () => reject(new Error('Image load failed'));
-      };
-      reader.onerror = () => reject(new Error('File read failed'));
-    });
-  };
-
-  const dataUrlToBlob = async (dataUrl: string): Promise<Blob> => {
-    const response = await fetch(dataUrl);
-    return response.blob();
-  };
-
-  const compressImageToBlob = (file: File, maxWidth: number = 1024, quality: number = 0.8): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('Canvas context not available'));
-            return;
-          }
-
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) {
-                reject(new Error('Canvas export failed'));
-                return;
-              }
-              resolve(blob);
-            },
-            'image/jpeg',
-            quality,
-          );
-        };
-        img.onerror = () => reject(new Error('Image load failed'));
-      };
-      reader.onerror = () => reject(new Error('File read failed'));
-    });
-  };
-
-  const compressWallpaperToFit = async (file: File): Promise<Blob> => {
-    const attempts = [
-      { maxWidth: 1200, quality: 0.82 },
-      { maxWidth: 1080, quality: 0.76 },
-      { maxWidth: 960, quality: 0.7 },
-      { maxWidth: 840, quality: 0.64 },
-    ];
-
-    for (const attempt of attempts) {
-      try {
-        const blob = await compressImageToBlob(file, attempt.maxWidth, attempt.quality);
-        if (blob.size <= 3 * 1024 * 1024) {
-          return blob;
-        }
-      } catch (error) {
-        throw error;
-      }
-    }
-
-    throw new Error('Wallpaper image still too large after multiple compression attempts');
-  };
-
-  const revokeWallpaperObjectUrl = () => {
-    if (wallpaperObjectUrlRef.current) {
-      URL.revokeObjectURL(wallpaperObjectUrlRef.current);
-      wallpaperObjectUrlRef.current = null;
-    }
-  };
-
-  const createWallpaperObjectUrl = (blob: Blob) => {
-    revokeWallpaperObjectUrl();
-    const url = URL.createObjectURL(blob);
-    wallpaperObjectUrlRef.current = url;
-    return url;
-  };
-
-  const validateImageSource = (src: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(src);
-      img.onerror = () => reject(new Error('Image validation failed'));
-      img.src = src;
-    });
-  };
-
-  const validateWallpaperBlob = async (blob: Blob) => {
-    const url = URL.createObjectURL(blob);
-    try {
-      await validateImageSource(url);
-      return blob;
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  };
-
-  const hydrateWallpaper = useCallback(async () => {
-    try {
-      const storedWallpaper = await wallpaperDB.getWallpaper();
-      if (storedWallpaper?.blob) {
-        const url = createWallpaperObjectUrl(storedWallpaper.blob);
-        setWallpaper(url);
-        return url;
-      }
-
-      const legacyWallpaper = localStorage.getItem(WALLPAPER_STORAGE_KEY);
-      if (!isPersistedImageSource(legacyWallpaper, MAX_WALLPAPER_IMAGE_LENGTH)) {
-        if (legacyWallpaper) {
-          try {
-            localStorage.removeItem(WALLPAPER_STORAGE_KEY);
-          } catch {}
-        }
-        revokeWallpaperObjectUrl();
-        setWallpaper(null);
-        return null;
-      }
-
-      await validateImageSource(legacyWallpaper);
-      const migratedBlob = await dataUrlToBlob(legacyWallpaper);
-      await wallpaperDB.saveWallpaper(migratedBlob, migratedBlob.type || 'image/jpeg');
-      try {
-        localStorage.removeItem(WALLPAPER_STORAGE_KEY);
-      } catch {}
-      const url = createWallpaperObjectUrl(migratedBlob);
-      setWallpaper(url);
-      return url;
-    } catch (error) {
-      console.error('Failed to hydrate wallpaper:', error);
-      revokeWallpaperObjectUrl();
-      setWallpaper(null);
-      try {
-        localStorage.removeItem(WALLPAPER_STORAGE_KEY);
-      } catch {}
-      try {
-        await wallpaperDB.deleteWallpaper();
-      } catch {}
-      return null;
-    }
-  }, []);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1029,168 +570,6 @@ export default function App() {
     }
   };
 
-  const updateWallpaper = async (newUrl: string | null) => {
-    if (!newUrl) {
-      setWallpaper(null);
-      revokeWallpaperObjectUrl();
-      try {
-        localStorage.removeItem(WALLPAPER_STORAGE_KEY);
-      } catch (error) {
-        console.error('Failed to clear legacy wallpaper:', error);
-      }
-      try {
-        await wallpaperDB.deleteWallpaper();
-      } catch (error) {
-        console.error('Failed to clear wallpaper from IndexedDB:', error);
-        return false;
-      }
-      return true;
-    }
-
-    try {
-      const validated = await validateImageSource(newUrl);
-      if (!isRuntimeImageSource(validated, MAX_WALLPAPER_IMAGE_LENGTH)) {
-        throw new Error('Wallpaper exceeds safe runtime limit');
-      }
-      setWallpaper(validated);
-      return true;
-    } catch (error) {
-      console.error('Failed to update wallpaper:', error);
-      setWallpaper(null);
-      revokeWallpaperObjectUrl();
-      try {
-        localStorage.removeItem(WALLPAPER_STORAGE_KEY);
-      } catch {}
-      try {
-        await wallpaperDB.deleteWallpaper();
-      } catch {}
-      return false;
-    }
-  };
-
-  const uploadWallpaper = async (file: File) => {
-    const previousWallpaper = wallpaper;
-    try {
-      const compressed = await compressWallpaperToFit(file);
-      await validateWallpaperBlob(compressed);
-      await wallpaperDB.saveWallpaper(compressed, compressed.type || 'image/jpeg');
-      const nextWallpaperUrl = createWallpaperObjectUrl(compressed);
-      const success = await updateWallpaper(nextWallpaperUrl);
-      if (!success) {
-        await hydrateWallpaper();
-        alert('图片过大或处理失败，已恢复上一张壁纸');
-      }
-      return success;
-    } catch (err) {
-      console.error('Failed to process wallpaper:', err);
-      if (previousWallpaper && isRuntimeImageSource(previousWallpaper, MAX_WALLPAPER_IMAGE_LENGTH)) {
-        setWallpaper(previousWallpaper);
-      } else {
-        await updateWallpaper(null);
-      }
-      const message = err instanceof Error && err.message.includes('too large')
-        ? '图片过大，自动压缩后仍无法作为桌面壁纸'
-        : '图片加载失败，已恢复默认背景';
-      alert(message);
-      return false;
-    }
-  };
-
-  const handleWallpaperChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      try {
-        await uploadWallpaper(file);
-      } finally {
-        e.target.value = '';
-      }
-    }
-  };
-
-  useEffect(() => {
-    void hydrateWallpaper();
-    return () => {
-      revokeWallpaperObjectUrl();
-    };
-  }, [hydrateWallpaper]);
-
-
-  // Update time every second
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }));
-      const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-      setDate(`${now.getMonth() + 1}月${now.getDate()}日 ${weekDays[now.getDay()]}`);
-    };
-    updateTime();
-    const timer = setInterval(updateTime, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-
-
-
-  // ... (handleNumpad, handleDelete, AppIcon, ChatListItem remain same)
-
-  // Splash screen timeout
-  useEffect(() => {
-    if (screen === 'splash') {
-      const timer = setTimeout(() => {
-        if (!isLockScreenEnabled) {
-          setScreen('home');
-        } else {
-          setScreen('lock');
-        }
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [screen, isLockScreenEnabled]);
-
-  const handleNumpad = (num: string) => {
-    if (input.length >= 6) return;
-    const newInput = input + num;
-    setInput(newInput);
-    setError('');
-
-    if (newInput.length === 6) {
-      setTimeout(() => {
-        if (screen === 'password-setup') {
-          if (setupStep === 'first') {
-            setFirstInput(newInput);
-            setInput('');
-            setSetupStep('confirm');
-          } else {
-            if (newInput === firstInput) {
-              localStorage.setItem('aiphone_password', newInput);
-              setPassword(newInput);
-              setScreen('home');
-              setInput('');
-            } else {
-              setError('两次密码不一致，请重试');
-              setInput('');
-              setSetupStep('first');
-            }
-          }
-        } else if (screen === 'password-unlock') {
-          if (newInput === password) {
-            setScreen('home');
-            setInput('');
-          } else {
-            setError('密码错误，请重试');
-            setInput('');
-          }
-        }
-      }, 300);
-    }
-  };
-
-  const handleDelete = () => {
-    setInput(prev => prev.slice(0, -1));
-    setError('');
-  };
-
-  const [showApiKey, setShowApiKey] = useState(false);
   const [activeChatContact, setActiveChatContact] = useState<Persona | null>(null);
   const [chatHistories, setChatHistories] = useState<Record<string, ChatMessage[]>>(() => {
     const saved = localStorage.getItem('aiphone_chat_histories');
@@ -1242,7 +621,7 @@ export default function App() {
 
   const [chatSettings, setChatSettings] = useState<Record<string, { remark: string, background: string, isBlocked: boolean, isPinned: boolean, isAutoSummaryEnabled?: boolean, autoSummaryThreshold?: number, lastSummaryMessageIndex?: number }>>(() => {
     const saved = localStorage.getItem('aiphone_chat_settings');
-    return sanitizeChatSettings(safeParseJson(saved, {}, 'aiphone_chat_settings'));
+    return saved ? JSON.parse(saved) : {};
   });
 
   const [favorites, setFavorites] = useState<FavoriteItem[]>(() => {
@@ -1252,8 +631,6 @@ export default function App() {
 
   const [showFavoritesScreen, setShowFavoritesScreen] = useState(false);
 
-  // Determine if we're past the auth flow
-  const isPostAuth = !['splash', 'lock', 'password-setup', 'password-unlock'].includes(screen);
 
 
 
@@ -1268,9 +645,11 @@ export default function App() {
   }, [chatMemories]);
 
   useEffect(() => {
-    const serialized = JSON.stringify(sanitizeChatSettings(chatSettings));
-    if (!safeSetLocalStorage('aiphone_chat_settings', serialized)) {
-      console.error('Failed to persist chat settings');
+    const serialized = JSON.stringify(chatSettings);
+    try {
+      localStorage.setItem('aiphone_chat_settings', serialized);
+    } catch (error) {
+      console.error('Failed to persist chat settings', error);
     }
   }, [chatSettings]);
 
@@ -1394,7 +773,6 @@ export default function App() {
     };
   }, [contacts, apiConfig]);
 
-  const safeWallpaper = wallpaper && isRuntimeImageSource(wallpaper, MAX_WALLPAPER_IMAGE_LENGTH) ? wallpaper : null;
   const shouldStatusBarShowWallpaper = showStatusBar && screen === 'home' && !!safeWallpaper && isPostAuth;
 
   return (
@@ -1420,7 +798,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 1 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 w-full h-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center"
+              className="absolute inset-0 w-full h-full z-50 flex flex-col bg-zinc-100 dark:bg-zinc-900 items-center justify-center"
             >
               <motion.div
                 initial={{ scale: 0.9, opacity: 0 }}
@@ -1455,12 +833,12 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 1 }}
               transition={{ duration: 0 }}
-              className={`absolute inset-0 w-full h-full flex flex-col ${wallpaper ? 'bg-transparent' : 'bg-zinc-100 dark:bg-black'}`}
+              className={`absolute inset-0 w-full h-full z-50 flex flex-col ${wallpaper ? 'bg-transparent' : 'bg-zinc-100 dark:bg-black'}`}
               onClick={() => {
                 if (!isPasswordEnabled) {
                   setScreen('home');
                 } else {
-                  setScreen(password ? 'password-unlock' : 'password-setup');
+                  setScreen(lockScreenTarget);
                 }
               }}
             >
@@ -1493,7 +871,7 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 1 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 w-full h-full bg-white dark:bg-black flex flex-col items-center justify-center"
+              className="absolute inset-0 w-full h-full z-50 flex flex-col bg-white dark:bg-black items-center justify-center"
             >
               <div className="absolute top-0 left-0 w-full h-full bg-zinc-50/50 dark:bg-black/50 pointer-events-none" />
 
@@ -1555,6 +933,10 @@ export default function App() {
         </AnimatePresence>
 
         {/* Global StatusBar - single instance for entire app */}
+        <UpdateNoticeCard
+          version="2026-04-12-build-3"
+          message="本次更新进度：2026-04-12 build-3｜壁纸已切换为更稳定的存储方式，当前继续微调聊天界面与顶部遮罩。"
+        />
         {showStatusBar === true ? (
           <div className="absolute top-0 left-0 right-0 z-[100]">
             <StatusBar isDesktopWallpaperVisible={shouldStatusBarShowWallpaper} />
@@ -1672,7 +1054,7 @@ export default function App() {
                   customIcons={customIcons}
                   iconStyleConfig={iconStyleConfig}
                   iconFrostIntensity={iconFrostIntensity}
-                  onAppClick={(screen) => { if (screen) setScreen(screen as Screen); }}
+                  onAppClick={(screen) => { if (screen) setScreen(screen); }}
                   gridRef={gridRef}
                 />
 
@@ -1681,11 +1063,6 @@ export default function App() {
                   <div className="w-8 h-1 bg-zinc-300 dark:bg-zinc-600 rounded-full" />
                   <div className="w-1.5 h-1 bg-zinc-100 dark:bg-zinc-700 rounded-full" />
                 </div>
-
-                <UpdateNoticeCard
-                  version="2026-04-12-build-3"
-                  message="本次更新进度：2026-04-12 build-3｜壁纸仍在继续修复，公告卡片已可关闭，状态栏显示回退修正中。"
-                />
 
                 {/* Dock */}
                 <div className="mx-4 mb-2">
@@ -1698,7 +1075,7 @@ export default function App() {
                             <AppIcon 
                               icon={app.icon} 
                               label="" 
-                              onClick={() => { if (app.screen) setScreen(app.screen as Screen); }} 
+                              onClick={() => { if (app.screen) setScreen(app.screen); }}
                               isEditingLayout={isEditingLayout} 
                               customIcon={customIcons[iconId]} 
                               iconStyleConfig={iconStyleConfig} 
@@ -1736,18 +1113,18 @@ export default function App() {
         <AnimatePresence>
           {/* 6. Chat App (Integrated Moments & Wallet) */}
           {screen === 'app-chat' && (
-            <motion.div 
+            <motion.div
               key="app-chat"
               initial={{ y: 0 }}
               animate={{ y: 0 }}
               exit={{ y: 0 }}
               transition={{ duration: 0 }}
-              className="absolute inset-0 w-full h-full bg-neutral-50 dark:bg-black flex flex-col z-50"
+              className="absolute inset-0 w-full h-full z-50 flex flex-col bg-gradient-to-br from-[#ededed] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] relative overflow-hidden"
             >
               {/* Top Nav */}
-              <div className="pt-4 px-6 py-4 flex justify-between items-center bg-[#F5F5F5] dark:bg-black border-none">
-                <div className="w-10">
-                  <button onClick={() => setScreen('home')} className="p-1.5 bg-white dark:bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 active:text-zinc-800 dark:active:text-white transition-colors shadow-sm">
+              <div className="absolute top-0 left-0 right-0 z-20 pt-4 px-6 py-4 flex justify-between items-center pointer-events-none">
+                <div className="w-10 pointer-events-auto">
+                  <button onClick={() => setScreen('home')} className="p-1.5 bg-white/55 dark:bg-zinc-800/60 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 active:text-zinc-800 dark:active:text-white transition-colors shadow-sm backdrop-blur-md">
                     <LogOut size={18} strokeWidth={1.5} />
                   </button>
                 </div>
@@ -1757,25 +1134,25 @@ export default function App() {
                   {chatTab === 'moments' && '朋友圈'}
                   {chatTab === 'me' && '个人中心'}
                 </h2>
-                <div className="flex gap-4 items-center w-10 justify-end relative">
-                  {chatTab === 'messages' && <Plus size={20} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors cursor-pointer" strokeWidth={1.5} />}
+                <div className="flex gap-4 items-center w-10 justify-end relative pointer-events-auto">
+                  {chatTab === 'messages' && <Plus size={20} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer" strokeWidth={1.5} />}
                   {chatTab === 'contacts' && (
                     <>
                       <button onClick={() => setShowContactsMenu(prev => !prev)}>
-                        <Plus size={20} className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors cursor-pointer" strokeWidth={1.5} />
+                        <Plus size={20} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer" strokeWidth={1.5} />
                       </button>
                       {showContactsMenu && (
                         <>
                           <div className="absolute inset-0 z-40" onClick={() => setShowContactsMenu(false)} />
                           <div className="absolute right-0 top-full mt-2 w-36 bg-white dark:bg-gray-800 rounded-xl shadow-lg z-50 overflow-hidden">
-                            <button 
+                            <button
                               className="w-full px-4 py-3 text-sm text-gray-400 dark:text-gray-500 text-left cursor-not-allowed"
                               disabled
                             >
                               发起群聊
                             </button>
                             <div className="h-px bg-gray-100 dark:bg-gray-700" />
-                            <button 
+                            <button
                               className="w-full px-4 py-3 text-sm text-gray-800 dark:text-gray-200 text-left hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors"
                               onClick={() => {
                                 setShowContactsMenu(false);
@@ -1793,9 +1170,9 @@ export default function App() {
               </div>
 
               {/* Content Area */}
-              <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-black/50 backdrop-blur-2xl">
+              <div className="flex-1 overflow-y-auto bg-gradient-to-br from-[#ededed] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] pt-[4.75rem]">
                     {chatTab === 'messages' && (
-                      <div className="flex flex-col bg-[#F5F5F5] dark:bg-black min-h-full pb-24">
+                      <div className="flex flex-col bg-gradient-to-br from-[#ededed] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] min-h-full pb-24">
                         {contacts.length === 0 ? (
                           <div className="flex-1 flex flex-col items-center justify-center py-40 text-zinc-400 gap-4">
                             <MessageSquare size={48} strokeWidth={1} />
@@ -1843,7 +1220,7 @@ export default function App() {
                     )}
 
                     {chatTab === 'contacts' && (
-                      <div className="flex flex-col bg-[#F5F5F5] dark:bg-black min-h-full pb-24">
+                      <div className="flex flex-col bg-gradient-to-br from-[#ededed] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] min-h-full pb-24">
                         {/* Section Header */}
                         <div className="px-5 pt-3 pb-1">
                           <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 tracking-wider uppercase">联系人</span>
@@ -1863,18 +1240,18 @@ export default function App() {
                             </div>
                           ) : (
                             [...contacts].sort((a, b) => a.chatName.localeCompare(b.chatName, 'zh-Hans-CN')).map(contact => (
-                              <div 
-                                key={contact.id} 
+                              <div
+                                key={contact.id}
                                 onClick={() => {
                                   setActiveChatContact(contact);
                                   setScreen('ai-chat');
                                 }}
-                                className="bg-[rgba(255,255,255,0.85)] dark:bg-[rgba(40,40,45,0.85)] backdrop-blur-[8px] border border-[rgba(255,255,255,0.9)] dark:border-[rgba(255,255,255,0.2)] rounded-[16px] p-3 cursor-pointer active:scale-[0.98] transition-all shadow-none !important"
+                                className="bg-[rgba(237,237,237,0.82)] dark:bg-[rgba(28,28,30,0.82)] backdrop-blur-[8px] border border-white/55 dark:border-white/10 rounded-[16px] p-3 cursor-pointer active:scale-[0.98] transition-all shadow-none !important"
                                 style={{
-                                  background: 'rgba(255, 255, 255, 0.85)',
+                                  background: 'rgba(237,237,237,0.82)',
                                   backdropFilter: 'blur(8px)',
                                   WebkitBackdropFilter: 'blur(8px)',
-                                  border: '1px solid rgba(255, 255, 255, 0.9)',
+                                  border: '1px solid rgba(255, 255, 255, 0.55)',
                                   borderRadius: '16px',
                                   boxShadow: 'none',
                                 }}
@@ -1906,7 +1283,7 @@ export default function App() {
                     )}
 
                     {chatTab === 'moments' && (
-                      <div className="flex flex-col bg-[#F5F5F5] dark:bg-black min-h-full pb-24">
+                      <div className="flex flex-col bg-gradient-to-br from-[#ededed] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] min-h-full pb-24">
                         <div className="relative h-64 bg-zinc-100/20 overflow-hidden">
                           <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/30" />
                           <div className="absolute bottom-4 right-6 flex items-center gap-4">
@@ -1951,11 +1328,9 @@ export default function App() {
                     )}
 
                     {chatTab === 'me' && (
-                      <div className="flex flex-col gap-6 p-6 bg-[#F5F5F5] dark:bg-black min-h-full pb-24">
-                        <div 
-                          className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer"
-                          onClick={() => setShowProfileModal(true)}
-                        >
+                      <div className="flex flex-col gap-6 p-6 bg-gradient-to-br from-[#ededed] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] min-h-full pb-24">
+                        <div className="flex items-center justify-between p-4 active:bg-white/20 dark:active:bg-white/5 transition-colors rounded-2xl cursor-pointer"
+                          onClick={() => setShowProfileModal(true)}>
                           <div className="flex items-center gap-4">
                             <div className="w-[64px] h-[64px] rounded-full bg-white/60 dark:bg-zinc-700/60 backdrop-blur-md border border-white/60 dark:border-zinc-600 flex items-center justify-center text-zinc-400 dark:text-zinc-500 flex-shrink-0 overflow-hidden shadow-sm">
                               {currentUser.avatar ? <img src={currentUser.avatar} className="w-full h-full object-cover" /> : <CircleUserRound size={32} strokeWidth={1} />}
@@ -1969,7 +1344,7 @@ export default function App() {
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer" onClick={() => setShowWalletModal(true)}>
+                          <div className="flex items-center justify-between p-4 active:bg-white/20 dark:active:bg-white/5 transition-colors rounded-2xl cursor-pointer" onClick={() => setShowWalletModal(true)}>
                             <div className="flex items-center gap-4">
                               <Wallet size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
                               <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">钱包</span>
@@ -1979,15 +1354,15 @@ export default function App() {
                               <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
                             </div>
                           </div>
-                          <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none">
+                          <div className="flex items-center justify-between p-4 active:bg-white/20 dark:active:bg-white/5 transition-colors rounded-2xl">
                             <div className="flex items-center gap-4">
                               <CreditCard size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
                               <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">卡包</span>
                             </div>
                             <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
                           </div>
-                          <div 
-                            className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer"
+                          <div
+                            className="flex items-center justify-between p-4 active:bg-white/20 dark:active:bg-white/5 transition-colors rounded-2xl cursor-pointer"
                             onClick={() => setShowFavoritesScreen(true)}
                           >
                             <div className="flex items-center gap-4">
@@ -2004,8 +1379,8 @@ export default function App() {
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <div 
-                            className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none cursor-pointer"
+                          <div
+                            className="flex items-center justify-between p-4 active:bg-white/20 dark:active:bg-white/5 transition-colors rounded-2xl cursor-pointer"
                             onClick={() => setShowPaymentSecurityModal(true)}
                           >
                             <div className="flex items-center gap-4">
@@ -2014,7 +1389,7 @@ export default function App() {
                             </div>
                             <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
                           </div>
-                          <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors border border-white/40 dark:border-zinc-700 shadow-none">
+                          <div className="flex items-center justify-between p-4 active:bg-white/20 dark:active:bg-white/5 transition-colors rounded-2xl">
                             <div className="flex items-center gap-4">
                               <Settings size={20} className="text-zinc-600 dark:text-zinc-300" strokeWidth={1.5} />
                               <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">设置</span>
@@ -2023,9 +1398,9 @@ export default function App() {
                           </div>
                         </div>
 
-                        <button 
+                        <button
                           onClick={() => setScreen('home')}
-                          className="mt-4 p-4 bg-white/40 dark:bg-zinc-800/40 backdrop-blur-md rounded-2xl text-zinc-500 dark:text-zinc-400 font-bold text-sm active:bg-white/60 dark:active:bg-zinc-700/60 transition-colors flex items-center justify-center gap-2 border border-white/40 dark:border-zinc-700 shadow-none"
+                          className="mt-4 p-4 text-zinc-500 dark:text-zinc-400 font-bold text-sm active:bg-white/20 dark:active:bg-white/5 transition-colors flex items-center justify-center gap-2 rounded-2xl"
                         >
                           <LogOut size={18} />
                           退出应用

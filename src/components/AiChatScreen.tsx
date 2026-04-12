@@ -298,7 +298,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
   const [chatErrorToast, setChatErrorToast] = useState('');
   const [autoSummaryStatus, setAutoSummaryStatus] = useState('');
   const [editingMemory, setEditingMemory] = useState<{ id?: string; title: string; content: string } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ rect?: DOMRect; messageIndex: number; messageContent: string; messageRole: 'user' | 'assistant' | 'system' | ''; messageGroupId?: string; messageId?: string; messageTimestamp?: number; isVisible: boolean }>({ messageIndex: -1, messageContent: '', messageRole: '', isVisible: false });
+  const [contextMenu, setContextMenu] = useState<{ rect?: DOMRect; containerRect?: DOMRect; messageIndex: number; messageContent: string; messageRole: 'user' | 'assistant' | 'system' | ''; messageGroupId?: string; messageId?: string; messageTimestamp?: number; isVisible: boolean }>({ messageIndex: -1, messageContent: '', messageRole: '', isVisible: false });
   const [quoteToReply, setQuoteToReply] = useState<{ content: string; sender: string } | null>(null);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [editingMessageContent, setEditingMessageContent] = useState('');
@@ -339,6 +339,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
   const lastSummaryTimeRef = useRef<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const chatScreenRef = useRef<HTMLDivElement>(null);
 
   const currentChatId = activeChatContact ? activeChatContact.id : 'ai_assistant';
   const currentChatSettings: ChatSettings = chatSettings[currentChatId] || { remark: '', background: '', isBlocked: false, isPinned: false };
@@ -792,7 +793,8 @@ export function AiChatScreen(props: AiChatScreenProps) {
     if (isMultiSelectMode) return; // Disable context menu in multi-select mode
     const target = e.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
-    setContextMenu({ rect, messageIndex: index, messageContent: msg.content, messageRole: msg.role, messageGroupId: msg.groupId, messageId: msg.id, messageTimestamp: msg.timestamp, isVisible: true });
+    const containerRect = chatScreenRef.current?.getBoundingClientRect();
+    setContextMenu({ rect, containerRect, messageIndex: index, messageContent: msg.content, messageRole: msg.role, messageGroupId: msg.groupId, messageId: msg.id, messageTimestamp: msg.timestamp, isVisible: true });
   };
   const closeCtx = () => setContextMenu(p => ({ ...p, isVisible: false }));
   const handleCopyMessage = () => { navigator.clipboard.writeText(contextMenu.messageContent).then(() => { showToast('已复制'); }); closeCtx(); };
@@ -1045,30 +1047,36 @@ export function AiChatScreen(props: AiChatScreenProps) {
   const canRecall = contextMenu.messageRole === 'user' && contextMenu.messageTimestamp && (Date.now() - contextMenu.messageTimestamp <= 120000);
 
   // --- Context menu positioning ---
-  const isMenuAbove = contextMenu.rect ? (contextMenu.rect.top - 140 >= 60) : true;
+  const isMenuAbove = contextMenu.rect && contextMenu.containerRect
+    ? (contextMenu.rect.top - contextMenu.containerRect.top - 140 >= 60)
+    : true;
 
   const getContextMenuStyle = (): React.CSSProperties => {
-    if (!contextMenu.rect) return { left: -9999, top: -9999 };
+    if (!contextMenu.rect || !contextMenu.containerRect) return { left: -9999, top: -9999 };
     const rect = contextMenu.rect;
-    
-    const maxWidth = Math.min(320, window.innerWidth - 32);
-    let left = rect.left + rect.width / 2;
-    
+    const containerRect = contextMenu.containerRect;
+    const containerWidth = containerRect.width;
+
+    const maxWidth = Math.min(320, Math.max(containerWidth - 32, 0));
+    let left = rect.left - containerRect.left + rect.width / 2;
+
     if (left - maxWidth / 2 < 16) {
       left = maxWidth / 2 + 16;
     }
-    if (left + maxWidth / 2 > window.innerWidth - 16) {
-      left = window.innerWidth - maxWidth / 2 - 16;
+    if (left + maxWidth / 2 > containerWidth - 16) {
+      left = containerWidth - maxWidth / 2 - 16;
     }
 
-    let top = isMenuAbove ? rect.top - 8 : rect.bottom + 8;
+    const top = isMenuAbove
+      ? rect.top - containerRect.top - 8
+      : rect.bottom - containerRect.top + 8;
 
-    return { 
-      position: 'fixed',
-      left, 
-      top, 
-      transform: `translate(-50%, ${isMenuAbove ? '-100%' : '0'})`, 
-      maxWidth, 
+    return {
+      position: 'absolute',
+      left,
+      top,
+      transform: `translate(-50%, ${isMenuAbove ? '-100%' : '0'})`,
+      maxWidth,
       width: 'max-content',
       zIndex: 50
     };
@@ -1076,39 +1084,45 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
   // --- Render ---
   return (
-    <div className="relative w-full h-full bg-transparent flex flex-col z-50 overflow-hidden">
+    <div ref={chatScreenRef} className="relative w-full h-full bg-gradient-to-br from-[#E5E5E5] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] flex flex-col z-50 overflow-hidden">
       {/* Header */}
       {isMultiSelectMode ? (
-        <div className="absolute top-2 left-0 w-full z-50 px-6 pt-3 pb-4 flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-neutral-200/50 dark:border-zinc-800/50">
+        <div className="absolute top-2 left-0 w-full z-50 px-6 pt-3 pb-4 flex items-center justify-between bg-[#E5E5E5]/88 dark:bg-[#1c1c1e]/88 backdrop-blur-md border-b border-black/5 dark:border-white/5">
           <span className="text-[14px] font-bold text-zinc-800 dark:text-zinc-100">已选择 {selectedMessageIds.size} 条消息</span>
           <button onClick={exitMultiSelectMode} className="px-4 py-1.5 bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 rounded-full text-xs font-bold active:scale-95 transition-all shadow-sm">完成</button>
         </div>
       ) : (
-        <div className="absolute top-2 w-full h-10 flex justify-between items-center px-4 z-50">
-          <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-gray-600 dark:text-zinc-300 hover:opacity-80 transition-opacity p-2 relative z-10">
-            <ArrowLeft className="w-5 h-5" strokeWidth={2.5} />
-          </button>
-          <h2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-base font-bold text-gray-600 dark:text-zinc-300 max-w-[60%] truncate text-center">{displayChatName}</h2>
-          <button onClick={() => setIsChatSettingsOpen(true)} className="text-gray-600 dark:text-zinc-300 hover:opacity-80 transition-opacity p-2 relative z-10">
-            <SlidersHorizontal size={20} strokeWidth={2.5} />
-          </button>
-        </div>
+        <>
+          <div className="absolute top-0 left-0 right-0 h-[4rem] z-40 pointer-events-none overflow-hidden bg-gradient-to-b from-[#E5E5E5]/95 via-[#E5E5E5]/66 via-[44%] to-transparent dark:from-[#1c1c1e]/94 dark:via-[#1c1c1e]/60 dark:to-transparent" />
+          <div className="absolute top-2 w-full h-10 flex justify-between items-center px-4 z-50">
+            <button onClick={() => { setScreen('app-chat'); setActiveChatContact(null); }} className="text-gray-600 dark:text-zinc-300 hover:opacity-80 transition-opacity p-2 relative z-10">
+              <ArrowLeft className="w-5 h-5" strokeWidth={2.5} />
+            </button>
+            <h2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-base font-bold text-gray-600 dark:text-zinc-300 max-w-[60%] truncate text-center">{displayChatName}</h2>
+            <button onClick={() => setIsChatSettingsOpen(true)} className="text-gray-600 dark:text-zinc-300 hover:opacity-80 transition-opacity p-2 relative z-10">
+              <SlidersHorizontal size={20} strokeWidth={2.5} />
+            </button>
+          </div>
+        </>
       )}
 
       {/* Dynamic CSS Injection */}
       <style dangerouslySetInnerHTML={{ __html: `
         /* 统一气泡样式：白色磨砂 + 大圆角矩形 */
         .message-user, .message-assistant {
-          padding: 6px 16px;
-          border-radius: 1rem;
+          padding: 8px 16px;
+          border-radius: 1.35rem;
           position: relative;
           z-index: 1;
           font-size: 13px;
-          line-height: 1.6;
-          background-color: rgba(255, 255, 255, 0.3);
+          line-height: 1.55;
+          display: flex;
+          align-items: center;
+          min-height: 2.5rem;
+          background-color: rgba(255, 255, 255, 0.22);
           backdrop-filter: blur(24px);
           -webkit-backdrop-filter: blur(24px);
-          border: 1px solid rgba(255, 255, 255, 0.5);
+          border: 1px solid rgba(255, 255, 255, 0.3);
           color: #111827;
         }
       ` }} />
@@ -1116,7 +1130,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
       {/* Messages */}
       <div
         ref={scrollContainerRef}
-        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.5rem] pb-24 flex flex-col gap-4 relative transition-colors duration-300 ${!isSafeBackgroundImage(currentChatSettings.backgroundImage) ? 'bg-neutral-50 dark:bg-black' : ''}`}
+        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.9rem] pb-24 flex flex-col gap-4 relative transition-colors duration-300 ${!isSafeBackgroundImage(currentChatSettings.backgroundImage) ? 'bg-gradient-to-br from-[#E5E5E5] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212]' : ''}`}
         onScroll={(e) => {
           if (contextMenu.isVisible) closeCtx();
           handleScroll(e);
@@ -1143,7 +1157,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
         {visibleMessages.map((msg, i) => {
           const globalIndex = startIndex + i;
           return (
-          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-start gap-2 w-full`}>
+          <div key={msg.id || globalIndex} className={`flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-center gap-2 w-full`}>
             {/* Multi-select checkbox */}
             {isMultiSelectMode && (
               <button
@@ -1160,7 +1174,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
             {/* Avatar - Unified before the bubble */}
             {msg.role !== 'system' && currentChatSettings.showAvatar !== false && !msg.isMergedForward && (
-              <div className="flex flex-col justify-start pt-0.5 flex-shrink-0">
+              <div className="flex flex-col justify-center pt-0.5 flex-shrink-0">
                 {msg.role === 'user' ? (
                   <div className="avatar-user w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex items-center justify-center">
                     {userAvatar ? <img src={userAvatar} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback')?.classList.remove('hidden'); }} /> : null}
@@ -1208,7 +1222,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
                   <LocationMessage data={msg.locationData!} isSelf={msg.role === 'user'} />
                 ) : msg.messageType === 'system' ? (
                   <div className="w-full flex justify-center my-2 select-none pointer-events-none">
-                    <span className="bg-black/5 dark:bg-white/10 text-zinc-500 dark:text-zinc-400 text-xs px-3 py-1 rounded-full italic">
+                    <span className="bg-black/8 dark:bg-white/10 text-zinc-500 dark:text-zinc-400 text-xs px-3 py-1 rounded-full italic">
                       {msg.content}
                     </span>
                   </div>
@@ -1807,6 +1821,8 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
       return;
     }
 
+    const nextBackgroundImage = backgroundImage;
+
     try {
       setChatSettings(prev => ({
         ...prev,
@@ -1822,7 +1838,7 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
           showAvatar,
           patSuffix,
           longDistanceMode,
-          backgroundImage,
+          backgroundImage: nextBackgroundImage,
           customBubbleCSS,
         }
       }));
@@ -1959,8 +1975,41 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
     }
   };
 
+  const handleSyncSettingsWallpaper = () => {
+    if (!backgroundImage) {
+      showToast('请先选择聊天背景');
+      return;
+    }
+    setBg(backgroundImage);
+    showToast('已同步到当前设置界面');
+  };
+
+  const handleClearSyncedWallpaper = () => {
+    setBg('');
+    showToast('已清除设置界面壁纸');
+  };
+
+  const settingsSurfaceStyle = isSafeBackgroundImage(bg)
+    ? {
+        backgroundImage: `url("${bg}")`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
+    : undefined;
+
+  const tabSliderStyle = {
+    width: 'calc((100% - 0.5rem) / 3)',
+    left:
+      activeTab === 'beauty'
+        ? 'calc(33.333% + 0.083rem)'
+        : activeTab === 'memory'
+          ? 'calc(66.666% - 0.083rem)'
+          : '0.25rem',
+    borderRadius: activeTab === 'beauty' ? '20px' : '999px',
+  };
+
   return (
-    <div className="absolute inset-0 z-[60] bg-gradient-to-br from-[#E5E5E5] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="absolute inset-0 z-[60] bg-gradient-to-br from-[#E5E5E5] to-[#D4D4D4] dark:from-[#1c1c1e] dark:to-[#121212] flex flex-col overflow-hidden" style={settingsSurfaceStyle} onClick={e => e.stopPropagation()}>
       <div className="flex items-center justify-between px-4 pt-4 relative z-20">
         <button 
           onClick={onClose} 
@@ -1969,13 +2018,10 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
           <ArrowLeft size={20} strokeWidth={2} />
         </button>
         
-        <div className="flex-1 mx-3 h-12 bg-white/20 backdrop-blur-md rounded-full flex justify-evenly items-center relative overflow-hidden">
-          <div 
-            className={`absolute h-10 top-1 bg-white/40 backdrop-blur-md border-none transition-all duration-300 ease-out z-0 ${
-              (activeTab === 'general' || activeTab === 'voice') ? 'left-1 w-[calc(33.33%-4px)] rounded-l-xl rounded-r-none' :
-              activeTab === 'beauty' ? 'left-[33.33%] w-[33.34%] rounded-none' :
-              activeTab === 'memory' ? 'left-[66.67%] w-[calc(33.33%-4px)] rounded-r-xl rounded-l-none' : ''
-            }`}
+        <div className="flex-1 mx-3 h-12 bg-white/20 backdrop-blur-md rounded-full flex justify-evenly items-center relative overflow-hidden p-1">
+          <div
+            className="absolute inset-y-1 bg-white/40 backdrop-blur-md border-none transition-all duration-300 ease-out z-0"
+            style={tabSliderStyle}
           />
           {[
             { id: 'general', label: '通用' },
@@ -2143,7 +2189,7 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                   <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">聊天背景/壁纸</label>
                   <button onClick={() => setBackgroundImage('')} className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">重置背景</button>
                 </div>
-                
+
                 <label className="relative mt-2 w-full h-40 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex flex-col items-center justify-center text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer overflow-hidden group">
                   {backgroundImage ? (
                     <>
@@ -2161,6 +2207,22 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
                   )}
                   <input type="file" accept="image/*" className="hidden" onChange={handleBackgroundImageUpload} />
                 </label>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {backgroundImage && (
+                    <button onClick={handleSyncSettingsWallpaper} className="px-3 py-1.5 rounded-full bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900 text-[10px] font-bold active:scale-95 transition-all">
+                      同步到此
+                    </button>
+                  )}
+                  {bg && (
+                    <button onClick={handleClearSyncedWallpaper} className="px-3 py-1.5 rounded-full bg-white/70 text-zinc-700 border border-white/60 dark:bg-black/25 dark:text-zinc-200 dark:border-white/10 text-[10px] font-bold active:scale-95 transition-all">
+                      清除同步
+                    </button>
+                  )}
+                  {backgroundImage && (
+                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500">把当前聊天背景同步到这个设置界面壁纸</span>
+                  )}
+                </div>
               </div>
 
               {/* 气泡效果预览 */}

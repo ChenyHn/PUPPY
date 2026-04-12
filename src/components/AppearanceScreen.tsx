@@ -309,6 +309,10 @@ export const AppearanceScreen = ({
   const previewLightOpacity = tempSettings.componentBgOpacity;
   const previewDarkOpacity = tempSettings.componentBgOpacity;
   const previewNoiseOpacity = (tempSettings.frostIntensity / 100) * 0.15;
+  const previewGlassCardBaseStyle: React.CSSProperties = {
+    backdropFilter: `blur(${previewBlurPx}px)`,
+    WebkitBackdropFilter: `blur(${previewBlurPx}px)`,
+  };
 
   const resPx = (px: number) => `min(${px}px, ${px / 3.75}vw)`;
 
@@ -655,8 +659,7 @@ export const AppearanceScreen = ({
                 <div 
                   className="rounded-[20px] border border-white/40 p-6 relative overflow-hidden w-full max-w-[200px]"
                   style={{
-                    backdropFilter: `blur(${previewBlurPx}px)`,
-                    WebkitBackdropFilter: `blur(${previewBlurPx}px)`,
+                    ...previewGlassCardBaseStyle,
                     backgroundColor: tempSettings.componentBgOpacity === 0 ? 'transparent' : `rgba(255, 255, 255, ${previewLightOpacity})`,
                   }}
                 >
@@ -683,8 +686,7 @@ export const AppearanceScreen = ({
                 <div 
                   className="rounded-[20px] border border-white/10 p-6 relative overflow-hidden w-full max-w-[200px]"
                   style={{
-                    backdropFilter: `blur(${previewBlurPx}px)`,
-                    WebkitBackdropFilter: `blur(${previewBlurPx}px)`,
+                    ...previewGlassCardBaseStyle,
                     backgroundColor: tempSettings.componentBgOpacity === 0 ? 'transparent' : `rgba(0, 0, 0, ${previewDarkOpacity})`,
                   }}
                 >
