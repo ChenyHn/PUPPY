@@ -581,7 +581,11 @@ export default function App() {
 
   const [wallpaper, setWallpaper] = useState<string | null>(() => {
     const savedWallpaper = localStorage.getItem('aiphone_wallpaper');
-    return isSafeImageSource(savedWallpaper) ? savedWallpaper : null;
+    if (!savedWallpaper || typeof savedWallpaper !== 'string') return null;
+    if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(savedWallpaper)) {
+      return savedWallpaper.length <= 1_200_000 ? savedWallpaper : null;
+    }
+    return /^https?:\/\//i.test(savedWallpaper) ? savedWallpaper : null;
   });
   const [motto, setMotto] = useState(() => localStorage.getItem('aiphone_motto') || '生活明朗，万物可爱');
   const [fontLink, setFontLink] = useState(() => localStorage.getItem('aiphone_font_link') || '');
@@ -910,27 +914,35 @@ export default function App() {
     }
   };
 
+  const uploadWallpaper = async (file: File) => {
+    const previousWallpaper = wallpaper;
+    try {
+      const compressed = await compressImage(file, 1200, 0.82);
+      const success = await updateWallpaper(compressed);
+      if (!success) {
+        if (previousWallpaper && isSafeImageSource(previousWallpaper)) {
+          setWallpaper(previousWallpaper);
+        }
+        alert('图片过大或处理失败，已恢复上一张壁纸');
+      }
+      return success;
+    } catch (err) {
+      console.error('Failed to process wallpaper:', err);
+      if (previousWallpaper && isSafeImageSource(previousWallpaper)) {
+        setWallpaper(previousWallpaper);
+      } else {
+        await updateWallpaper(null);
+      }
+      alert('图片加载失败，已恢复默认背景');
+      return false;
+    }
+  };
+
   const handleWallpaperChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const previousWallpaper = wallpaper;
       try {
-        const compressed = await compressImage(file, 1200, 0.82);
-        const success = await updateWallpaper(compressed);
-        if (!success) {
-          if (previousWallpaper && isSafeImageSource(previousWallpaper)) {
-            setWallpaper(previousWallpaper);
-          }
-          alert('图片过大或处理失败，已恢复上一张壁纸');
-        }
-      } catch (err) {
-        console.error('Failed to process wallpaper:', err);
-        if (previousWallpaper && isSafeImageSource(previousWallpaper)) {
-          setWallpaper(previousWallpaper);
-        } else {
-          await updateWallpaper(null);
-        }
-        alert('图片加载失败，已恢复默认背景');
+        await uploadWallpaper(file);
       } finally {
         e.target.value = '';
       }
@@ -1939,6 +1951,7 @@ export default function App() {
                 setPassword={setPassword}
                 wallpaper={wallpaper}
                 setWallpaper={updateWallpaper}
+                uploadWallpaper={uploadWallpaper}
                 fontLink={fontLink}
                 setFontLink={setFontLink}
                 customIcons={customIcons}

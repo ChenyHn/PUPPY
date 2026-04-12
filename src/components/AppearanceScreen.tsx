@@ -186,6 +186,7 @@ export const AppearanceScreen = ({
   setPassword,
   wallpaper,
   setWallpaper,
+  uploadWallpaper,
   fontLink,
   setFontLink,
   customIcons,
@@ -552,7 +553,7 @@ export const AppearanceScreen = ({
                           const file = e.target.files?.[0];
                           if (!file) return;
                           try {
-                            const success = await setWallpaper(file);
+                            const success = await uploadWallpaper(file);
                             if (success) {
                               window.dispatchEvent(new Event('wallpaperChanged'));
                             }
