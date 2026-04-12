@@ -544,41 +544,33 @@ export const AppearanceScreen = ({
                   <div className="flex items-center gap-2">
                     <label className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 flex-shrink-0 transition-colors cursor-pointer">
                       上传壁纸
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
-                        onChange={(e) => {
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
-                          
-                          const canvas = document.createElement('canvas');
-                          const ctx = canvas.getContext('2d');
-                          const img = new Image();
-                          const objectUrl = URL.createObjectURL(file);
-                          
-                          img.onload = () => {
-                            const maxSize = 1200;
-                            const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
-                            canvas.width = img.width * ratio;
-                            canvas.height = img.height * ratio;
-                            ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-                            const compressed = canvas.toDataURL('image/jpeg', 0.85);
-                            URL.revokeObjectURL(objectUrl);
-                            setWallpaper(compressed);
-                            localStorage.setItem('aiphone_wallpaper', compressed);
-                            window.dispatchEvent(new Event('wallpaperChanged'));
-                          };
-                          img.src = objectUrl;
-                        }} 
+                          try {
+                            const success = await setWallpaper(file);
+                            if (success) {
+                              window.dispatchEvent(new Event('wallpaperChanged'));
+                            }
+                          } catch {
+                            // handled upstream
+                          } finally {
+                            e.target.value = '';
+                          }
+                        }}
                       />
                     </label>
                     {wallpaper && (
                       <button 
-                        onClick={() => {
-                          setWallpaper(null);
-                          localStorage.removeItem('aiphone_wallpaper');
-                          window.dispatchEvent(new Event('wallpaperChanged'));
+                        onClick={async () => {
+                          const success = await setWallpaper(null);
+                          if (success) {
+                            window.dispatchEvent(new Event('wallpaperChanged'));
+                          }
                         }}
                         className="text-[10px] font-bold text-red-500 hover:text-red-600 flex-shrink-0 transition-colors"
                       >

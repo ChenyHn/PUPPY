@@ -579,7 +579,10 @@ export default function App() {
     localStorage.setItem('aiphone_wallet', JSON.stringify(wallet));
   }, [wallet]);
 
-  const [wallpaper, setWallpaper] = useState<string | null>(() => localStorage.getItem('aiphone_wallpaper'));
+  const [wallpaper, setWallpaper] = useState<string | null>(() => {
+    const savedWallpaper = localStorage.getItem('aiphone_wallpaper');
+    return isSafeImageSource(savedWallpaper) ? savedWallpaper : null;
+  });
   const [motto, setMotto] = useState(() => localStorage.getItem('aiphone_motto') || '生活明朗，万物可爱');
   const [fontLink, setFontLink] = useState(() => localStorage.getItem('aiphone_font_link') || '');
   const [customIcons, setCustomIcons] = useState<Record<string, string>>(() => {
@@ -769,14 +772,56 @@ export default function App() {
   }, [avatar]);
 
   useEffect(() => {
-    if (wallpaper) localStorage.setItem('aiphone_wallpaper', wallpaper);
-  }, [wallpaper]);
-
-  useEffect(() => {
     localStorage.setItem('aiphone_motto', motto);
   }, [motto]);
 
-  const compressImage = (file: File, maxWidth: number = 1024): Promise<string> => {
+  const MAX_STORED_IMAGE_LENGTH = 1_200_000;
+
+  const isSafeImageSource = (value: string | null | undefined) => {
+    if (!value || typeof value !== 'string') return false;
+    if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value)) {
+      return value.length <= MAX_STORED_IMAGE_LENGTH;
+    }
+    return /^https?:\/\//i.test(value);
+  };
+
+  const safeParseJson = <T,>(raw: string | null, fallback: T, storageKey?: string): T => {
+    if (!raw) return fallback;
+    try {
+      return JSON.parse(raw) as T;
+    } catch (error) {
+      if (storageKey) {
+        try {
+          localStorage.removeItem(storageKey);
+        } catch {}
+      }
+      return fallback;
+    }
+  };
+
+  const safeSetLocalStorage = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      console.error(`Failed to save ${key}:`, error);
+      return false;
+    }
+  };
+
+  const sanitizeChatSettings = (settings: Record<string, any>) => {
+    return Object.fromEntries(
+      Object.entries(settings).map(([chatId, setting]) => {
+        const nextSetting = { ...setting };
+        if (!isSafeImageSource(nextSetting.backgroundImage)) {
+          delete nextSetting.backgroundImage;
+        }
+        return [chatId, nextSetting];
+      })
+    );
+  };
+
+  const compressImage = (file: File, maxWidth: number = 1024, quality: number = 0.8): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -798,7 +843,12 @@ export default function App() {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.8));
+            const compressed = canvas.toDataURL('image/jpeg', quality);
+            if (compressed.length > MAX_STORED_IMAGE_LENGTH) {
+              reject(new Error('Image too large after compression'));
+              return;
+            }
+            resolve(compressed);
           } else {
             reject(new Error('Canvas context not available'));
           }
@@ -806,6 +856,15 @@ export default function App() {
         img.onerror = () => reject(new Error('Image load failed'));
       };
       reader.onerror = () => reject(new Error('File read failed'));
+    });
+  };
+
+  const validateImageSource = (src: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(src);
+      img.onerror = () => reject(new Error('Image validation failed'));
+      img.src = src;
     });
   };
 
@@ -823,28 +882,57 @@ export default function App() {
     }
   };
 
-  const updateWallpaper = (newUrl: string | null) => {
-    setWallpaper(newUrl);
-    if (newUrl) localStorage.setItem('aiphone_wallpaper', newUrl);
-    else localStorage.removeItem('aiphone_wallpaper');
+  const updateWallpaper = async (newUrl: string | null) => {
+    if (!newUrl) {
+      setWallpaper(null);
+      try {
+        localStorage.removeItem('aiphone_wallpaper');
+      } catch (error) {
+        console.error('Failed to clear wallpaper:', error);
+      }
+      return true;
+    }
+
+    try {
+      const validated = await validateImageSource(newUrl);
+      setWallpaper(validated);
+      if (!safeSetLocalStorage('aiphone_wallpaper', validated)) {
+        throw new Error('Wallpaper storage failed');
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to update wallpaper:', error);
+      setWallpaper(null);
+      try {
+        localStorage.removeItem('aiphone_wallpaper');
+      } catch {}
+      return false;
+    }
   };
 
   const handleWallpaperChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const previousWallpaper = wallpaper;
       try {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const result = e.target?.result as string;
-          if (result) {
-            updateWallpaper(result);
+        const compressed = await compressImage(file, 1200, 0.82);
+        const success = await updateWallpaper(compressed);
+        if (!success) {
+          if (previousWallpaper && isSafeImageSource(previousWallpaper)) {
+            setWallpaper(previousWallpaper);
           }
-        };
-        reader.readAsDataURL(file);
+          alert('图片过大或处理失败，已恢复上一张壁纸');
+        }
       } catch (err) {
         console.error('Failed to process wallpaper:', err);
-        updateWallpaper(null);
+        if (previousWallpaper && isSafeImageSource(previousWallpaper)) {
+          setWallpaper(previousWallpaper);
+        } else {
+          await updateWallpaper(null);
+        }
         alert('图片加载失败，已恢复默认背景');
+      } finally {
+        e.target.value = '';
       }
     }
   };
@@ -852,8 +940,13 @@ export default function App() {
   useEffect(() => {
     const handler = () => {
       const saved = localStorage.getItem('aiphone_wallpaper');
-      if (saved) setWallpaper(saved);
-      else setWallpaper(null);
+      if (isSafeImageSource(saved)) setWallpaper(saved);
+      else {
+        setWallpaper(null);
+        try {
+          localStorage.removeItem('aiphone_wallpaper');
+        } catch {}
+      }
     };
     window.addEventListener('wallpaperChanged', handler);
     return () => window.removeEventListener('wallpaperChanged', handler);
@@ -990,7 +1083,7 @@ export default function App() {
 
   const [chatSettings, setChatSettings] = useState<Record<string, { remark: string, background: string, isBlocked: boolean, isPinned: boolean, isAutoSummaryEnabled?: boolean, autoSummaryThreshold?: number, lastSummaryMessageIndex?: number }>>(() => {
     const saved = localStorage.getItem('aiphone_chat_settings');
-    return saved ? JSON.parse(saved) : {};
+    return sanitizeChatSettings(safeParseJson(saved, {}, 'aiphone_chat_settings'));
   });
 
   const [favorites, setFavorites] = useState<FavoriteItem[]>(() => {
@@ -1016,7 +1109,10 @@ export default function App() {
   }, [chatMemories]);
 
   useEffect(() => {
-    localStorage.setItem('aiphone_chat_settings', JSON.stringify(chatSettings));
+    const serialized = JSON.stringify(sanitizeChatSettings(chatSettings));
+    if (!safeSetLocalStorage('aiphone_chat_settings', serialized)) {
+      console.error('Failed to persist chat settings');
+    }
   }, [chatSettings]);
 
   useEffect(() => {
@@ -1147,10 +1243,10 @@ export default function App() {
       }}
     >
       {/* Mobile Frame */}
-      <div 
-        id="phone-container" 
+      <div
+        id="phone-container"
         className={`relative w-full h-full lg:max-w-[390px] lg:max-h-[844px] lg:h-[844px] lg:rounded-[44px] lg:border-[12px] lg:border-white dark:lg:border-zinc-800 lg:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:lg:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}
-        style={wallpaper ? { backgroundImage: `url(${wallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+        style={wallpaper && isSafeImageSource(wallpaper) ? { backgroundImage: `url(${wallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
       >
         
         <AnimatePresence mode="wait">

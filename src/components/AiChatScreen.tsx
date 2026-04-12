@@ -1107,14 +1107,14 @@ export function AiChatScreen(props: AiChatScreenProps) {
       ` }} />
 
       {/* Messages */}
-      <div 
+      <div
         ref={scrollContainerRef}
-        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.5rem] pb-24 flex flex-col gap-4 relative transition-colors duration-300 ${!currentChatSettings.backgroundImage ? 'bg-neutral-50 dark:bg-black' : ''}`} 
-        onScroll={(e) => { 
-          if (contextMenu.isVisible) closeCtx(); 
+        className={`chat-container flex-1 overflow-y-auto overflow-x-hidden px-4 pt-[4.5rem] pb-24 flex flex-col gap-4 relative transition-colors duration-300 ${!isSafeBackgroundImage(currentChatSettings.backgroundImage) ? 'bg-neutral-50 dark:bg-black' : ''}`}
+        onScroll={(e) => {
+          if (contextMenu.isVisible) closeCtx();
           handleScroll(e);
         }}
-        style={currentChatSettings.backgroundImage ? { backgroundImage: `url("${currentChatSettings.backgroundImage}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+        style={isSafeBackgroundImage(currentChatSettings.backgroundImage) ? { backgroundImage: `url("${currentChatSettings.backgroundImage}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
       >
         <AnimatePresence>
           {chatErrorToast && (<motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-2 left-4 right-4 z-20 px-4 py-2.5 bg-red-500 text-white rounded-xl text-[11px] font-bold shadow-lg text-center">⚠️ API错误: {chatErrorToast}</motion.div>)}
@@ -1646,7 +1646,7 @@ export function AiChatScreen(props: AiChatScreenProps) {
 
 function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName, chatSettings, setChatSettings, chatMemories, setChatMemories, chatMessages, setChatMessages, chatHistories, setChatHistories, apiConfig, editingMemory, setEditingMemory, autoSummaryStatus, setAutoSummaryStatus, onClose, showToast }: {
   currentChatId: string;
-  currentChatSettings: ChatSettings;
+  currentChatSettings: Record<string, any>;
   displayChatName: string;
   chatSettings: Record<string, ChatSettings>;
   setChatSettings: React.Dispatch<React.SetStateAction<Record<string, ChatSettings>>>;
@@ -1677,6 +1677,62 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
   const [backgroundImage, setBackgroundImage] = useState(currentChatSettings.backgroundImage || '');
   const [customBubbleCSS, setCustomBubbleCSS] = useState(currentChatSettings.customBubbleCSS || '');
   const [globalChatCSS, setGlobalChatCSS] = useState(() => localStorage.getItem('aiphone_global_chat_css') || '');
+  const MAX_CHAT_BACKGROUND_LENGTH = 1_200_000;
+  const isSafeBackgroundImage = (value: string | null | undefined) => {
+    if (!value || typeof value !== 'string') return false;
+    return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value) && value.length <= MAX_CHAT_BACKGROUND_LENGTH;
+  };
+
+  const compressUploadedImage = (file: File, maxWidth: number = 1080, quality: number = 0.8): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        if (!result) {
+          reject(new Error('File read failed'));
+          return;
+        }
+
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              reject(new Error('Canvas context not available'));
+              return;
+            }
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            if (!isSafeBackgroundImage(dataUrl)) {
+              reject(new Error('Background image too large'));
+              return;
+            }
+            resolve(dataUrl);
+          } catch (error) {
+            reject(error);
+          }
+        };
+        img.onerror = () => reject(new Error('Image load failed'));
+        img.src = result;
+      };
+      reader.onerror = () => reject(new Error('File read failed'));
+      reader.readAsDataURL(file);
+    });
+  };
   const [activeTab, setActiveTab] = useState<'general' | 'voice' | 'memory' | 'beauty'>('general');
   const [voicePref, setVoicePref] = useState<VoicePreference>({ mode: 'preset', voiceId: '' });
   const [showTutorial, setShowTutorial] = useState(false);
@@ -1744,26 +1800,37 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
   };
 
   const handleSave = () => {
-    setChatSettings(prev => ({
-      ...prev,
-      [currentChatId]: {
-        ...prev[currentChatId],
-        remark,
-        background: bg,
-        isBlocked: blocked,
-        isPinned: pinned,
-        isAutoSummaryEnabled: autoSummary,
-        autoSummaryThreshold: summaryThreshold,
-        timeAwareness,
-        showAvatar,
-        patSuffix,
-        longDistanceMode,
-        backgroundImage,
-        customBubbleCSS,
-      }
-    }));
-    localStorage.setItem('aiphone_global_chat_css', globalChatCSS);
-    
+    if (backgroundImage && !isSafeBackgroundImage(backgroundImage)) {
+      showToast('背景图过大，未保存');
+      return;
+    }
+
+    try {
+      setChatSettings(prev => ({
+        ...prev,
+        [currentChatId]: {
+          ...prev[currentChatId],
+          remark,
+          background: bg,
+          isBlocked: blocked,
+          isPinned: pinned,
+          isAutoSummaryEnabled: autoSummary,
+          autoSummaryThreshold: summaryThreshold,
+          timeAwareness,
+          showAvatar,
+          patSuffix,
+          longDistanceMode,
+          backgroundImage,
+          customBubbleCSS,
+        }
+      }));
+      localStorage.setItem('aiphone_global_chat_css', globalChatCSS);
+    } catch (error) {
+      console.error('Failed to save chat settings:', error);
+      showToast('背景图过大，未保存');
+      return;
+    }
+
     // Apply global CSS immediately
     let styleEl = document.getElementById('global-chat-css');
     if (!styleEl) {
@@ -1870,51 +1937,23 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
     setTimeout(() => setAutoSummaryStatus(''), 3000);
   };
 
-  const handleBackgroundImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBackgroundImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
         showToast('不支持的文件格式');
+        e.target.value = '';
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target?.result as string;
-        if (!result) return;
-        
-        const img = new Image();
-        img.onload = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
-            
-            if (width > 1080) {
-              height = Math.round((height * 1080) / width);
-              width = 1080;
-            }
-            
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.fillStyle = '#FFFFFF';
-              ctx.fillRect(0, 0, width, height);
-              ctx.drawImage(img, 0, 0, width, height);
-              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-              setBackgroundImage(dataUrl);
-            } else {
-              showToast('图片处理失败');
-            }
-          } catch (err) {
-            showToast('图片加载失败');
-          }
-        };
-        img.onerror = () => showToast('图片加载失败');
-        img.src = result;
-      };
-      reader.onerror = () => showToast('图片加载失败');
-      reader.readAsDataURL(file);
+
+      try {
+        const dataUrl = await compressUploadedImage(file, 1080, 0.8);
+        setBackgroundImage(dataUrl);
+      } catch (err) {
+        showToast('图片过大或加载失败');
+      } finally {
+        e.target.value = '';
+      }
     }
   };
 
