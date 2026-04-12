@@ -302,6 +302,8 @@ const DEFAULT_DOCK_APPS: HomeAppItem[] = [
   { id: 'dock-ai', icon: Sparkles, label: '' },
 ];
 
+const UPDATE_NOTICE = '本次更新进度：2026-04-12 build-2｜壁纸继续修复中，状态栏已修正，聊天底栏再次上移';
+
 // Reorderable Grid Component
 const ReorderableGrid = ({ 
   items, 
@@ -1557,6 +1559,18 @@ export default function App() {
                 <div className="flex justify-center gap-2.5 py-4">
                   <div className="w-8 h-1 bg-zinc-300 dark:bg-zinc-600 rounded-full" />
                   <div className="w-1.5 h-1 bg-zinc-100 dark:bg-zinc-700 rounded-full" />
+                </div>
+
+                <div className="px-4 pb-3 widget-container">
+                  <GlassCard className="px-4 py-3 rounded-[28px]">
+                    <div className="flex items-start gap-2.5">
+                      <div className="mt-0.5 w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-bold tracking-[0.2em] uppercase text-zinc-500 dark:text-zinc-400 mb-1">Update Notice</div>
+                        <div className="text-[11px] leading-5 text-zinc-700 dark:text-zinc-200 break-words">{UPDATE_NOTICE}</div>
+                      </div>
+                    </div>
+                  </GlassCard>
                 </div>
 
                 {/* Dock */}
