@@ -1345,9 +1345,9 @@ export default function App() {
               transition={{ duration: 0 }}
               className="absolute inset-0 w-full h-full bg-white dark:bg-black flex flex-col items-center justify-center"
             >
-              <div className="absolute top-0 left-0 w-full h-full bg-zinc-50/50 dark:bg-black/50" />
-              
-              <GlassCard className="w-full max-w-[350px] flex flex-col items-center p-12" blur="40px" opacity="0.6">
+              <div className="absolute top-0 left-0 w-full h-full bg-zinc-50/50 dark:bg-black/50 pointer-events-none" />
+
+              <GlassCard className="relative z-10 w-full max-w-[350px] flex flex-col items-center p-12" blur="40px" opacity="0.6">
                 <div className="flex flex-col items-center mb-10">
                   <div className="text-zinc-600 dark:text-zinc-300 mb-6">
                     {screen === 'password-setup' ? <Lock size={40} strokeWidth={1} /> : <Unlock size={40} strokeWidth={1} />}
@@ -1360,17 +1360,19 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="flex gap-5 mb-6">
-                  {[...Array(6)].map((_, i) => (
-                    <div 
-                      key={i} 
-                      className={`w-2.5 h-2.5 rounded-full border transition-all duration-400 ${
-                        i < input.length 
-                          ? 'bg-zinc-500 dark:bg-zinc-400 border-zinc-500 dark:border-zinc-400 scale-125 shadow-sm' 
-                          : 'border-zinc-200 dark:border-zinc-700 bg-transparent'
-                      } ${error ? 'border-red-400 dark:border-red-500 bg-red-400 dark:bg-red-500 animate-shake' : ''}`} 
-                    />
-                  ))}
+                <div className="w-full flex justify-center mb-6">
+                  <div className="flex items-center justify-center gap-5">
+                    {[...Array(6)].map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-2.5 h-2.5 rounded-full border transition-all duration-400 ${
+                          i < input.length
+                            ? 'bg-zinc-500 dark:bg-zinc-400 border-zinc-500 dark:border-zinc-400 scale-125 shadow-sm'
+                            : 'border-zinc-200 dark:border-zinc-700 bg-transparent'
+                        } ${error ? 'border-red-400 dark:border-red-500 bg-red-400 dark:bg-red-500 animate-shake' : ''}`}
+                      />
+                    ))}
+                  </div>
                 </div>
 
                 <div className="h-6 text-[9px] font-bold text-red-400 dark:text-red-500 mb-6 tracking-[0.2em] uppercase">{error}</div>

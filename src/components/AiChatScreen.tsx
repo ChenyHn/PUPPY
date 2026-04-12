@@ -244,6 +244,13 @@ function splitTextIntoMessages(text: string): string[] {
   return fin.length > 0 ? fin : [text.trim()];
 }
 
+const MAX_CHAT_BACKGROUND_LENGTH = 1_200_000;
+
+function isSafeBackgroundImage(value: string | null | undefined) {
+  if (!value || typeof value !== 'string') return false;
+  return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value) && value.length <= MAX_CHAT_BACKGROUND_LENGTH;
+}
+
 // --- Props ---
 
 export interface AiChatScreenProps {
@@ -1677,11 +1684,6 @@ function ChatSettingsPanel({ currentChatId, currentChatSettings, displayChatName
   const [backgroundImage, setBackgroundImage] = useState(currentChatSettings.backgroundImage || '');
   const [customBubbleCSS, setCustomBubbleCSS] = useState(currentChatSettings.customBubbleCSS || '');
   const [globalChatCSS, setGlobalChatCSS] = useState(() => localStorage.getItem('aiphone_global_chat_css') || '');
-  const MAX_CHAT_BACKGROUND_LENGTH = 1_200_000;
-  const isSafeBackgroundImage = (value: string | null | undefined) => {
-    if (!value || typeof value !== 'string') return false;
-    return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value) && value.length <= MAX_CHAT_BACKGROUND_LENGTH;
-  };
 
   const compressUploadedImage = (file: File, maxWidth: number = 1080, quality: number = 0.8): Promise<string> => {
     return new Promise((resolve, reject) => {
