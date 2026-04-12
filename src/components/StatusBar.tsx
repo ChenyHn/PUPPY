@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Signal, Wifi, Battery } from 'lucide-react';
 
-export const StatusBar: React.FC = () => {
+interface StatusBarProps {
+  isDesktopWallpaperVisible?: boolean;
+}
+
+export const StatusBar: React.FC<StatusBarProps> = ({ isDesktopWallpaperVisible = false }) => {
   const [time, setTime] = useState('');
 
   useEffect(() => {
@@ -15,7 +19,7 @@ export const StatusBar: React.FC = () => {
   }, []);
 
   return (
-    <div className="absolute top-0 left-0 w-full h-8 z-[100] flex justify-between items-center px-6 bg-white/10 backdrop-blur-xl border-b border-white/10 text-zinc-900 dark:text-white select-none text-[12px] font-medium pointer-events-none dark:bg-black/20">
+    <div className={`absolute top-0 left-0 w-full h-8 z-[100] flex justify-between items-center px-6 backdrop-blur-xl border-b text-zinc-900 dark:text-white select-none text-[12px] font-medium pointer-events-none ${isDesktopWallpaperVisible ? 'bg-white/10 dark:bg-black/20 border-white/10' : 'bg-zinc-50/85 dark:bg-black/70 border-black/5 dark:border-white/10'}`}>
       <div>{time}</div>
       <div className="flex items-center gap-1.5">
         <Signal size={14} />

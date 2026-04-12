@@ -583,7 +583,7 @@ export default function App() {
     const savedWallpaper = localStorage.getItem('aiphone_wallpaper');
     if (!savedWallpaper || typeof savedWallpaper !== 'string') return null;
     if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(savedWallpaper)) {
-      return savedWallpaper.length <= 1_200_000 ? savedWallpaper : null;
+      return savedWallpaper.length <= 900_000 ? savedWallpaper : null;
     }
     return /^https?:\/\//i.test(savedWallpaper) ? savedWallpaper : null;
   });
@@ -780,11 +780,12 @@ export default function App() {
   }, [motto]);
 
   const MAX_STORED_IMAGE_LENGTH = 1_200_000;
+  const MAX_WALLPAPER_IMAGE_LENGTH = 900_000;
 
-  const isSafeImageSource = (value: string | null | undefined) => {
+  const isSafeImageSource = (value: string | null | undefined, maxLength: number = MAX_STORED_IMAGE_LENGTH) => {
     if (!value || typeof value !== 'string') return false;
     if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value)) {
-      return value.length <= MAX_STORED_IMAGE_LENGTH;
+      return value.length <= maxLength;
     }
     return /^https?:\/\//i.test(value);
   };
@@ -825,7 +826,7 @@ export default function App() {
     );
   };
 
-  const compressImage = (file: File, maxWidth: number = 1024, quality: number = 0.8): Promise<string> => {
+  const compressImage = (file: File, maxWidth: number = 1024, quality: number = 0.8, maxLength: number = MAX_STORED_IMAGE_LENGTH): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -848,7 +849,7 @@ export default function App() {
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
             const compressed = canvas.toDataURL('image/jpeg', quality);
-            if (compressed.length > MAX_STORED_IMAGE_LENGTH) {
+            if (compressed.length > maxLength) {
               reject(new Error('Image too large after compression'));
               return;
             }
@@ -861,6 +862,27 @@ export default function App() {
       };
       reader.onerror = () => reject(new Error('File read failed'));
     });
+  };
+
+  const compressWallpaperToFit = async (file: File): Promise<string> => {
+    const attempts = [
+      { maxWidth: 1200, quality: 0.82 },
+      { maxWidth: 1080, quality: 0.76 },
+      { maxWidth: 960, quality: 0.7 },
+      { maxWidth: 840, quality: 0.64 },
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        return await compressImage(file, attempt.maxWidth, attempt.quality, MAX_WALLPAPER_IMAGE_LENGTH);
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== 'Image too large after compression') {
+          throw error;
+        }
+      }
+    }
+
+    throw new Error('Wallpaper image still too large after multiple compression attempts');
   };
 
   const validateImageSource = (src: string): Promise<string> => {
@@ -899,6 +921,9 @@ export default function App() {
 
     try {
       const validated = await validateImageSource(newUrl);
+      if (!isSafeImageSource(validated, MAX_WALLPAPER_IMAGE_LENGTH)) {
+        throw new Error('Wallpaper exceeds safe storage limit');
+      }
       setWallpaper(validated);
       if (!safeSetLocalStorage('aiphone_wallpaper', validated)) {
         throw new Error('Wallpaper storage failed');
@@ -917,10 +942,10 @@ export default function App() {
   const uploadWallpaper = async (file: File) => {
     const previousWallpaper = wallpaper;
     try {
-      const compressed = await compressImage(file, 1200, 0.82);
+      const compressed = await compressWallpaperToFit(file);
       const success = await updateWallpaper(compressed);
       if (!success) {
-        if (previousWallpaper && isSafeImageSource(previousWallpaper)) {
+        if (previousWallpaper && isSafeImageSource(previousWallpaper, MAX_WALLPAPER_IMAGE_LENGTH)) {
           setWallpaper(previousWallpaper);
         }
         alert('图片过大或处理失败，已恢复上一张壁纸');
@@ -928,12 +953,15 @@ export default function App() {
       return success;
     } catch (err) {
       console.error('Failed to process wallpaper:', err);
-      if (previousWallpaper && isSafeImageSource(previousWallpaper)) {
+      if (previousWallpaper && isSafeImageSource(previousWallpaper, MAX_WALLPAPER_IMAGE_LENGTH)) {
         setWallpaper(previousWallpaper);
       } else {
         await updateWallpaper(null);
       }
-      alert('图片加载失败，已恢复默认背景');
+      const message = err instanceof Error && err.message.includes('too large')
+        ? '图片过大，自动压缩后仍无法作为桌面壁纸'
+        : '图片加载失败，已恢复默认背景';
+      alert(message);
       return false;
     }
   };
@@ -1247,6 +1275,8 @@ export default function App() {
     };
   }, [contacts, apiConfig]);
 
+  const shouldStatusBarShowWallpaper = showStatusBar && screen === 'home' && !!wallpaper && isPostAuth;
+
   return (
     <div 
     className="relative w-full h-full bg-zinc-50 dark:bg-black flex items-center justify-center overflow-hidden font-sans"
@@ -1405,14 +1435,11 @@ export default function App() {
         </AnimatePresence>
 
         {/* Global StatusBar - single instance for entire app */}
-        {(() => {
-          console.log('App.tsx showStatusBar value:', showStatusBar);
-          return showStatusBar === true ? (
-            <div className="absolute top-0 left-0 right-0 z-[100]">
-              <StatusBar />
-            </div>
-          ) : null;
-        })()}
+        {showStatusBar === true ? (
+          <div className="absolute top-0 left-0 right-0 z-[100]">
+            <StatusBar isDesktopWallpaperVisible={shouldStatusBarShowWallpaper} />
+          </div>
+        ) : null}
 
         {/* ===== Global Content Container: offset by 32px (h-8) when status bar is visible ===== */}
         <div className={`absolute left-0 right-0 bottom-0 transition-all duration-300 ${showStatusBar ? 'top-8' : 'top-0'}`}>
