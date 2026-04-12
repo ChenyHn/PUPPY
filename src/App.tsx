@@ -81,6 +81,8 @@ import { MusicScreen } from './components/MusicScreen';
 import { ShoppingScreen } from './components/shopping/ShoppingScreen';
 import { getOrders, updateOrderStatus } from './services/shoppingService';
 import { StatusBar } from './components/StatusBar';
+import { UpdateNoticeCard } from './components/UpdateNoticeCard';
+import { wallpaperDB } from './utils/wallpaperDB';
 
 import type { ChatMessage } from './types';
 
@@ -301,8 +303,6 @@ const DEFAULT_DOCK_APPS: HomeAppItem[] = [
   { id: 'dock-browser', icon: Globe, label: '' },
   { id: 'dock-ai', icon: Sparkles, label: '' },
 ];
-
-const UPDATE_NOTICE = '本次更新进度：2026-04-12 build-2｜壁纸继续修复中，状态栏已修正，聊天底栏再次上移';
 
 // Reorderable Grid Component
 const ReorderableGrid = ({ 
@@ -581,14 +581,7 @@ export default function App() {
     localStorage.setItem('aiphone_wallet', JSON.stringify(wallet));
   }, [wallet]);
 
-  const [wallpaper, setWallpaper] = useState<string | null>(() => {
-    const savedWallpaper = localStorage.getItem('aiphone_wallpaper');
-    if (!savedWallpaper || typeof savedWallpaper !== 'string') return null;
-    if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(savedWallpaper)) {
-      return savedWallpaper.length <= 900_000 ? savedWallpaper : null;
-    }
-    return /^https?:\/\//i.test(savedWallpaper) ? savedWallpaper : null;
-  });
+  const [wallpaper, setWallpaper] = useState<string | null>(null);
   const [motto, setMotto] = useState(() => localStorage.getItem('aiphone_motto') || '生活明朗，万物可爱');
   const [fontLink, setFontLink] = useState(() => localStorage.getItem('aiphone_font_link') || '');
   const [customIcons, setCustomIcons] = useState<Record<string, string>>(() => {
@@ -681,6 +674,7 @@ export default function App() {
   });
 
   const wallpaperInputRef = React.useRef<HTMLInputElement>(null);
+  const wallpaperObjectUrlRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('aiphone_contacts', JSON.stringify(contacts));
@@ -783,13 +777,20 @@ export default function App() {
 
   const MAX_STORED_IMAGE_LENGTH = 1_200_000;
   const MAX_WALLPAPER_IMAGE_LENGTH = 900_000;
+  const WALLPAPER_STORAGE_KEY = 'aiphone_wallpaper';
 
-  const isSafeImageSource = (value: string | null | undefined, maxLength: number = MAX_STORED_IMAGE_LENGTH) => {
+  const isPersistedImageSource = (value: string | null | undefined, maxLength: number = MAX_STORED_IMAGE_LENGTH) => {
     if (!value || typeof value !== 'string') return false;
     if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value)) {
       return value.length <= maxLength;
     }
     return /^https?:\/\//i.test(value);
+  };
+
+  const isRuntimeImageSource = (value: string | null | undefined, maxLength: number = MAX_STORED_IMAGE_LENGTH) => {
+    if (!value || typeof value !== 'string') return false;
+    if (/^blob:/i.test(value)) return true;
+    return isPersistedImageSource(value, maxLength);
   };
 
   const safeParseJson = <T,>(raw: string | null, fallback: T, storageKey?: string): T => {
@@ -820,7 +821,7 @@ export default function App() {
     return Object.fromEntries(
       Object.entries(settings).map(([chatId, setting]) => {
         const nextSetting = { ...setting };
-        if (!isSafeImageSource(nextSetting.backgroundImage)) {
+        if (!isPersistedImageSource(nextSetting.backgroundImage)) {
           delete nextSetting.backgroundImage;
         }
         return [chatId, nextSetting];
@@ -866,7 +867,56 @@ export default function App() {
     });
   };
 
-  const compressWallpaperToFit = async (file: File): Promise<string> => {
+  const dataUrlToBlob = async (dataUrl: string): Promise<Blob> => {
+    const response = await fetch(dataUrl);
+    return response.blob();
+  };
+
+  const compressImageToBlob = (file: File, maxWidth: number = 1024, quality: number = 0.8): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas context not available'));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('Canvas export failed'));
+                return;
+              }
+              resolve(blob);
+            },
+            'image/jpeg',
+            quality,
+          );
+        };
+        img.onerror = () => reject(new Error('Image load failed'));
+      };
+      reader.onerror = () => reject(new Error('File read failed'));
+    });
+  };
+
+  const compressWallpaperToFit = async (file: File): Promise<Blob> => {
     const attempts = [
       { maxWidth: 1200, quality: 0.82 },
       { maxWidth: 1080, quality: 0.76 },
@@ -876,15 +926,30 @@ export default function App() {
 
     for (const attempt of attempts) {
       try {
-        return await compressImage(file, attempt.maxWidth, attempt.quality, MAX_WALLPAPER_IMAGE_LENGTH);
-      } catch (error) {
-        if (!(error instanceof Error) || error.message !== 'Image too large after compression') {
-          throw error;
+        const blob = await compressImageToBlob(file, attempt.maxWidth, attempt.quality);
+        if (blob.size <= 3 * 1024 * 1024) {
+          return blob;
         }
+      } catch (error) {
+        throw error;
       }
     }
 
     throw new Error('Wallpaper image still too large after multiple compression attempts');
+  };
+
+  const revokeWallpaperObjectUrl = () => {
+    if (wallpaperObjectUrlRef.current) {
+      URL.revokeObjectURL(wallpaperObjectUrlRef.current);
+      wallpaperObjectUrlRef.current = null;
+    }
+  };
+
+  const createWallpaperObjectUrl = (blob: Blob) => {
+    revokeWallpaperObjectUrl();
+    const url = URL.createObjectURL(blob);
+    wallpaperObjectUrlRef.current = url;
+    return url;
   };
 
   const validateImageSource = (src: string): Promise<string> => {
@@ -895,6 +960,60 @@ export default function App() {
       img.src = src;
     });
   };
+
+  const validateWallpaperBlob = async (blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    try {
+      await validateImageSource(url);
+      return blob;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const hydrateWallpaper = useCallback(async () => {
+    try {
+      const storedWallpaper = await wallpaperDB.getWallpaper();
+      if (storedWallpaper?.blob) {
+        const url = createWallpaperObjectUrl(storedWallpaper.blob);
+        setWallpaper(url);
+        return url;
+      }
+
+      const legacyWallpaper = localStorage.getItem(WALLPAPER_STORAGE_KEY);
+      if (!isPersistedImageSource(legacyWallpaper, MAX_WALLPAPER_IMAGE_LENGTH)) {
+        if (legacyWallpaper) {
+          try {
+            localStorage.removeItem(WALLPAPER_STORAGE_KEY);
+          } catch {}
+        }
+        revokeWallpaperObjectUrl();
+        setWallpaper(null);
+        return null;
+      }
+
+      await validateImageSource(legacyWallpaper);
+      const migratedBlob = await dataUrlToBlob(legacyWallpaper);
+      await wallpaperDB.saveWallpaper(migratedBlob, migratedBlob.type || 'image/jpeg');
+      try {
+        localStorage.removeItem(WALLPAPER_STORAGE_KEY);
+      } catch {}
+      const url = createWallpaperObjectUrl(migratedBlob);
+      setWallpaper(url);
+      return url;
+    } catch (error) {
+      console.error('Failed to hydrate wallpaper:', error);
+      revokeWallpaperObjectUrl();
+      setWallpaper(null);
+      try {
+        localStorage.removeItem(WALLPAPER_STORAGE_KEY);
+      } catch {}
+      try {
+        await wallpaperDB.deleteWallpaper();
+      } catch {}
+      return null;
+    }
+  }, []);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -913,29 +1032,37 @@ export default function App() {
   const updateWallpaper = async (newUrl: string | null) => {
     if (!newUrl) {
       setWallpaper(null);
+      revokeWallpaperObjectUrl();
       try {
-        localStorage.removeItem('aiphone_wallpaper');
+        localStorage.removeItem(WALLPAPER_STORAGE_KEY);
       } catch (error) {
-        console.error('Failed to clear wallpaper:', error);
+        console.error('Failed to clear legacy wallpaper:', error);
+      }
+      try {
+        await wallpaperDB.deleteWallpaper();
+      } catch (error) {
+        console.error('Failed to clear wallpaper from IndexedDB:', error);
+        return false;
       }
       return true;
     }
 
     try {
       const validated = await validateImageSource(newUrl);
-      if (!isSafeImageSource(validated, MAX_WALLPAPER_IMAGE_LENGTH)) {
-        throw new Error('Wallpaper exceeds safe storage limit');
+      if (!isRuntimeImageSource(validated, MAX_WALLPAPER_IMAGE_LENGTH)) {
+        throw new Error('Wallpaper exceeds safe runtime limit');
       }
       setWallpaper(validated);
-      if (!safeSetLocalStorage('aiphone_wallpaper', validated)) {
-        throw new Error('Wallpaper storage failed');
-      }
       return true;
     } catch (error) {
       console.error('Failed to update wallpaper:', error);
       setWallpaper(null);
+      revokeWallpaperObjectUrl();
       try {
-        localStorage.removeItem('aiphone_wallpaper');
+        localStorage.removeItem(WALLPAPER_STORAGE_KEY);
+      } catch {}
+      try {
+        await wallpaperDB.deleteWallpaper();
       } catch {}
       return false;
     }
@@ -945,17 +1072,18 @@ export default function App() {
     const previousWallpaper = wallpaper;
     try {
       const compressed = await compressWallpaperToFit(file);
-      const success = await updateWallpaper(compressed);
+      await validateWallpaperBlob(compressed);
+      await wallpaperDB.saveWallpaper(compressed, compressed.type || 'image/jpeg');
+      const nextWallpaperUrl = createWallpaperObjectUrl(compressed);
+      const success = await updateWallpaper(nextWallpaperUrl);
       if (!success) {
-        if (previousWallpaper && isSafeImageSource(previousWallpaper, MAX_WALLPAPER_IMAGE_LENGTH)) {
-          setWallpaper(previousWallpaper);
-        }
+        await hydrateWallpaper();
         alert('图片过大或处理失败，已恢复上一张壁纸');
       }
       return success;
     } catch (err) {
       console.error('Failed to process wallpaper:', err);
-      if (previousWallpaper && isSafeImageSource(previousWallpaper, MAX_WALLPAPER_IMAGE_LENGTH)) {
+      if (previousWallpaper && isRuntimeImageSource(previousWallpaper, MAX_WALLPAPER_IMAGE_LENGTH)) {
         setWallpaper(previousWallpaper);
       } else {
         await updateWallpaper(null);
@@ -980,23 +1108,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    const handler = () => {
-      const saved = localStorage.getItem('aiphone_wallpaper');
-      if (isSafeImageSource(saved)) setWallpaper(saved);
-      else {
-        setWallpaper(null);
-        try {
-          localStorage.removeItem('aiphone_wallpaper');
-        } catch {}
-      }
+    void hydrateWallpaper();
+    return () => {
+      revokeWallpaperObjectUrl();
     };
-    window.addEventListener('wallpaperChanged', handler);
-    return () => window.removeEventListener('wallpaperChanged', handler);
-  }, []);
+  }, [hydrateWallpaper]);
 
-  useEffect(() => {
-    localStorage.setItem('aiphone_api_config', JSON.stringify(apiConfig));
-  }, [apiConfig]);
 
   // Update time every second
   useEffect(() => {
@@ -1277,7 +1394,8 @@ export default function App() {
     };
   }, [contacts, apiConfig]);
 
-  const shouldStatusBarShowWallpaper = showStatusBar && screen === 'home' && !!wallpaper && isPostAuth;
+  const safeWallpaper = wallpaper && isRuntimeImageSource(wallpaper, MAX_WALLPAPER_IMAGE_LENGTH) ? wallpaper : null;
+  const shouldStatusBarShowWallpaper = showStatusBar && screen === 'home' && !!safeWallpaper && isPostAuth;
 
   return (
     <div 
@@ -1289,8 +1407,8 @@ export default function App() {
       {/* Mobile Frame */}
       <div
         id="phone-container"
-        className={`relative w-full h-full lg:max-w-[390px] lg:max-h-[844px] lg:h-[844px] lg:rounded-[44px] lg:border-[12px] lg:border-white dark:lg:border-zinc-800 lg:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:lg:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup ${wallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}
-        style={wallpaper && isSafeImageSource(wallpaper) ? { backgroundImage: `url(${wallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+        className={`relative w-full h-full lg:max-w-[390px] lg:max-h-[844px] lg:h-[844px] lg:rounded-[44px] lg:border-[12px] lg:border-white dark:lg:border-zinc-800 lg:shadow-[0_20px_60px_rgba(0,0,0,0.05)] dark:lg:shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden phone-mockup ${safeWallpaper ? 'bg-black' : 'bg-zinc-100 dark:bg-black'}`}
+        style={safeWallpaper ? { backgroundImage: `url(${safeWallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
       >
         
         <AnimatePresence mode="wait">
@@ -1443,8 +1561,11 @@ export default function App() {
           </div>
         ) : null}
 
-        {/* ===== Global Content Container: offset by 32px (h-8) when status bar is visible ===== */}
-        <div className={`absolute left-0 right-0 bottom-0 transition-all duration-300 ${showStatusBar ? 'top-8' : 'top-0'}`}>
+        {/* ===== Global Content Container: offset by status bar height when visible ===== */}
+        <div
+          className="absolute left-0 right-0 bottom-0 transition-all duration-300"
+          style={{ top: showStatusBar ? 'calc(2rem + env(safe-area-inset-top))' : '0px' }}
+        >
 
         {/* ===== Layer 2: Home Screen (always rendered when past auth) ===== */}
         {isPostAuth && (
@@ -1561,17 +1682,10 @@ export default function App() {
                   <div className="w-1.5 h-1 bg-zinc-100 dark:bg-zinc-700 rounded-full" />
                 </div>
 
-                <div className="px-4 pb-3 widget-container">
-                  <GlassCard className="px-4 py-3 rounded-[28px]">
-                    <div className="flex items-start gap-2.5">
-                      <div className="mt-0.5 w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[10px] font-bold tracking-[0.2em] uppercase text-zinc-500 dark:text-zinc-400 mb-1">Update Notice</div>
-                        <div className="text-[11px] leading-5 text-zinc-700 dark:text-zinc-200 break-words">{UPDATE_NOTICE}</div>
-                      </div>
-                    </div>
-                  </GlassCard>
-                </div>
+                <UpdateNoticeCard
+                  version="2026-04-12-build-3"
+                  message="本次更新进度：2026-04-12 build-3｜壁纸仍在继续修复，公告卡片已可关闭，状态栏显示回退修正中。"
+                />
 
                 {/* Dock */}
                 <div className="mx-4 mb-2">

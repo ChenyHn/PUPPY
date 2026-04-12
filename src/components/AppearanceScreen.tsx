@@ -553,10 +553,7 @@ export const AppearanceScreen = ({
                           const file = e.target.files?.[0];
                           if (!file) return;
                           try {
-                            const success = await uploadWallpaper(file);
-                            if (success) {
-                              window.dispatchEvent(new Event('wallpaperChanged'));
-                            }
+                            await uploadWallpaper(file);
                           } catch {
                             // handled upstream
                           } finally {
@@ -566,12 +563,9 @@ export const AppearanceScreen = ({
                       />
                     </label>
                     {wallpaper && (
-                      <button 
+                      <button
                         onClick={async () => {
-                          const success = await setWallpaper(null);
-                          if (success) {
-                            window.dispatchEvent(new Event('wallpaperChanged'));
-                          }
+                          await setWallpaper(null);
                         }}
                         className="text-[10px] font-bold text-red-500 hover:text-red-600 flex-shrink-0 transition-colors"
                       >
